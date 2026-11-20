@@ -2987,7 +2987,7 @@ class OpenAICompatibleAIProvider:
                     "Content-Type": "application/json",
                 },
                 json_body=request_body,
-                timeout_seconds=self._timeout,
+                timeout_seconds=max(self._timeout, 45.0) if use_responses_api else self._timeout,
                 max_bytes=MAX_AI_RESPONSE_BYTES,
             )
             data = response.json()
