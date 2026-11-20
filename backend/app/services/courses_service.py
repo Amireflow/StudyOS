@@ -262,8 +262,9 @@ class CourseService:
         level: CourseLevelRecord,
         now: datetime,
         focus_hint: str | None = None,
+        generated_content: dict[str, Any] | None = None,
     ) -> CourseLevelRecord:
-        generated = generate_level_content(
+        generated = generated_content or generate_level_content(
             subject=course.subject,
             language=course.language,
             level_number=level.level_number,
@@ -372,6 +373,20 @@ class CourseService:
             user_ai_config=ai_config,
             learner_context=learner_context,
         )
+        # Générer et valider le premier niveau avant toute écriture afin qu'une panne IA
+        # ne laisse pas un cours incomplet ou une compétence orpheline en base.
+        first_level_blueprint = blueprint["levels_roadmap"][0]
+        first_level_content = generate_level_content(
+            subject=blueprint["subject"],
+            language=payload.language,
+            level_number=1,
+            total_levels=payload.total_levels,
+            settings=self._settings,
+            user_ai_config=ai_config,
+            course_goal=payload.goal or blueprint["description"],
+            level_blueprint=first_level_blueprint,
+            learner_context=learner_context,
+        )
         now = datetime.now(timezone.utc)
 
         linked_skill_id: UUID | None = None
@@ -451,6 +466,7 @@ class CourseService:
                     course=course,
                     level=level_record,
                     now=now,
+                    generated_content=first_level_content,
                 )
 
         return self.get_course_detail(user_id, course.id)
