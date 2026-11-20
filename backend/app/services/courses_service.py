@@ -33,6 +33,8 @@ from app.schemas.courses import (
     CourseDetailResponse,
     CourseLessonProgressUpdate,
     CourseLessonResponse,
+    CourseLessonTutorAskRequest,
+    CourseLessonTutorAskResponse,
     CourseLevelRegenerateRequest,
     CourseLevelResponse,
     CoursePreviewLesson,
@@ -45,9 +47,11 @@ from app.schemas.courses import (
     CourseSubmissionCreate,
     CourseSubmissionResponse,
     CourseSummaryResponse,
+    CourseTutorMessage,
     CourseUpdate,
 )
 from app.services.course_generator import (
+    answer_course_lesson_tutor_question,
     build_course_blueprint,
     evaluate_course_submission,
     generate_level_content,
@@ -66,8 +70,48 @@ def _sanitize_exercises_for_client(exercises: list[dict[str, Any]] | None) -> li
     return sanitized
 
 
+def _split_lesson_code_examples_and_meta(
+    raw_items: list[dict[str, Any]] | None,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], int]:
+    code_examples: list[dict[str, Any]] = []
+    tutor_messages: list[dict[str, Any]] = []
+    current_step_index = 0
+    for item in raw_items or []:
+        if not isinstance(item, dict):
+            continue
+        meta_kind = item.get("_meta_kind")
+        if meta_kind == "tutor_message":
+            tutor_messages.append({k: v for k, v in item.items() if k != "_meta_kind"})
+        elif meta_kind == "lesson_state":
+            try:
+                current_step_index = max(0, int(item.get("current_step_index") or 0))
+            except (TypeError, ValueError):
+                current_step_index = 0
+        else:
+            code_examples.append(item)
+    return code_examples, tutor_messages, current_step_index
+
+
+def _pack_lesson_code_examples_and_meta(
+    code_examples: list[dict[str, Any]],
+    tutor_messages: list[dict[str, Any]],
+    current_step_index: int,
+) -> list[dict[str, Any]]:
+    packed: list[dict[str, Any]] = [dict(item) for item in code_examples]
+    packed.append({"_meta_kind": "lesson_state", "current_step_index": max(0, int(current_step_index))})
+    for msg in tutor_messages[-40:]:
+        packed.append({"_meta_kind": "tutor_message", **msg})
+    return packed
+
+
 def _to_lesson_response(record: CourseLessonRecord) -> CourseLessonResponse:
     data = record.model_dump()
+    clean_examples, tutor_messages, current_step_index = _split_lesson_code_examples_and_meta(
+        data.get("code_examples")
+    )
+    data["code_examples"] = clean_examples
+    data["tutor_messages"] = tutor_messages
+    data["current_step_index"] = current_step_index
     data["exercises"] = _sanitize_exercises_for_client(data.get("exercises"))
     return CourseLessonResponse.model_validate(data)
 
@@ -427,7 +471,10 @@ class CourseService:
             passed_exercise_keys = {
                 (s.lesson_id, s.exercise_id or s.title)
                 for s in lvl_subs
-                if s.submission_kind == CourseSubmissionKind.exercise and s.passed is True
+                if s.submission_kind == CourseSubmissionKind.exercise
+                and s.passed is True
+                and not s.manual_review_required
+                and (s.score or 0) >= threshold
             }
             has_exercises = any(bool(item.exercises) for item in lvl_lessons)
             exercises_passed_count = len(passed_exercise_keys)
@@ -437,6 +484,14 @@ class CourseService:
                 and s.passed is True
                 and not s.manual_review_required
                 and (s.score or 0) >= threshold
+                and (
+                    not s.criteria_results
+                    or all(
+                        bool(c.get("passed"))
+                        for c in s.criteria_results
+                        if isinstance(c, dict) and c.get("key") in {"technical", "coverage"}
+                    )
+                )
                 for s in lvl_subs
             )
             can_validate = (
@@ -545,15 +600,37 @@ class CourseService:
             raise AppError(409, "LEVEL_LOCKED", "Ce niveau est encore verrouillé.")
 
         now = datetime.now(timezone.utc)
+        clean_examples, tutor_messages, prev_step_index = _split_lesson_code_examples_and_meta(
+            lesson.code_examples
+        )
+        next_step_index = (
+            payload.current_step_index
+            if payload.current_step_index is not None
+            else prev_step_index
+        )
+        next_status = payload.status if payload.status is not None else lesson.status
+        if (
+            payload.status is None
+            and payload.current_step_index is not None
+            and next_status == CourseLessonStatus.not_started
+        ):
+            next_status = CourseLessonStatus.in_progress
+
         completed_at = (
             now
-            if payload.status == CourseLessonStatus.completed
-            else None
+            if next_status == CourseLessonStatus.completed
+            else (lesson.completed_at if payload.status is None else None)
+        )
+        packed_examples = _pack_lesson_code_examples_and_meta(
+            clean_examples,
+            tutor_messages,
+            next_step_index,
         )
         saved_lesson = self._repo.save_lesson(
             lesson.model_copy(
                 update={
-                    "status": payload.status,
+                    "status": next_status,
+                    "code_examples": packed_examples,
                     "completed_at": completed_at,
                     "updated_at": now,
                 }
@@ -569,6 +646,100 @@ class CourseService:
             )
         self._repo.save_course(course.model_copy(update={"updated_at": now}))
         return _to_lesson_response(saved_lesson)
+
+    def ask_lesson_tutor(
+        self,
+        user_id: UUID,
+        course_id: UUID,
+        lesson_id: UUID,
+        payload: CourseLessonTutorAskRequest,
+    ) -> CourseLessonTutorAskResponse:
+        course = self._repo.get_course(user_id, course_id)
+        if course is None:
+            raise AppError(404, "NOT_FOUND", "Cours introuvable.")
+        lesson = self._repo.get_lesson(user_id, lesson_id)
+        if lesson is None or lesson.course_id != course.id:
+            raise AppError(404, "NOT_FOUND", "Chapitre de cours introuvable.")
+        level = self._repo.get_level(user_id, lesson.level_id)
+        if level is None:
+            raise AppError(404, "NOT_FOUND", "Niveau introuvable.")
+        if level.status == CourseLevelStatus.locked:
+            raise AppError(409, "LEVEL_LOCKED", "Ce niveau est encore verrouillé.")
+
+        now = datetime.now(timezone.utc)
+        clean_examples, tutor_messages, prev_step_index = _split_lesson_code_examples_and_meta(
+            lesson.code_examples
+        )
+        active_step = max(prev_step_index, payload.step_index)
+
+        reply_markdown, follow_ups = answer_course_lesson_tutor_question(
+            subject=course.subject,
+            language=course.language,
+            level_number=level.level_number,
+            lesson_title=lesson.title,
+            lesson_markdown=lesson.content_markdown,
+            code_examples=clean_examples,
+            prior_messages=tutor_messages,
+            user_message=payload.message,
+            quick_action=payload.quick_action,
+            step_index=payload.step_index,
+            step_title=payload.step_title,
+            step_content=payload.step_content,
+            settings=self._settings,
+            user_ai_config=self._safe_user_ai_config(user_id),
+        )
+
+        user_msg_dict = {
+            "id": str(uuid4()),
+            "role": "user",
+            "content": payload.message,
+            "quick_action": payload.quick_action,
+            "step_index": payload.step_index,
+            "follow_up_prompts": [],
+            "created_at": now.isoformat(),
+        }
+        assistant_msg_dict = {
+            "id": str(uuid4()),
+            "role": "assistant",
+            "content": reply_markdown,
+            "quick_action": payload.quick_action,
+            "step_index": payload.step_index,
+            "follow_up_prompts": follow_ups,
+            "created_at": now.isoformat(),
+        }
+        updated_messages = [*tutor_messages, user_msg_dict, assistant_msg_dict][-40:]
+        packed_examples = _pack_lesson_code_examples_and_meta(
+            clean_examples,
+            updated_messages,
+            active_step,
+        )
+        next_status = (
+            CourseLessonStatus.in_progress
+            if lesson.status == CourseLessonStatus.not_started
+            else lesson.status
+        )
+        saved_lesson = self._repo.save_lesson(
+            lesson.model_copy(
+                update={
+                    "status": next_status,
+                    "code_examples": packed_examples,
+                    "updated_at": now,
+                }
+            )
+        )
+        if level.status == CourseLevelStatus.unlocked:
+            self._repo.save_level(
+                level.model_copy(
+                    update={"status": CourseLevelStatus.in_progress, "updated_at": now}
+                )
+            )
+        self._repo.save_course(course.model_copy(update={"updated_at": now}))
+
+        return CourseLessonTutorAskResponse(
+            user_message=CourseTutorMessage.model_validate(user_msg_dict),
+            assistant_message=CourseTutorMessage.model_validate(assistant_msg_dict),
+            lesson=_to_lesson_response(saved_lesson),
+        )
 
     def add_resource(
         self,
@@ -776,6 +947,19 @@ class CourseService:
                 "Ce niveau a déjà été validé.",
             )
 
+        if level.level_number > 1:
+            all_course_levels = self._repo.list_levels(user_id, course_id=course.id)
+            prev_level = next(
+                (item for item in all_course_levels if item.level_number == level.level_number - 1),
+                None,
+            )
+            if prev_level is None or prev_level.status != CourseLevelStatus.validated:
+                raise AppError(
+                    409,
+                    "PREVIOUS_LEVEL_NOT_VALIDATED",
+                    f"Verrou pédagogique : le niveau {level.level_number - 1} doit être validé avant le niveau {level.level_number}.",
+                )
+
         level_lessons = [
             l for l in self._repo.list_lessons(user_id, course_id=course.id) if l.level_id == level.id
         ]
@@ -798,7 +982,10 @@ class CourseService:
             (
                 s
                 for s in level_subs
-                if s.submission_kind == CourseSubmissionKind.exercise and s.passed is True
+                if s.submission_kind == CourseSubmissionKind.exercise
+                and s.passed is True
+                and not s.manual_review_required
+                and (s.score or 0) >= threshold
             ),
             None,
         )
@@ -806,7 +993,7 @@ class CourseService:
             raise AppError(
                 422,
                 "EXERCISE_VALIDATION_REQUIRED",
-                f"Verrou pédagogique : réussissez au moins un exercice du niveau {level.level_number} avant sa validation.",
+                f"Verrou pédagogique : réussissez au moins un exercice vérifié du niveau {level.level_number} (score >= {threshold}/100) avant sa validation.",
             )
 
         passing_project = next(
@@ -817,6 +1004,19 @@ class CourseService:
                 and s.passed is True
                 and not s.manual_review_required
                 and (s.score or 0) >= threshold
+                and (
+                    not s.criteria_results
+                    or all(
+                        bool(c.get("passed"))
+                        for c in s.criteria_results
+                        if isinstance(c, dict) and c.get("key") in {"technical", "coverage"}
+                    )
+                )
+                and (
+                    bool((s.submitted_code or "").strip())
+                    or bool((s.reference_url or "").strip())
+                    or len((s.answer_text or "").strip()) >= 40
+                )
             ),
             None,
         )

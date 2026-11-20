@@ -78,17 +78,17 @@ function ExerciseCard({
   };
 
   return (
-    <div className="space-y-4 rounded-2xl bg-zinc-50 p-4 sm:p-5 dark:bg-zinc-800/70">
+    <div className="min-w-0 max-w-full overflow-hidden space-y-3.5 rounded-2xl bg-zinc-50 p-3.5 sm:p-5 dark:bg-zinc-800/70">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
-          <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-white text-teal-700 dark:bg-zinc-900 dark:text-teal-300">
+        <div className="flex min-w-0 items-center gap-2">
+          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-white text-teal-700 dark:bg-zinc-900 dark:text-teal-300">
             <Icon icon={CodeIcon} size={15} />
           </span>
-          <h4 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+          <h4 className="break-words text-sm font-semibold text-zinc-900 dark:text-zinc-100">
             {exercise.title}
           </h4>
         </div>
-        <div className="flex items-center gap-1.5">
+        <div className="flex shrink-0 items-center gap-1.5">
           <Badge variant={diff.variant}>{diff.label}</Badge>
           {latestAttempt?.passed && <Badge variant="success">Réussi ({latestAttempt.score}/100)</Badge>}
         </div>
@@ -96,7 +96,7 @@ function ExerciseCard({
 
       <MarkdownContent content={exercise.instructionsMarkdown} />
 
-      {exercise.starterCode && (
+      {isClosedQuiz && exercise.starterCode && (
         <MarkdownContent content={`\`\`\`\n${exercise.starterCode}\n\`\`\``} />
       )}
 

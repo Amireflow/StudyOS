@@ -416,22 +416,33 @@ class AvailabilityEngine:
         prefs: dict[str, object] = {}
         if snapshot.profile and isinstance(snapshot.profile.preferences, dict):
             prefs.update(snapshot.profile.preferences)
+            nested_avail = snapshot.profile.preferences.get("availability")
+            if isinstance(nested_avail, dict):
+                prefs.update(nested_avail)
         if snapshot.ai_memory and isinstance(snapshot.ai_memory.availability_preferences, dict):
             prefs.update(snapshot.ai_memory.availability_preferences)
 
-        raw_rest = prefs.get("rest_days") or prefs.get("unavailable_days")
-        if isinstance(raw_rest, list):
-            for entry in raw_rest:
-                if isinstance(entry, int) and 0 <= entry <= 6:
-                    rest_days.add(entry)
-                else:
-                    mapped = FR_DAY_NAME_TO_INT.get(str(entry).strip().lower())
-                    if mapped is not None:
-                        rest_days.add(mapped)
+        for rest_key in ("rest_days", "unavailable_days", "excluded_days"):
+            raw_rest = prefs.get(rest_key)
+            if isinstance(raw_rest, list):
+                for entry in raw_rest:
+                    if isinstance(entry, int) and 0 <= entry <= 6:
+                        rest_days.add(entry)
+                    else:
+                        mapped = FR_DAY_NAME_TO_INT.get(str(entry).strip().lower())
+                        if mapped is not None:
+                            rest_days.add(mapped)
 
-        if prefs.get("prefer_morning") and not prefs.get("prefer_evening"):
+        raw_start_h = prefs.get("study_start_hour")
+        if isinstance(raw_start_h, (int, float)) and 5 <= int(raw_start_h) <= 14:
+            day_start = time(int(raw_start_h), 0)
+        elif prefs.get("prefer_morning") and not prefs.get("prefer_evening"):
             day_start = time(7, 30)
-        if prefs.get("prefer_evening"):
+
+        raw_end_h = prefs.get("study_end_hour")
+        if isinstance(raw_end_h, (int, float)) and 15 <= int(raw_end_h) <= 23:
+            day_end = time(int(raw_end_h), 0)
+        elif prefs.get("prefer_evening"):
             day_end = time(22, 30)
 
         raw_blocks = prefs.get("blocked_windows")

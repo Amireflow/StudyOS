@@ -54,9 +54,31 @@ class WeeklyPlanAllocator:
         tz, _ = resolve_zoneinfo(availability.timezone)
         history = snapshot.work_history
 
-        # Durée de séance réaliste selon mémoire, demande et historique de complétion
+        prefs_merged: dict[str, object] = {}
+        if snapshot.profile and isinstance(snapshot.profile.preferences, dict):
+            prefs_merged.update(snapshot.profile.preferences)
+            if isinstance(snapshot.profile.preferences.get("availability"), dict):
+                prefs_merged.update(snapshot.profile.preferences["availability"])  # type: ignore[arg-type]
+        if snapshot.ai_memory and isinstance(snapshot.ai_memory.availability_preferences, dict):
+            prefs_merged.update(snapshot.ai_memory.availability_preferences)
+
+        pref_session_raw = prefs_merged.get("preferred_session_minutes")
+        pref_session_min = (
+            int(pref_session_raw)
+            if isinstance(pref_session_raw, (int, float)) and 30 <= int(pref_session_raw) <= 150
+            else None
+        )
+        pref_daily_raw = prefs_merged.get("max_daily_study_minutes")
+        pref_daily_cap = (
+            int(pref_daily_raw)
+            if isinstance(pref_daily_raw, (int, float)) and 30 <= int(pref_daily_raw) <= 600
+            else None
+        )
+
+        # Durée de séance réaliste selon mémoire, préférences, demande et historique de complétion
         base_session_min = (
             preferred_session_minutes
+            or pref_session_min
             or (snapshot.ai_memory.default_session_minutes if snapshot.ai_memory else None)
             or history.avg_session_minutes
             or 60
@@ -68,6 +90,8 @@ class WeeklyPlanAllocator:
         # Plafonds journalier et hebdomadaire anti-surcharge
         if daily_max_minutes is not None:
             daily_cap = daily_max_minutes
+        elif pref_daily_cap is not None:
+            daily_cap = min(pref_daily_cap, 180) if history.completion_rate < 0.65 else pref_daily_cap
         else:
             daily_cap = 180 if history.completion_rate < 0.65 else 240
 

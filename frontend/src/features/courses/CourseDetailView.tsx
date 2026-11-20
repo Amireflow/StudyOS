@@ -19,7 +19,11 @@ import {
   SuccessBanner,
 } from '../../components/ui/StateFeedback';
 import { cn } from '../../lib/cn';
-import type { CourseResourceInput, CourseSubmissionInput } from '../../lib/coursesApi';
+import type {
+  CourseLessonTutorAskInput,
+  CourseResourceInput,
+  CourseSubmissionInput,
+} from '../../lib/coursesApi';
 import { useCourseDetail, useCoursesStore } from '../../state/CoursesStoreContext';
 import type { CourseLesson } from '../../types/domain';
 import { CourseLessonReader } from './CourseLessonReader';
@@ -41,6 +45,7 @@ export function CourseDetailView({ courseId }: CourseDetailViewProps) {
     updateCourse,
     deleteCourse,
     updateLessonStatus,
+    askLessonTutor,
     addResource,
     deleteResource,
     submitWork,
@@ -174,6 +179,16 @@ export function CourseDetailView({ courseId }: CourseDetailViewProps) {
     }
   };
 
+  const handleStepChange = async (lesson: CourseLesson, stepIndex: number) => {
+    await updateLessonStatus(detail.id, lesson.id, undefined, stepIndex);
+  };
+
+  const handleAskTutor = async (lesson: CourseLesson, input: CourseLessonTutorAskInput) => {
+    clearMutationError();
+    const result = await askLessonTutor(detail.id, lesson.id, input);
+    return Boolean(result);
+  };
+
   const handleSubmitWork = async (input: CourseSubmissionInput) => {
     if (!activeLevel) return null;
     clearMutationError();
@@ -237,9 +252,9 @@ export function CourseDetailView({ courseId }: CourseDetailViewProps) {
   const projectDone = Boolean(activeLevel?.projectPassed);
 
   return (
-    <div className="space-y-3.5 sm:space-y-4">
+    <div className="min-w-0 max-w-full overflow-x-hidden space-y-3.5 sm:space-y-4">
       {/* Studio d'en-tête unifié du cours */}
-      <header className="space-y-3.5 rounded-2xl bg-white p-4 sm:p-5 dark:bg-zinc-900">
+      <header className="min-w-0 max-w-full overflow-hidden space-y-3.5 rounded-2xl bg-white p-4 sm:p-5 dark:bg-zinc-900">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <Link
             to="/courses"
@@ -290,11 +305,11 @@ export function CourseDetailView({ courseId }: CourseDetailViewProps) {
               {detail.status === 'paused' && <Badge variant="warning">En pause</Badge>}
             </div>
 
-            <h1 className="mt-2 line-clamp-1 text-lg font-bold tracking-tight text-zinc-950 sm:text-xl dark:text-zinc-50">
+            <h1 className="mt-2 break-words text-lg font-bold tracking-tight text-zinc-950 sm:text-xl dark:text-zinc-50">
               {detail.title}
             </h1>
             {detail.description && (
-              <p className="mt-0.5 line-clamp-1 text-xs text-zinc-500 dark:text-zinc-400">
+              <p className="mt-0.5 line-clamp-2 break-words text-xs text-zinc-500 dark:text-zinc-400">
                 {detail.description}
               </p>
             )}
@@ -304,7 +319,7 @@ export function CourseDetailView({ courseId }: CourseDetailViewProps) {
         {/* Sélecteur de niveaux intégré dans l'en-tête */}
         <nav
           aria-label="Niveaux du cours"
-          className="no-scrollbar flex gap-2 overflow-x-auto pt-1 sm:grid sm:grid-cols-3 sm:overflow-visible lg:grid-cols-5"
+          className="no-scrollbar flex min-w-0 max-w-full gap-2 overflow-x-auto pt-1 sm:grid sm:grid-cols-3 sm:overflow-visible lg:grid-cols-5"
         >
           {orderedLevels.map((lv) => {
             const isSelected = activeLevel?.id === lv.id;
@@ -464,12 +479,12 @@ export function CourseDetailView({ courseId }: CourseDetailViewProps) {
           </div>
 
           {activeTab === 'chapters' && (
-            <div className="grid gap-3.5 sm:gap-4 lg:grid-cols-[260px_minmax(0,1fr)]">
-              <aside className="space-y-1.5 rounded-2xl bg-white p-3 lg:self-start lg:space-y-2 lg:p-3.5 dark:bg-zinc-900">
+            <div className="grid min-w-0 grid-cols-1 gap-3.5 sm:gap-4 lg:grid-cols-[250px_minmax(0,1fr)]">
+              <aside className="min-w-0 max-w-full overflow-hidden space-y-1.5 rounded-2xl bg-white p-3 lg:self-start lg:space-y-2 lg:p-3.5 dark:bg-zinc-900">
                 <p className="px-1.5 py-0.5 text-xs font-semibold text-zinc-500 dark:text-zinc-400">
                   Programme du niveau {activeLevel.levelNumber}
                 </p>
-                <div className="no-scrollbar flex gap-2 overflow-x-auto pb-0.5 lg:flex-col lg:space-y-1.5 lg:overflow-visible lg:pb-0">
+                <div className="no-scrollbar flex min-w-0 max-w-full gap-2 overflow-x-auto pb-0.5 lg:flex-col lg:space-y-1.5 lg:overflow-visible lg:pb-0">
                   {orderedLessons.map((lesson) => {
                     const selected = activeLesson?.id === lesson.id;
                     const done = lesson.status === 'completed';
@@ -479,7 +494,7 @@ export function CourseDetailView({ courseId }: CourseDetailViewProps) {
                         type="button"
                         onClick={() => setSelectedLessonId(lesson.id)}
                         className={cn(
-                          'flex min-w-[165px] shrink-0 items-start gap-2 rounded-xl px-3 py-2 text-left text-xs transition-colors lg:w-full lg:min-w-0 lg:py-2.5 cursor-pointer',
+                          'flex w-[160px] shrink-0 cursor-pointer items-start gap-2 rounded-xl px-3 py-2 text-left text-xs transition-colors lg:w-full lg:py-2.5',
                           selected
                             ? 'bg-teal-50 text-teal-950 dark:bg-teal-950/60 dark:text-teal-100'
                             : 'bg-zinc-50/70 text-zinc-700 hover:bg-zinc-100 dark:bg-zinc-800/50 dark:text-zinc-300 dark:hover:bg-zinc-800',
@@ -494,11 +509,11 @@ export function CourseDetailView({ courseId }: CourseDetailViewProps) {
                               : 'mt-0.5 shrink-0 opacity-70'
                           }
                         />
-                        <div className="min-w-0">
+                        <div className="min-w-0 flex-1">
                           <p className="font-semibold">
                             Ch. {lesson.position}
                           </p>
-                          <p className="line-clamp-1 text-[11px] opacity-90 lg:line-clamp-2">{lesson.title}</p>
+                          <p className="line-clamp-1 break-words text-[11px] opacity-90 lg:line-clamp-2">{lesson.title}</p>
                         </div>
                       </button>
                     );
@@ -506,15 +521,18 @@ export function CourseDetailView({ courseId }: CourseDetailViewProps) {
                 </div>
               </aside>
 
-              <div>
+              <div className="min-w-0 max-w-full">
                 {activeLesson ? (
                   <CourseLessonReader
+                    key={activeLesson.id}
                     lesson={activeLesson}
                     level={activeLevel}
                     onSelectLesson={setSelectedLessonId}
                     onToggleComplete={handleToggleLesson}
                     onSubmitExercise={handleSubmitWork}
                     onGoToProject={() => setActiveTab('project')}
+                    onStepChange={handleStepChange}
+                    onAskTutor={handleAskTutor}
                   />
                 ) : (
                   <EmptyState title="Aucun chapitre disponible" />

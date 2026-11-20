@@ -1,6 +1,7 @@
 from datetime import date, datetime, timedelta, timezone
 import json
 import re
+import time
 from typing import Any, Protocol
 from urllib.parse import urlparse
 import httpx
@@ -1718,15 +1719,57 @@ def _handle_ai_first_intents(
             user_message,
             re.IGNORECASE,
         )
+        missing_exam_date_note = ""
         if exam_m:
             ex_subj = exam_m.group(1).strip()
-            days_ahead = 7 if "semaine prochaine" in lowered else 3
-            exam_dt = (datetime.now(timezone.utc) + timedelta(days=days_ahead)).replace(
-                hour=9, minute=0, second=0, microsecond=0
-            )
             plan_payload["exam_title"] = f"Examen {ex_subj}"
-            plan_payload["exam_at"] = exam_dt.isoformat()
             plan_payload["focus_subject"] = ex_subj
+
+            resolved_exam_at: str | None = None
+            iso_date_m = re.search(r"\b(20\d{2}-\d{2}-\d{2})(?:[T\s](\d{1,2})[:h](\d{2}))?\b", user_message)
+            fr_date_m = re.search(r"\b(\d{1,2})/(\d{1,2})/(20\d{2})(?:\s+(?:à\s+)?(\d{1,2})[:h](\d{2}))?\b", user_message)
+            if iso_date_m:
+                try:
+                    dt_d = date.fromisoformat(iso_date_m.group(1))
+                    hr = int(iso_date_m.group(2)) if iso_date_m.group(2) is not None else 9
+                    mn = int(iso_date_m.group(3)) if iso_date_m.group(3) is not None else 0
+                    resolved_exam_at = datetime(dt_d.year, dt_d.month, dt_d.day, hr, mn, tzinfo=timezone.utc).isoformat()
+                except ValueError:
+                    resolved_exam_at = None
+            elif fr_date_m:
+                try:
+                    day_i, month_i, year_i = int(fr_date_m.group(1)), int(fr_date_m.group(2)), int(fr_date_m.group(3))
+                    hr = int(fr_date_m.group(4)) if fr_date_m.group(4) is not None else 9
+                    mn = int(fr_date_m.group(5)) if fr_date_m.group(5) is not None else 0
+                    resolved_exam_at = datetime(year_i, month_i, day_i, hr, mn, tzinfo=timezone.utc).isoformat()
+                except ValueError:
+                    resolved_exam_at = None
+
+            if resolved_exam_at is None:
+                ex_subj_low = ex_subj.lower()
+                for ev in context.schedule_events:
+                    ev_title = str(ev.get("title") or "").lower()
+                    ev_cat = str(ev.get("type") or ev.get("category") or "").lower()
+                    if ex_subj_low in ev_title and ("exam" in ev_cat or "exam" in ev_title or "partiel" in ev_title or "contrôle" in ev_title):
+                        resolved_exam_at = str(ev.get("starts_at") or "")
+                        plan_payload["exam_title"] = str(ev.get("title") or plan_payload["exam_title"])
+                        break
+            if resolved_exam_at is None:
+                ex_subj_low = ex_subj.lower()
+                for uc in context.university_courses:
+                    uc_title = str(uc.get("title") or "").lower()
+                    if ex_subj_low in uc_title and ("exam" in uc_title or "partiel" in uc_title or "contrôle" in uc_title):
+                        resolved_exam_at = str(uc.get("starts_at") or "")
+                        plan_payload["exam_title"] = str(uc.get("title") or plan_payload["exam_title"])
+                        break
+
+            if resolved_exam_at is not None:
+                plan_payload["exam_at"] = resolved_exam_at
+            else:
+                missing_exam_date_note = (
+                    f" Aucune date ou heure d'examen réelle n'étant enregistrée pour **{ex_subj}**, "
+                    "je n'ai pas inventé de date d'examen et j'ai priorisé vos révisions sur vos créneaux disponibles."
+                )
         else:
             focus_m = re.search(
                 r"(?:priorité\s+(?:sur|à)|focus\s+sur|centré\s+sur)\s+([A-Za-zÀ-ÿ0-9_+#.-]{2,40})",
@@ -1755,8 +1798,9 @@ def _handle_ai_first_intents(
         )
         lines.append(
             "J'ai préparé votre **programme d'apprentissage intelligent** en croisant votre emploi du temps fixe, "
-            "vos règles de disponibilité, vos objectifs actifs, vos tâches et votre historique de travail. "
-            "Validez ci-dessous pour l'appliquer au calendrier."
+            "vos règles de disponibilité, vos objectifs actifs, vos tâches et votre historique de travail."
+            + missing_exam_date_note
+            + " Validez ci-dessous pour l'appliquer au calendrier."
         )
         return ProviderResult(
             reply="\n\n".join(lines),
@@ -2796,6 +2840,63 @@ def _parse_int_or_none(value: Any) -> int | None:
     return None
 
 
+def _request_with_transient_retry(
+    method: str,
+    url: str,
+    *,
+    settings: Settings | None,
+    headers: dict[str, str],
+    json_body: dict[str, Any] | None = None,
+    timeout_seconds: float = 20.0,
+    max_bytes: int = MAX_AI_RESPONSE_BYTES,
+    max_attempts: int = 2,
+) -> httpx.Response:
+    """Exécute un appel HTTP sortant vers un LLM avec nouvelle tentative bornée sur erreur transitoire (502/503/504/timeout)."""
+    last_exc: Exception | None = None
+    for attempt in range(1, max(1, max_attempts) + 1):
+        try:
+            response = safe_http_request(
+                method,
+                url,
+                settings=settings,
+                headers=headers,
+                json_body=json_body,
+                timeout_seconds=timeout_seconds,
+                max_bytes=max_bytes,
+            )
+            if getattr(response, "status_code", 200) in (502, 503, 504) and attempt < max_attempts:
+                time.sleep(0.15 * attempt)
+                continue
+            response.raise_for_status()
+            return response
+        except httpx.TimeoutException as exc:
+            last_exc = exc
+            if attempt < max_attempts:
+                time.sleep(0.15 * attempt)
+                continue
+            raise AppError(
+                504,
+                "AI_PROVIDER_TIMEOUT",
+                "Le délai d'attente du fournisseur IA est dépassé. Réessayez.",
+            ) from exc
+        except httpx.HTTPStatusError as exc:
+            status_code = exc.response.status_code if exc.response is not None else 502
+            if status_code in (502, 503, 504) and attempt < max_attempts:
+                last_exc = exc
+                time.sleep(0.15 * attempt)
+                continue
+            raise
+        except httpx.TransportError as exc:
+            last_exc = exc
+            if attempt < max_attempts:
+                time.sleep(0.15 * attempt)
+                continue
+            raise
+    if last_exc is not None:
+        raise last_exc
+    raise AppError(502, "AI_PROVIDER_ERROR", "Le fournisseur IA externe est temporairement indisponible.")
+
+
 class OpenAICompatibleAIProvider:
     """Adaptateur HTTP pour fournisseur compatible OpenAI (clé conservée côté serveur, AI-04)."""
 
@@ -2836,7 +2937,7 @@ class OpenAICompatibleAIProvider:
             {"role": "user", "content": user_message},
         ]
         try:
-            response = safe_http_request(
+            response = _request_with_transient_retry(
                 "POST",
                 f"{self._base_url}/chat/completions",
                 settings=self._settings,
@@ -2852,7 +2953,6 @@ class OpenAICompatibleAIProvider:
                 timeout_seconds=self._timeout,
                 max_bytes=MAX_AI_RESPONSE_BYTES,
             )
-            response.raise_for_status()
             data = response.json()
             choices = data.get("choices") if isinstance(data, dict) else None
             if not isinstance(choices, list) or not choices:
@@ -2862,7 +2962,13 @@ class OpenAICompatibleAIProvider:
                     "Le fournisseur IA a retourné une réponse vide.",
                 )
             raw_content = (choices[0].get("message") or {}).get("content")
-            content = _extract_openai_message_text(raw_content)
+            content = _extract_openai_message_text(raw_content).strip()
+            if not content:
+                raise AppError(
+                    502,
+                    "AI_PROVIDER_EMPTY_RESPONSE",
+                    "Le fournisseur IA a retourné un contenu vide.",
+                )
             return _parse_llm_json_output(
                 content, context, self._provider_name, self._model_name
             )
@@ -2964,7 +3070,7 @@ class GeminiAIProvider:
         contents.append({"role": "user", "parts": [{"text": user_message}]})
 
         try:
-            response = safe_http_request(
+            response = _request_with_transient_retry(
                 "POST",
                 url,
                 settings=self._settings,
@@ -2983,7 +3089,6 @@ class GeminiAIProvider:
                 timeout_seconds=self._timeout,
                 max_bytes=MAX_AI_RESPONSE_BYTES,
             )
-            response.raise_for_status()
             data = response.json()
             candidates = data.get("candidates") if isinstance(data, dict) else None
             if not isinstance(candidates, list) or not candidates:
@@ -3066,7 +3171,7 @@ def fetch_provider_models(
             [
                 {
                     "id": "local-coach-v1",
-                    "label": "Local Coach v1 (déterministe, hors-ligne)",
+                    "label": "Moteur local déterministe v1 (règles métier hors-ligne, sans LLM)",
                     "owned_by": "study-os",
                     "context_window": None,
                 }
@@ -3221,9 +3326,19 @@ def build_ai_provider_from_config(
     base_url: str | None = None,
     timeout_seconds: float = 20.0,
     settings: Settings | None = None,
+    require_api_key_for_remote: bool = False,
 ) -> AIProvider:
     provider_key = canonicalize_provider_name(provider)
     cleaned_key = (api_key or "").strip()
+
+    if provider_key in ("river", "openai_compatible", "gemini") and not cleaned_key:
+        if require_api_key_for_remote:
+            raise AppError(
+                400,
+                "AI_API_KEY_REQUIRED",
+                f"Aucune clé API configurée pour le fournisseur « {provider_key} ». "
+                "Enregistrez une clé API dans Paramètres ou sélectionnez explicitement le moteur Local déterministe.",
+            )
 
     if provider_key == "river" and cleaned_key:
         return RiverAIProvider(

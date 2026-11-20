@@ -7,6 +7,8 @@ from app.schemas.courses import (
     CourseDetailResponse,
     CourseLessonProgressUpdate,
     CourseLessonResponse,
+    CourseLessonTutorAskRequest,
+    CourseLessonTutorAskResponse,
     CourseLevelRegenerateRequest,
     CoursePreviewRequest,
     CoursePreviewResponse,
@@ -115,6 +117,21 @@ def update_course_lesson_progress(
     course_service: CourseService = Depends(get_course_service),
 ) -> CourseLessonResponse:
     return course_service.update_lesson_progress(user_id, course_id, lesson_id, payload)
+
+
+@router.post(
+    "/{course_id}/lessons/{lesson_id}/ask",
+    response_model=CourseLessonTutorAskResponse,
+    summary="Poser une question interactive au tuteur IA sur l'étape active du chapitre",
+)
+def ask_course_lesson_tutor(
+    course_id: UUID,
+    lesson_id: UUID,
+    payload: CourseLessonTutorAskRequest,
+    user_id: UUID = Depends(get_current_user_id),
+    course_service: CourseService = Depends(get_course_service),
+) -> CourseLessonTutorAskResponse:
+    return course_service.ask_lesson_tutor(user_id, course_id, lesson_id, payload)
 
 
 @router.post(

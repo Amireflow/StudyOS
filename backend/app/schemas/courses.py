@@ -152,7 +152,36 @@ class CourseUpdate(BaseModel):
 
 
 class CourseLessonProgressUpdate(BaseModel):
-    status: CourseLessonStatus
+    status: CourseLessonStatus | None = None
+    current_step_index: int | None = Field(default=None, ge=0, le=25)
+
+
+class CourseTutorMessage(BaseModel):
+    id: str
+    role: Literal["user", "assistant"]
+    content: str
+    quick_action: str | None = None
+    step_index: int = 0
+    follow_up_prompts: list[str] = Field(default_factory=list)
+    created_at: str
+
+
+class CourseLessonTutorAskRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    message: str
+    quick_action: Literal["simplify", "example", "quiz", "custom"] | None = None
+    step_index: int = Field(default=0, ge=0, le=25)
+    step_title: str | None = Field(default=None, max_length=200)
+    step_content: str | None = Field(default=None, max_length=6000)
+
+    @field_validator("message")
+    @classmethod
+    def validate_message(cls, value: str) -> str:
+        cleaned = value.strip()
+        if len(cleaned) < 1 or len(cleaned) > 3000:
+            raise ValueError("Votre question au tuteur doit contenir entre 1 et 3000 caractères.")
+        return cleaned
 
 
 class CourseResourceCreate(BaseModel):
@@ -247,10 +276,18 @@ class CourseLessonResponse(BaseModel):
     content_markdown: str
     code_examples: list[CourseCodeExample] = Field(default_factory=list)
     exercises: list[CourseExercise] = Field(default_factory=list)
+    tutor_messages: list[CourseTutorMessage] = Field(default_factory=list)
+    current_step_index: int = 0
     status: CourseLessonStatus
     completed_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
+
+
+class CourseLessonTutorAskResponse(BaseModel):
+    user_message: CourseTutorMessage
+    assistant_message: CourseTutorMessage
+    lesson: CourseLessonResponse
 
 
 class CourseResourceResponse(BaseModel):

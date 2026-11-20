@@ -281,6 +281,18 @@ def is_university_course_event(event: ScheduleEventRecord) -> bool:
     )
 
 
+def _parse_hhmm_to_time(hhmm: str | None, fallback: time) -> time:
+    if not hhmm:
+        return fallback
+    parts = str(hhmm).strip().split(":")
+    try:
+        h = max(0, min(23, int(parts[0])))
+        m = max(0, min(59, int(parts[1]))) if len(parts) > 1 else 0
+        return time(h, m)
+    except (ValueError, IndexError):
+        return fallback
+
+
 def compute_day_availability_plan(
     *,
     day_date: date,
@@ -290,13 +302,14 @@ def compute_day_availability_plan(
     study_start_hour: int = 8,
     study_end_hour: int = 21,
     excluded_days: set[int] | None = None,
+    availability_rules: list[Any] | None = None,
 ) -> dict[str, Any]:
     """
     Calcule pour une journée donnée :
     - Les cours universitaires (verrouillés)
-    - Les séances personnelles déjà planifiées
+    - Les séances personnelles déjà planifiées et indisponibilités / pauses
     - Les périodes libres réelles (en respectant une pause de 20 min autour des cours et la pause déjeuner 12:30-13:30)
-    - Jusqu'à 3 créneaux de travail recommandés (60 à 90 min max chacun) afin de ne pas transformer chaque minute libre en travail.
+    - Jusqu'à 3 créneaux de travail recommandés (60 à 90 min max chacun) en privilégiant les disponibilités confirmées.
     """
     window_start = datetime.combine(day_date, time(study_start_hour, 0), tzinfo=tz)
     window_end = datetime.combine(
@@ -331,12 +344,45 @@ def compute_day_availability_plan(
 
     uni_courses: list[dict[str, Any]] = []
     personal_blocks: list[dict[str, Any]] = []
+    confirmed_availabilities: list[dict[str, Any]] = []
     busy_intervals: list[tuple[datetime, datetime]] = []
 
     # Pause déjeuner préservée par défaut (12:30 - 13:30)
     lunch_start = datetime.combine(day_date, time(12, 30), tzinfo=tz)
     lunch_end = datetime.combine(day_date, time(13, 30), tzinfo=tz)
     busy_intervals.append((lunch_start, lunch_end))
+
+    for rule in availability_rules or []:
+        if not getattr(rule, "active", getattr(rule, "is_active", True)):
+            continue
+        r_dow = getattr(rule, "day_of_week", None)
+        r_spec = getattr(rule, "specific_date", None)
+        if r_spec is not None and r_spec != day_date:
+            continue
+        if r_spec is None and r_dow is not None and int(r_dow) != day_date.weekday():
+            continue
+        r_type_raw = getattr(rule, "rule_type", "")
+        r_type = r_type_raw.value if hasattr(r_type_raw, "value") else str(r_type_raw)
+        t_start = _parse_hhmm_to_time(getattr(rule, "start_time", "09:00"), time(9, 0))
+        t_end = _parse_hhmm_to_time(getattr(rule, "end_time", "10:30"), time(10, 30))
+        dt_start = datetime.combine(day_date, t_start, tzinfo=tz)
+        dt_end = datetime.combine(day_date, t_end, tzinfo=tz)
+        if dt_end <= dt_start:
+            continue
+        rule_item = {
+            "id": str(getattr(rule, "id", "")),
+            "title": getattr(rule, "label", None) or getattr(rule, "title", "Règle de disponibilité"),
+            "rule_type": r_type,
+            "local_start_time": dt_start.strftime("%H:%M"),
+            "local_end_time": dt_end.strftime("%H:%M"),
+            "starts_at": dt_start.astimezone(timezone.utc).isoformat(),
+            "ends_at": dt_end.astimezone(timezone.utc).isoformat(),
+        }
+        if r_type in ("personal_unavailability", "recovery_time"):
+            personal_blocks.append(rule_item)
+            busy_intervals.append((dt_start, dt_end))
+        elif r_type == "confirmed_availability":
+            confirmed_availabilities.append(rule_item)
 
     for ev in day_events:
         ev_start_local = ev.starts_at.astimezone(tz)
@@ -456,6 +502,7 @@ def compute_day_availability_plan(
         "is_excluded_day": is_excluded_day,
         "university_courses": uni_courses,
         "personal_blocks": personal_blocks,
+        "confirmed_availabilities": confirmed_availabilities,
         "free_periods": free_periods,
         "recommended_study_windows": recommended_windows,
         "pause_policy": "Pause déjeuner (12:30 à 13:30) et marges de récupération (15 à 20 min autour des cours) préservées.",
@@ -478,6 +525,7 @@ class ContextBuilder:
         course_repo: SqlCourseRepository | None = None,
         goal_repo: Any | None = None,
         ai_memory_repo: SqlAiMemoryRepository | None = None,
+        planning_repo: Any | None = None,
     ) -> None:
         self._profile_service = profile_service
         self._task_repo = task_repo
@@ -489,6 +537,7 @@ class ContextBuilder:
         self._course_repo = course_repo
         self._goal_repo = goal_repo
         self._ai_memory_repo = ai_memory_repo
+        self._planning_repo = planning_repo
 
     def build_context(
         self,
@@ -556,311 +605,321 @@ class ContextBuilder:
         study_end_hour = int(avail_prefs["study_end_hour"])
         max_daily_study_minutes = int(avail_prefs["max_daily_study_minutes"])
         excluded_days_set = set(avail_prefs["excluded_days"])
-
-        if "schedule" in scopes or "today" in scopes or "weekly" in scopes:
-            all_events = self._schedule_repo.list_by_user(user_id)
-            relevant_events = [
-                e
-                for e in all_events
-                if e.ends_at >= ref_now - timedelta(hours=24)
-                and e.starts_at <= ref_now + timedelta(days=21)
-            ]
-            relevant_events.sort(key=lambda item: item.starts_at)
-            if not relevant_events:
-                missing_data.append("Aucun créneau planifié sur la période.")
-
-            for e in relevant_events[:MAX_CONTEXT_EVENTS]:
-                local_s = e.starts_at.astimezone(tz)
-                local_e = e.ends_at.astimezone(tz)
-                is_uni = is_university_course_event(e)
-                ev_dict = {
-                    "id": str(e.id),
-                    "title": e.title,
-                    "type": e.type.value,
-                    "source": e.source.value,
-                    "is_university_course": is_uni,
-                    "session_subtype": e.session_subtype,
-                    "teacher": e.teacher,
-                    "room": e.room,
-                    "group_name": e.group_name,
-                    "starts_at": e.starts_at.isoformat(),
-                    "ends_at": e.ends_at.isoformat(),
-                    "local_date": local_s.date().isoformat(),
-                    "local_start_time": local_s.strftime("%H:%M"),
-                    "local_end_time": local_e.strftime("%H:%M"),
-                    "is_today": local_s.date() == today_date or local_e.date() == today_date,
-                    "is_tomorrow": local_s.date() == tomorrow_date,
-                }
-                schedule_payload.append(ev_dict)
-                if is_uni:
-                    university_courses_payload.append(ev_dict)
-
-            today_plan = compute_day_availability_plan(
-                day_date=today_date,
-                all_events=all_events,
-                tz=tz,
-                now_utc=ref_now,
-                study_start_hour=study_start_hour,
-                study_end_hour=study_end_hour,
-                excluded_days=excluded_days_set,
-            )
-            tomorrow_plan = compute_day_availability_plan(
-                day_date=tomorrow_date,
-                all_events=all_events,
-                tz=tz,
-                now_utc=ref_now,
-                study_start_hour=study_start_hour,
-                study_end_hour=study_end_hour,
-                excluded_days=excluded_days_set,
-            )
-
-            days_summary: list[dict[str, Any]] = []
-            for offset in range(21):
-                day_date = today_date + timedelta(days=offset)
-                day_start_utc = datetime.combine(day_date, time(0, 0), tzinfo=tz).astimezone(
-                    timezone.utc
-                )
-                day_end_utc = day_start_utc + timedelta(days=1)
-                day_events_list = [
-                    ev
-                    for ev in all_events
-                    if ev.ends_at > day_start_utc and ev.starts_at < day_end_utc
-                ]
-                day_minutes = 0
-                for ev in day_events_list:
-                    clipped_start = max(ev.starts_at, day_start_utc)
-                    clipped_end = min(ev.ends_at, day_end_utc)
-                    dur_min = max(0, round((clipped_end - clipped_start).total_seconds() / 60))
-                    day_minutes += dur_min
-                    if offset < 7:
-                        weekly_scheduled_minutes += dur_min
-                        if is_university_course_event(ev):
-                            weekly_course_minutes += dur_min
-                        else:
-                            weekly_personal_minutes += dur_min
-
-                day_plan = (
-                    today_plan
-                    if offset == 0
-                    else (
-                        tomorrow_plan
-                        if offset == 1
-                        else compute_day_availability_plan(
-                            day_date=day_date,
-                            all_events=all_events,
-                            tz=tz,
-                            now_utc=ref_now,
-                            study_start_hour=study_start_hour,
-                            study_end_hour=study_end_hour,
-                            excluded_days=excluded_days_set,
-                        )
-                    )
-                )
-                rec_windows = day_plan.get("recommended_study_windows") or []
-                if day_minutes >= max_daily_study_minutes:
-                    allowed_windows: list[dict[str, Any]] = []
-                elif day_minutes >= round(max_daily_study_minutes * 0.7):
-                    allowed_windows = rec_windows[:1]
-                else:
-                    allowed_windows = rec_windows
-
-                day_idx = day_date.weekday()
-                day_name = DAY_NAMES_FR[day_idx]
-                for win in allowed_windows:
-                    slot_item = {
-                        "day_of_week": day_idx,
-                        "day_label": day_name,
-                        "local_date": day_date.isoformat(),
-                        "week_index": offset // 7,
-                        "local_start_time": win["local_start_time"],
-                        "local_end_time": win["local_end_time"],
-                        "starts_at": win["starts_at"],
-                        "ends_at": win["ends_at"],
-                        "duration_minutes": win["duration_minutes"],
-                    }
-                    multi_week_candidate_slots.append(slot_item)
-                    if offset < 7:
-                        weekly_candidate_slots.append(slot_item)
-
-                if offset < 7:
-                    days_summary.append(
-                        {
-                            "date": day_date.isoformat(),
-                            "day_label": day_name,
-                            "scheduled_minutes": day_minutes,
-                            "university_courses_count": len(
-                                day_plan.get("university_courses") or []
-                            ),
-                            "candidate_slots_count": len(allowed_windows),
-                        }
-                    )
-
-            availability_payload = {
-                "preferences": avail_prefs,
-                "today": today_plan,
-                "tomorrow": tomorrow_plan,
-                "weekly_candidate_slots": weekly_candidate_slots,
-                "multi_week_candidate_slots": multi_week_candidate_slots,
-                "days_summary": days_summary,
+        availability_rules: list[Any] = (
+            self._planning_repo.list_availability_rules(user_id, active_only=True)
+            if self._planning_repo is not None
+            else []
+        )
+        rules_payload = [
+            {
+                "id": str(r.id),
+                "rule_type": r.rule_type.value if hasattr(r.rule_type, "value") else str(r.rule_type),
+                "title": getattr(r, "label", None) or getattr(r, "title", "Règle"),
+                "day_of_week": r.day_of_week,
+                "specific_date": r.specific_date.isoformat() if getattr(r, "specific_date", None) else None,
+                "start_time": r.start_time,
+                "end_time": r.end_time,
+                "preference_weight": getattr(r, "preference_weight", 1),
             }
+            for r in availability_rules[:30]
+        ]
+
+        all_events = self._schedule_repo.list_by_user(user_id)
+        relevant_events = [
+            e
+            for e in all_events
+            if e.ends_at >= ref_now - timedelta(hours=24)
+            and e.starts_at <= ref_now + timedelta(days=21)
+        ]
+        relevant_events.sort(key=lambda item: item.starts_at)
+        if not relevant_events and ("schedule" in scopes or "today" in scopes or "weekly" in scopes):
+            missing_data.append("Aucun créneau planifié sur la période.")
+
+        for e in relevant_events[:MAX_CONTEXT_EVENTS]:
+            local_s = e.starts_at.astimezone(tz)
+            local_e = e.ends_at.astimezone(tz)
+            is_uni = is_university_course_event(e)
+            ev_dict = {
+                "id": str(e.id),
+                "title": e.title,
+                "type": e.type.value,
+                "source": e.source.value,
+                "is_university_course": is_uni,
+                "session_subtype": e.session_subtype,
+                "teacher": e.teacher,
+                "room": e.room,
+                "group_name": e.group_name,
+                "starts_at": e.starts_at.isoformat(),
+                "ends_at": e.ends_at.isoformat(),
+                "local_date": local_s.date().isoformat(),
+                "local_start_time": local_s.strftime("%H:%M"),
+                "local_end_time": local_e.strftime("%H:%M"),
+                "is_today": local_s.date() == today_date or local_e.date() == today_date,
+                "is_tomorrow": local_s.date() == tomorrow_date,
+            }
+            schedule_payload.append(ev_dict)
+            if is_uni:
+                university_courses_payload.append(ev_dict)
+
+        today_plan = compute_day_availability_plan(
+            day_date=today_date,
+            all_events=all_events,
+            tz=tz,
+            now_utc=ref_now,
+            study_start_hour=study_start_hour,
+            study_end_hour=study_end_hour,
+            excluded_days=excluded_days_set,
+            availability_rules=availability_rules,
+        )
+        tomorrow_plan = compute_day_availability_plan(
+            day_date=tomorrow_date,
+            all_events=all_events,
+            tz=tz,
+            now_utc=ref_now,
+            study_start_hour=study_start_hour,
+            study_end_hour=study_end_hour,
+            excluded_days=excluded_days_set,
+            availability_rules=availability_rules,
+        )
+
+        days_summary: list[dict[str, Any]] = []
+        for offset in range(21):
+            day_date = today_date + timedelta(days=offset)
+            day_start_utc = datetime.combine(day_date, time(0, 0), tzinfo=tz).astimezone(
+                timezone.utc
+            )
+            day_end_utc = day_start_utc + timedelta(days=1)
+            day_events_list = [
+                ev
+                for ev in all_events
+                if ev.ends_at > day_start_utc and ev.starts_at < day_end_utc
+            ]
+            day_minutes = 0
+            for ev in day_events_list:
+                clipped_start = max(ev.starts_at, day_start_utc)
+                clipped_end = min(ev.ends_at, day_end_utc)
+                dur_min = max(0, round((clipped_end - clipped_start).total_seconds() / 60))
+                day_minutes += dur_min
+                if offset < 7:
+                    weekly_scheduled_minutes += dur_min
+                    if is_university_course_event(ev):
+                        weekly_course_minutes += dur_min
+                    else:
+                        weekly_personal_minutes += dur_min
+
+            day_plan = (
+                today_plan
+                if offset == 0
+                else (
+                    tomorrow_plan
+                    if offset == 1
+                    else compute_day_availability_plan(
+                        day_date=day_date,
+                        all_events=all_events,
+                        tz=tz,
+                        now_utc=ref_now,
+                        study_start_hour=study_start_hour,
+                        study_end_hour=study_end_hour,
+                        excluded_days=excluded_days_set,
+                        availability_rules=availability_rules,
+                    )
+                )
+            )
+            rec_windows = day_plan.get("recommended_study_windows") or []
+            if day_minutes >= max_daily_study_minutes:
+                allowed_windows: list[dict[str, Any]] = []
+            elif day_minutes >= round(max_daily_study_minutes * 0.7):
+                allowed_windows = rec_windows[:1]
+            else:
+                allowed_windows = rec_windows
+
+            day_idx = day_date.weekday()
+            day_name = DAY_NAMES_FR[day_idx]
+            for win in allowed_windows:
+                slot_item = {
+                    "day_of_week": day_idx,
+                    "day_label": day_name,
+                    "local_date": day_date.isoformat(),
+                    "week_index": offset // 7,
+                    "local_start_time": win["local_start_time"],
+                    "local_end_time": win["local_end_time"],
+                    "starts_at": win["starts_at"],
+                    "ends_at": win["ends_at"],
+                    "duration_minutes": win["duration_minutes"],
+                }
+                multi_week_candidate_slots.append(slot_item)
+                if offset < 7:
+                    weekly_candidate_slots.append(slot_item)
+
+            if offset < 7:
+                days_summary.append(
+                    {
+                        "date": day_date.isoformat(),
+                        "day_label": day_name,
+                        "scheduled_minutes": day_minutes,
+                        "university_courses_count": len(
+                            day_plan.get("university_courses") or []
+                        ),
+                        "candidate_slots_count": len(allowed_windows),
+                    }
+                )
+
+        availability_payload = {
+            "preferences": avail_prefs,
+            "rules": rules_payload,
+            "today": today_plan,
+            "tomorrow": tomorrow_plan,
+            "weekly_candidate_slots": weekly_candidate_slots,
+            "multi_week_candidate_slots": multi_week_candidate_slots,
+            "days_summary": days_summary,
+        }
 
         learning_payload: dict[str, Any] = {}
         courses_payload: list[dict[str, Any]] = []
         active_learning_paths_count = 0
-        if "learning" in scopes or "weekly" in scopes or "today" in scopes or "schedule" in scopes:
-            if self._course_repo is not None:
-                user_courses = self._course_repo.list_courses(user_id)
-                user_courses.sort(
-                    key=lambda c: (0 if c.status.value == "active" else 1, c.updated_at),
-                )
-                all_course_lessons = self._course_repo.list_lessons(user_id)
-                lessons_by_course: dict[UUID, list[Any]] = {}
-                for l in all_course_lessons:
-                    lessons_by_course.setdefault(l.course_id, []).append(l)
-
-                for c in user_courses[:MAX_CONTEXT_COURSES]:
-                    c_lessons = sorted(
-                        lessons_by_course.get(c.id, []),
-                        key=lambda item: item.position,
-                    )
-                    done_cnt = sum(1 for item in c_lessons if item.status.value == "completed")
-                    next_incomplete = next(
-                        (
-                            {"id": str(item.id), "title": item.title, "position": item.position}
-                            for item in c_lessons
-                            if item.status.value != "completed"
-                        ),
-                        None,
-                    )
-                    courses_payload.append(
-                        {
-                            "id": str(c.id),
-                            "title": c.title,
-                            "subject": c.subject,
-                            "current_level": c.current_level,
-                            "total_levels": c.total_levels,
-                            "status": c.status.value,
-                            "completed_lessons_count": done_cnt,
-                            "total_lessons_count": len(c_lessons),
-                            "next_incomplete_lesson": next_incomplete,
-                        }
-                    )
-            paths = self._learning_repo.list_paths(user_id)
-            modules = self._learning_repo.list_modules(user_id)
-            lessons = self._learning_repo.list_lessons(user_id)
-            if not paths and "learning" in scopes and not courses_payload:
-                missing_data.append("Aucun parcours d’apprentissage enregistré.")
-            completed_lessons = sum(1 for l in lessons if l.status.value == "completed")
-            active_learning_paths_count = sum(
-                1 for p in paths if p.status == LearningStatus.active
+        if self._course_repo is not None:
+            user_courses = self._course_repo.list_courses(user_id)
+            user_courses.sort(
+                key=lambda c: (0 if c.status.value == "active" else 1, c.updated_at),
             )
-            learning_payload = {
-                "paths": [
+            all_course_lessons = self._course_repo.list_lessons(user_id)
+            lessons_by_course: dict[UUID, list[Any]] = {}
+            for l in all_course_lessons:
+                lessons_by_course.setdefault(l.course_id, []).append(l)
+
+            for c in user_courses[:MAX_CONTEXT_COURSES]:
+                c_lessons = sorted(
+                    lessons_by_course.get(c.id, []),
+                    key=lambda item: item.position,
+                )
+                done_cnt = sum(1 for item in c_lessons if item.status.value == "completed")
+                next_incomplete = next(
+                    (
+                        {"id": str(item.id), "title": item.title, "position": item.position}
+                        for item in c_lessons
+                        if item.status.value != "completed"
+                    ),
+                    None,
+                )
+                courses_payload.append(
                     {
-                        "id": str(p.id),
-                        "title": p.title,
-                        "goal": p.goal,
-                        "status": p.status.value,
+                        "id": str(c.id),
+                        "title": c.title,
+                        "subject": c.subject,
+                        "current_level": c.current_level,
+                        "total_levels": c.total_levels,
+                        "status": c.status.value,
+                        "completed_lessons_count": done_cnt,
+                        "total_lessons_count": len(c_lessons),
+                        "next_incomplete_lesson": next_incomplete,
                     }
-                    for p in paths[:MAX_CONTEXT_PATHS]
-                ],
-                "active_modules": [
-                    {"id": str(m.id), "title": m.title, "status": m.status.value}
-                    for m in modules[:MAX_CONTEXT_PATHS]
-                ],
-                "lessons_completed": completed_lessons,
-                "lessons_total": len(lessons),
-            }
+                )
+        paths = self._learning_repo.list_paths(user_id)
+        modules = self._learning_repo.list_modules(user_id)
+        lessons = self._learning_repo.list_lessons(user_id)
+        if not paths and "learning" in scopes and not courses_payload:
+            missing_data.append("Aucun parcours d’apprentissage enregistré.")
+        completed_lessons = sum(1 for l in lessons if l.status.value == "completed")
+        active_learning_paths_count = sum(
+            1 for p in paths if p.status == LearningStatus.active
+        )
+        learning_payload = {
+            "paths": [
+                {
+                    "id": str(p.id),
+                    "title": p.title,
+                    "goal": p.goal,
+                    "status": p.status.value,
+                }
+                for p in paths[:MAX_CONTEXT_PATHS]
+            ],
+            "active_modules": [
+                {"id": str(m.id), "title": m.title, "status": m.status.value}
+                for m in modules[:MAX_CONTEXT_PATHS]
+            ],
+            "lessons_completed": completed_lessons,
+            "lessons_total": len(lessons),
+        }
 
         skills_payload: list[dict[str, Any]] = []
         approved_assessments_count = 0
         pending_assessments_count = 0
         needs_reinforcement_count = 0
-        if "skills" in scopes or "learning" in scopes or "weekly" in scopes:
-            skills = self._skill_repo.list_skills(user_id)
-            evidence = self._skill_repo.list_evidence(user_id)
-            assessments = self._skill_repo.list_assessments(user_id)
-            ev_count_by_skill: dict[UUID, int] = {}
-            for ev in evidence:
-                ev_count_by_skill[ev.skill_id] = ev_count_by_skill.get(ev.skill_id, 0) + 1
-            assessments_by_skill: dict[UUID, list[Any]] = {}
-            for item in assessments:
-                assessments_by_skill.setdefault(item.skill_id, []).append(item)
-                if item.status.value == "approved":
-                    approved_assessments_count += 1
-                elif item.status.value in ("pending", "submitted", "evaluated"):
-                    pending_assessments_count += 1
-                if item.status.value == "rejected" or item.passed is False:
-                    needs_reinforcement_count += 1
-            for items in assessments_by_skill.values():
-                items.sort(key=lambda a: a.created_at, reverse=True)
+        skills = self._skill_repo.list_skills(user_id)
+        evidence = self._skill_repo.list_evidence(user_id)
+        assessments = self._skill_repo.list_assessments(user_id)
+        ev_count_by_skill: dict[UUID, int] = {}
+        for ev in evidence:
+            ev_count_by_skill[ev.skill_id] = ev_count_by_skill.get(ev.skill_id, 0) + 1
+        assessments_by_skill: dict[UUID, list[Any]] = {}
+        for item in assessments:
+            assessments_by_skill.setdefault(item.skill_id, []).append(item)
+            if item.status.value == "approved":
+                approved_assessments_count += 1
+            elif item.status.value in ("pending", "submitted", "evaluated"):
+                pending_assessments_count += 1
+            if item.status.value == "rejected" or item.passed is False:
+                needs_reinforcement_count += 1
+        for items in assessments_by_skill.values():
+            items.sort(key=lambda a: a.created_at, reverse=True)
 
-            if not skills and "skills" in scopes:
-                missing_data.append("Aucune compétence enregistrée.")
-            for s in skills[:MAX_CONTEXT_SKILLS]:
-                skill_assessments = assessments_by_skill.get(s.id, [])
-                latest = skill_assessments[0] if skill_assessments else None
-                skills_payload.append(
-                    {
-                        "id": str(s.id),
-                        "name": s.name,
-                        "domain": s.domain,
-                        "current_level": s.current_level,
-                        "target_level": s.target_level,
-                        "evidence_count": ev_count_by_skill.get(s.id, 0),
-                        "assessments_count": len(skill_assessments),
-                        "latest_assessment_id": str(latest.id) if latest else None,
-                        "latest_assessment_status": latest.status.value if latest else None,
-                        "latest_assessment_passed": latest.passed if latest else None,
-                        "latest_assessment_score": latest.score if latest else None,
-                        "latest_assessment_proposed_level": (
-                            latest.proposed_level if latest else None
-                        ),
-                        "latest_assessment_evidence_ids": (
-                            list(latest.evidence_ids) if latest else []
-                        ),
-                        "latest_gaps": list(latest.gaps_identified) if latest else [],
-                    }
-                )
+        if not skills and "skills" in scopes:
+            missing_data.append("Aucune compétence enregistrée.")
+        for s in skills[:MAX_CONTEXT_SKILLS]:
+            skill_assessments = assessments_by_skill.get(s.id, [])
+            latest = skill_assessments[0] if skill_assessments else None
+            skills_payload.append(
+                {
+                    "id": str(s.id),
+                    "name": s.name,
+                    "domain": s.domain,
+                    "current_level": s.current_level,
+                    "target_level": s.target_level,
+                    "evidence_count": ev_count_by_skill.get(s.id, 0),
+                    "assessments_count": len(skill_assessments),
+                    "latest_assessment_id": str(latest.id) if latest else None,
+                    "latest_assessment_status": latest.status.value if latest else None,
+                    "latest_assessment_passed": latest.passed if latest else None,
+                    "latest_assessment_score": latest.score if latest else None,
+                    "latest_assessment_proposed_level": (
+                        latest.proposed_level if latest else None
+                    ),
+                    "latest_assessment_evidence_ids": (
+                        list(latest.evidence_ids) if latest else []
+                    ),
+                    "latest_gaps": list(latest.gaps_identified) if latest else [],
+                }
+            )
 
         projects_payload: list[dict[str, Any]] = []
         active_projects_count = 0
-        if "projects" in scopes or "today" in scopes or "weekly" in scopes:
-            projects = self._project_repo.list_projects(user_id)
-            if not projects and "projects" in scopes:
-                missing_data.append("Aucun projet enregistré.")
-            status_order = {
-                ProjectStatus.active: 0,
-                ProjectStatus.paused: 1,
-                ProjectStatus.planned: 2,
-                ProjectStatus.blocked: 3,
-                ProjectStatus.completed: 4,
-                ProjectStatus.archived: 5,
+        projects = self._project_repo.list_projects(user_id)
+        if not projects and "projects" in scopes:
+            missing_data.append("Aucun projet enregistré.")
+        status_order = {
+            ProjectStatus.active: 0,
+            ProjectStatus.paused: 1,
+            ProjectStatus.planned: 2,
+            ProjectStatus.blocked: 3,
+            ProjectStatus.completed: 4,
+            ProjectStatus.archived: 5,
+        }
+        projects.sort(key=lambda p: (status_order.get(p.status, 9), p.updated_at))
+        active_projects_count = sum(1 for p in projects if p.status == ProjectStatus.active)
+        projects_payload = [
+            {
+                "id": str(p.id),
+                "name": p.name,
+                "goal": p.goal,
+                "status": p.status.value,
+                "priority": p.priority.value,
+                "next_action": p.next_action,
             }
-            projects.sort(key=lambda p: (status_order.get(p.status, 9), p.updated_at))
-            active_projects_count = sum(1 for p in projects if p.status == ProjectStatus.active)
-            projects_payload = [
-                {
-                    "id": str(p.id),
-                    "name": p.name,
-                    "goal": p.goal,
-                    "status": p.status.value,
-                    "priority": p.priority.value,
-                    "next_action": p.next_action,
-                }
-                for p in projects[:MAX_CONTEXT_PROJECTS]
-            ]
+            for p in projects[:MAX_CONTEXT_PROJECTS]
+        ]
 
         personal_goals_payload: list[dict[str, Any]] = []
-        if self._goal_repo is not None and (
-            "goals" in scopes
-            or "learning" in scopes
-            or "projects" in scopes
-            or "skills" in scopes
-            or "today" in scopes
-            or "weekly" in scopes
-            or "schedule" in scopes
-        ):
+        if self._goal_repo is not None:
             raw_goals = self._goal_repo.list_goals(user_id)
             raw_goals.sort(
                 key=lambda g: (

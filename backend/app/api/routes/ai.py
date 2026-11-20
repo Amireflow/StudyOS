@@ -118,7 +118,7 @@ def create_conversation(
 @router.get(
     "/conversations/{conversation_id}",
     response_model=AiConversationDetailResponse,
-    summary="Lire une conversation IA avec ses messages et propositions",
+    summary="Lire une conversation IA avec ses messages et propositions (lecture pure sans effet de bord)",
 )
 def get_conversation(
     conversation_id: UUID,
@@ -126,6 +126,19 @@ def get_conversation(
     orchestrator: AIOrchestrator = Depends(get_ai_orchestrator),
 ) -> AiConversationDetailResponse:
     return orchestrator.get_conversation_detail(user_id, conversation_id)
+
+
+@router.post(
+    "/conversations/{conversation_id}/repair",
+    response_model=AiConversationDetailResponse,
+    summary="Réparer et normaliser de manière idempotente l'historique d'une conversation IA",
+)
+def repair_conversation(
+    conversation_id: UUID,
+    user_id: UUID = Depends(get_current_user_id),
+    orchestrator: AIOrchestrator = Depends(get_ai_orchestrator),
+) -> AiConversationDetailResponse:
+    return orchestrator.repair_conversation(user_id, conversation_id)
 
 
 @router.delete(

@@ -51,16 +51,25 @@ export async function apiRequest<T>(path: string, options: ApiRequestOptions = {
   const normalizedPath = path.startsWith('/') ? path : `/${path}`;
   const url = `${env.VITE_API_BASE_URL}${normalizedPath}`;
 
-  const response = await fetch(url, {
-    ...rest,
-    credentials: rest.credentials ?? 'include',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
-      ...headers,
-    },
-    body: body !== undefined ? JSON.stringify(body) : undefined,
-  });
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      ...rest,
+      credentials: rest.credentials ?? 'include',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+        ...headers,
+      },
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+    });
+  } catch {
+    throw new ApiError(
+      0,
+      'NETWORK_ERROR',
+      'Connexion au serveur impossible. Vérifiez votre connexion réseau et réessayez.',
+    );
+  }
 
   if (
     response.status === 401 &&

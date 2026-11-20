@@ -17,6 +17,8 @@ import type {
   CourseSubmissionKind,
   CourseSubmissionStatus,
   CourseSummary,
+  CourseTutorMessage,
+  CourseTutorQuickAction,
 } from '../types/domain';
 import { apiRequest } from './api-client';
 
@@ -55,6 +57,16 @@ interface ApiCourseCriterionResult {
   feedback: string;
 }
 
+interface ApiCourseTutorMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  quick_action?: CourseTutorQuickAction | string | null;
+  step_index?: number;
+  follow_up_prompts?: string[];
+  created_at: string;
+}
+
 interface ApiCourseLesson {
   id: string;
   user_id: string;
@@ -67,10 +79,18 @@ interface ApiCourseLesson {
   content_markdown: string;
   code_examples: ApiCourseCodeExample[];
   exercises: ApiCourseExercise[];
+  tutor_messages?: ApiCourseTutorMessage[];
+  current_step_index?: number;
   status: CourseLessonStatus;
   completed_at: string | null;
   created_at: string;
   updated_at: string;
+}
+
+interface ApiCourseLessonTutorAskResponse {
+  user_message: ApiCourseTutorMessage;
+  assistant_message: ApiCourseTutorMessage;
+  lesson: ApiCourseLesson;
 }
 
 interface ApiCourseResource {
@@ -305,6 +325,18 @@ function mapCriterionResult(dto: ApiCourseCriterionResult): CourseCriterionResul
   };
 }
 
+function mapTutorMessage(dto: ApiCourseTutorMessage): CourseTutorMessage {
+  return {
+    id: dto.id,
+    role: dto.role,
+    content: dto.content,
+    quickAction: dto.quick_action ?? null,
+    stepIndex: dto.step_index ?? 0,
+    followUpPrompts: dto.follow_up_prompts ?? [],
+    createdAt: dto.created_at,
+  };
+}
+
 function mapLesson(dto: ApiCourseLesson): CourseLesson {
   return {
     id: dto.id,
@@ -318,6 +350,8 @@ function mapLesson(dto: ApiCourseLesson): CourseLesson {
     contentMarkdown: dto.content_markdown,
     codeExamples: (dto.code_examples ?? []).map(mapCodeExample),
     exercises: (dto.exercises ?? []).map(mapExercise),
+    tutorMessages: (dto.tutor_messages ?? []).map(mapTutorMessage),
+    currentStepIndex: dto.current_step_index ?? 0,
     status: dto.status,
     completedAt: dto.completed_at ?? null,
     createdAt: dto.created_at,
@@ -556,18 +590,63 @@ export async function deleteCourseApi(accessToken: string, courseId: string): Pr
   });
 }
 
+export interface CourseLessonTutorAskInput {
+  message: string;
+  quickAction?: CourseTutorQuickAction | null;
+  stepIndex?: number;
+  stepTitle?: string | null;
+  stepContent?: string | null;
+}
+
+export interface CourseLessonTutorAskResult {
+  userMessage: CourseTutorMessage;
+  assistantMessage: CourseTutorMessage;
+  lesson: CourseLesson;
+}
+
 export async function updateCourseLessonStatusApi(
   accessToken: string,
   courseId: string,
   lessonId: string,
-  status: CourseLessonStatus,
+  status?: CourseLessonStatus,
+  currentStepIndex?: number,
 ): Promise<CourseLesson> {
+  const body: Record<string, unknown> = {};
+  if (status !== undefined) body.status = status;
+  if (currentStepIndex !== undefined) body.current_step_index = currentStepIndex;
   const dto = await apiRequest<ApiCourseLesson>(`/courses/${courseId}/lessons/${lessonId}`, {
     method: 'PATCH',
     accessToken,
-    body: { status },
+    body,
   });
   return mapLesson(dto);
+}
+
+export async function askCourseLessonTutorApi(
+  accessToken: string,
+  courseId: string,
+  lessonId: string,
+  input: CourseLessonTutorAskInput,
+): Promise<CourseLessonTutorAskResult> {
+  const dto = await apiRequest<ApiCourseLessonTutorAskResponse>(
+    `/courses/${courseId}/lessons/${lessonId}/ask`,
+    {
+      method: 'POST',
+      accessToken,
+      body: {
+        message: input.message.trim(),
+        quick_action: input.quickAction ?? null,
+        step_index: input.stepIndex ?? 0,
+        step_title: input.stepTitle?.trim() || null,
+        step_content: input.stepContent?.trim() || null,
+      },
+    },
+  );
+  return {
+    userMessage: mapTutorMessage(dto.user_message),
+    assistantMessage: mapTutorMessage(dto.assistant_message),
+    lesson: mapLesson(dto.lesson),
+  };
 }
 
 export async function createCourseResourceApi(

@@ -2171,11 +2171,53 @@ export function installMockStudyApi(seed: MockStudyApiSeed = {}) {
       for (const lv of c.levels) {
         const l = lv.lessons.find((x: any) => x.id === courseLessonMatch[2]);
         if (l) {
-          l.status = body.status;
-          l.completed_at = body.status === 'completed' ? nowIso() : null;
+          if (body.status !== undefined) {
+            l.status = body.status;
+            l.completed_at = body.status === 'completed' ? nowIso() : null;
+          } else if (l.status === 'not_started' && body.current_step_index !== undefined) {
+            l.status = 'in_progress';
+          }
+          if (body.current_step_index !== undefined) {
+            l.current_step_index = Number(body.current_step_index);
+          }
           l.updated_at = nowIso();
           recomputeCourseReadiness(c);
           return jsonRes(l);
+        }
+      }
+      return errRes(404, 'NOT_FOUND', 'Leçon introuvable.');
+    }
+    const courseLessonAskMatch = path.match(/^\/courses\/([^/]+)\/lessons\/([^/]+)\/ask$/);
+    if (courseLessonAskMatch && method === 'POST') {
+      const c = state.courses.find((item) => item.id === courseLessonAskMatch[1]);
+      if (!c) return errRes(404, 'NOT_FOUND', 'Cours introuvable.');
+      for (const lv of c.levels) {
+        const l = lv.lessons.find((x: any) => x.id === courseLessonAskMatch[2]);
+        if (l) {
+          const stepIndex = Number(body.step_index ?? 0);
+          const userMsg = {
+            id: nextId('tmsg'),
+            role: 'user',
+            content: String(body.message ?? ''),
+            quick_action: body.quick_action ?? null,
+            step_index: stepIndex,
+            follow_up_prompts: [],
+            created_at: nowIso(),
+          };
+          const assistantMsg = {
+            id: nextId('tmsg'),
+            role: 'assistant',
+            content: `### Réponse du tuteur — ${l.title}\n\nVoici une explication ciblée sur ta question.`,
+            quick_action: body.quick_action ?? null,
+            step_index: stepIndex,
+            follow_up_prompts: ['Donne un autre exemple concret', 'Teste-moi avec une question rapide'],
+            created_at: nowIso(),
+          };
+          l.tutor_messages = [...(l.tutor_messages ?? []), userMsg, assistantMsg];
+          if (l.status === 'not_started') l.status = 'in_progress';
+          l.updated_at = nowIso();
+          recomputeCourseReadiness(c);
+          return jsonRes({ user_message: userMsg, assistant_message: assistantMsg, lesson: l });
         }
       }
       return errRes(404, 'NOT_FOUND', 'Leçon introuvable.');

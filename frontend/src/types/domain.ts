@@ -638,6 +638,18 @@ export interface CourseCriterionResult {
   feedback: string;
 }
 
+export type CourseTutorQuickAction = 'simplify' | 'example' | 'quiz' | 'custom';
+
+export interface CourseTutorMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  quickAction?: CourseTutorQuickAction | string | null;
+  stepIndex: number;
+  followUpPrompts: string[];
+  createdAt: string;
+}
+
 export interface CourseLesson {
   id: string;
   userId: string;
@@ -650,6 +662,8 @@ export interface CourseLesson {
   contentMarkdown: string;
   codeExamples: CourseCodeExample[];
   exercises: CourseExercise[];
+  tutorMessages?: CourseTutorMessage[];
+  currentStepIndex?: number;
   status: CourseLessonStatus;
   completedAt: string | null;
   createdAt: string;

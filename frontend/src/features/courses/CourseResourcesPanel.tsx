@@ -125,7 +125,7 @@ export function CourseResourcesPanel({
   };
 
   return (
-    <section className="space-y-4">
+    <section className="min-w-0 max-w-full overflow-hidden space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2.5 rounded-2xl bg-white p-4 sm:p-5 dark:bg-zinc-900">
         <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Filtrer les ressources">
           {RESOURCE_FILTERS.map((opt) => (
@@ -275,7 +275,7 @@ export function CourseResourcesPanel({
             return (
               <article
                 key={res.id}
-                className="flex flex-col justify-between gap-3 rounded-2xl bg-white p-4 dark:bg-zinc-900"
+                className="flex min-w-0 max-w-full flex-col justify-between gap-3 overflow-hidden rounded-2xl bg-white p-4 dark:bg-zinc-900"
               >
                 <div className="space-y-2">
                   <div className="flex flex-wrap items-center justify-between gap-2">

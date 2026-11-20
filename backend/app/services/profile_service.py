@@ -112,17 +112,6 @@ class ProfileService:
                     resolved_key = decrypt_api_key(raw_key, user_id, self._settings)
                 else:
                     resolved_key = raw_key
-                    # Migrer immédiatement vers la table dédiée chiffrée et purger profiles.preferences
-                    if self._ai_config_repo is not None:
-                        self.save_ai_provider_config(
-                            user_id,
-                            {
-                                "provider": str(legacy.get("provider") or "local"),
-                                "base_url": str(legacy.get("base_url") or ""),
-                                "model": str(legacy.get("model") or ""),
-                                "api_key": resolved_key,
-                            },
-                        )
             return {
                 "provider": str(legacy.get("provider") or "local"),
                 "base_url": str(legacy.get("base_url") or ""),

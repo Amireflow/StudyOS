@@ -40,12 +40,38 @@ class LearningPrioritizer:
                     effort_score=10.0,
                     deficit_score=10.0,
                     deadline_at=ex_utc,
-                    recommended_minutes=180 if hours_left <= 168 else 120,
+                    recommended_minutes=180 if hours_left <= 168 else 90,
                     reasons=[
                         f"Examen « {exam_title} » prévu dans {max(1, int(hours_left // 24))} jours."
                     ],
                 )
             )
+        elif exam_title and not exam_at:
+            matched_exam = next(
+                (ev for ev in snapshot.upcoming_exams if exam_title.lower() in ev.title.lower()),
+                None,
+            )
+            if matched_exam is None:
+                items.append(
+                    LearningPriorityItem(
+                        source_type="exam_revision",
+                        source_id=None,
+                        title=f"Révision {exam_title}",
+                        subject=exam_title,
+                        domain="Académique",
+                        score=round(24.0 + 20.0 + 16.0 + 8.0, 2),
+                        urgency_score=24.0,
+                        blocking_score=20.0,
+                        strategic_score=16.0,
+                        effort_score=8.0,
+                        deficit_score=8.0,
+                        deadline_at=None,
+                        recommended_minutes=120,
+                        reasons=[
+                            f"Révision priorisée pour « {exam_title} » (date d'examen non renseignée : aucune date inventée)."
+                        ],
+                    )
+                )
 
         # 1. Examens détectés dans l'emploi du temps
         for ev in snapshot.upcoming_exams:

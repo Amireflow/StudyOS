@@ -10,6 +10,7 @@ from app.schemas.common import (
     SkillEvaluationMode,
     SkillEvidenceType,
 )
+from app.services.sandbox_executor import verify_code_deliverable_safely
 
 RUBRIC_VERSION = "rubric-v2"
 EVALUATOR_VERSION = "eval-v2"
@@ -212,51 +213,40 @@ def analyze_code_statically(
             )
 
         body_nodes = list(ast.walk(tree))
-        func_or_class = [
-            n for n in body_nodes if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
-        ]
-        control_nodes = [
-            n
-            for n in body_nodes
-            if isinstance(n, (ast.If, ast.For, ast.AsyncFor, ast.While, ast.Try, ast.With, ast.Return, ast.Raise))
-        ]
-        calls_or_assigns = [n for n in body_nodes if isinstance(n, (ast.Call, ast.Assign, ast.AnnAssign))]
-        has_error_handling = any(
-            isinstance(n, (ast.Try, ast.Raise, ast.ExceptHandler, ast.If))
-            for n in body_nodes
-        )
-        # Rejeter une fonction vide ne contenant que `pass` ou `...` ou un littéral isolé
-        non_trivial_stmts = [
-            n
-            for n in tree.body
-            if not (isinstance(n, ast.Expr) and isinstance(n.value, ast.Constant))
-            and not isinstance(n, ast.Pass)
-        ]
-        has_logic = bool(func_or_class or control_nodes or len(calls_or_assigns) >= 2)
-        if not non_trivial_stmts or not has_logic:
+        sandbox_report = verify_code_deliverable_safely(cleaned, language_hint="python")
+        if sandbox_report.is_stub_only or not sandbox_report.has_real_implementation:
             return CodeStaticAnalysisResult(
                 present=True,
                 valid=False,
-                quality_score=25,
+                quality_score=20,
                 has_logic=False,
                 has_error_handling=False,
-                summary="Syntaxe Python valide mais aucune logique fonctionnelle réelle détectée.",
-                gaps=["Implémentez une logique réelle (fonction, condition, transformation ou appel)."],
+                summary=(
+                    sandbox_report.findings[0]
+                    if sandbox_report.findings
+                    else "Syntaxe Python valide mais aucune logique fonctionnelle réelle détectée."
+                ),
+                gaps=(
+                    sandbox_report.findings
+                    or ["Implémentez une logique réelle (fonction non vide, condition, transformation ou appel)."]
+                ),
             )
 
-        score = 65
-        if func_or_class or len(calls_or_assigns) >= 2:
-            score += 20
-        if has_error_handling:
-            score += 15
+        has_error_handling = sandbox_report.has_edge_case_handling
+        gaps_list: list[str] = list(sandbox_report.findings)
+        if not has_error_handling:
+            gaps_list.append("Ajoutez une gestion explicite des cas limites/erreurs.")
+        if not sandbox_report.has_tests_or_assertions:
+            gaps_list.append("Ajoutez des vérifications ou assertions (`assert`, tests) sur les résultats attendus.")
+
         return CodeStaticAnalysisResult(
             present=True,
             valid=True,
-            quality_score=min(100, score),
+            quality_score=max(65, sandbox_report.quality_score),
             has_logic=True,
             has_error_handling=has_error_handling,
-            summary="Syntaxe Python validée par analyse statique AST.",
-            gaps=[] if has_error_handling else ["Ajoutez une gestion explicite des cas limites/erreurs."],
+            summary="Syntaxe et logique Python vérifiées par analyse statique isolée (AST).",
+            gaps=gaps_list,
         )
 
     if is_sql:
@@ -683,34 +673,29 @@ def evaluate_assessment_submission(
                 score_val = max_score
                 passed_crit = True
                 crit_fb = f"Production alignée avec la compétence « {skill_name} »."
-            elif len(cleaned_text) >= 35 and len({w.lower() for w in text_words}) >= 7:
-                score_val = round(max_score * 0.68)
-                passed_crit = True
-                crit_fb = "Réponse globalement pertinente mais lien explicite à renforcer."
             else:
                 score_val = round(max_score * 0.35)
                 passed_crit = False
-                crit_fb = "Réponse trop générique par rapport à la compétence ciblée."
+                crit_fb = f"Réponse hors-sujet ou trop générique par rapport à la compétence « {skill_name} »."
 
         elif key == "technical_accuracy":
             if assessment_type in (SkillAssessmentType.practical_exercise, SkillAssessmentType.code_review):
                 if code_analysis.present:
-                    if code_analysis.valid and (has_reasoning_markers or len(text_words) >= 10):
+                    if code_analysis.valid and code_analysis.has_logic and (has_reasoning_markers or len(text_words) >= 10):
                         score_val = round(max_score * (code_analysis.quality_score / 100.0))
                         passed_crit = code_analysis.quality_score >= 65
                         crit_fb = f"{code_analysis.summary} {STATIC_ANALYSIS_NOTE}"
                     else:
-                        score_val = round(max_score * 0.3)
+                        score_val = round(max_score * 0.25)
                         passed_crit = False
                         crit_fb = code_analysis.summary
-                elif has_topic_overlap and len(text_words) >= 14 and has_reasoning_markers and target_level <= 2:
-                    score_val = round(max_score * 0.78)
-                    passed_crit = True
-                    crit_fb = "Raisonnement technique solide ; ajouter du code vérifiable renforcerait l’évaluation."
                 else:
-                    score_val = round(max_score * 0.35)
+                    score_val = round(max_score * 0.25)
                     passed_crit = False
-                    crit_fb = "Code source valide ou démonstration technique insuffisants pour ce palier."
+                    crit_fb = (
+                        "Une explication théorique seule ne remplace pas une réalisation pratique : "
+                        "fournissez du code ou un livrable technique vérifiable."
+                    )
             else:
                 if has_topic_overlap and len(text_words) >= 14 and has_reasoning_markers:
                     score_val = (
@@ -730,14 +715,10 @@ def evaluate_assessment_submission(
                 score_val = max_score if len(text_words) >= 18 else round(max_score * 0.84)
                 passed_crit = True
                 crit_fb = "Explication claire du raisonnement et des cas traités."
-            elif len(text_words) >= 12:
-                score_val = round(max_score * 0.68)
-                passed_crit = True
-                crit_fb = "Explication recevable ; justifiez davantage le *pourquoi* et les cas limites."
             else:
                 score_val = round(max_score * 0.3)
                 passed_crit = False
-                crit_fb = "Raisonnement non détaillé : expliquez comment vous obtenez ce résultat."
+                crit_fb = "Raisonnement non détaillé : expliquez explicitement le pourquoi, les choix techniques et les cas limites."
 
         else:
             score_val = round(max_score * 0.4)

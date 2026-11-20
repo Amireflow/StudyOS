@@ -120,9 +120,9 @@ export function CoursesPage() {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="min-w-0 max-w-full overflow-x-hidden space-y-4">
       {/* En-tête unifié & barre de recherche / filtres */}
-      <section className="space-y-3.5 rounded-2xl bg-white p-4 sm:p-5 dark:bg-zinc-900">
+      <section className="min-w-0 max-w-full overflow-hidden space-y-3.5 rounded-2xl bg-white p-4 sm:p-5 dark:bg-zinc-900">
         <div className="flex flex-wrap items-center justify-between gap-2.5">
           <div className="flex items-center gap-3">
             <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-teal-700 text-white dark:bg-teal-600">
@@ -262,9 +262,9 @@ export function CoursesPage() {
               <article
                 key={course.id}
                 onClick={() => navigate(`/courses/${course.id}`)}
-                className="group flex cursor-pointer flex-col justify-between gap-4 rounded-2xl bg-white p-5 transition-colors hover:bg-zinc-50/90 dark:bg-zinc-900 dark:hover:bg-zinc-800/80"
+                className="group flex min-w-0 max-w-full cursor-pointer flex-col justify-between gap-4 overflow-hidden rounded-2xl bg-white p-4 transition-colors hover:bg-zinc-50/90 sm:p-5 dark:bg-zinc-900 dark:hover:bg-zinc-800/80"
               >
-                <div className="space-y-3">
+                <div className="min-w-0 space-y-3">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <div className="flex flex-wrap items-center gap-1.5">
                       <Badge variant="primary">{course.subject}</Badge>
@@ -282,12 +282,12 @@ export function CoursesPage() {
                     </div>
                   </div>
 
-                  <div>
-                    <h2 className="line-clamp-1 text-base font-semibold tracking-tight text-zinc-950 group-hover:text-teal-700 dark:text-zinc-50 dark:group-hover:text-teal-400">
+                  <div className="min-w-0">
+                    <h2 className="line-clamp-2 break-words text-base font-semibold tracking-tight text-zinc-950 group-hover:text-teal-700 dark:text-zinc-50 dark:group-hover:text-teal-400">
                       {course.title}
                     </h2>
                     {course.description && (
-                      <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">
+                      <p className="mt-1 line-clamp-2 break-words text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">
                         {course.description}
                       </p>
                     )}
@@ -316,8 +316,8 @@ export function CoursesPage() {
                   </div>
                 </div>
 
-                <div className="flex items-center justify-between gap-3 rounded-xl bg-zinc-50 px-3.5 py-2.5 dark:bg-zinc-800/60">
-                  <div className="flex items-center gap-2.5 text-xs text-zinc-600 dark:text-zinc-300">
+                <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-zinc-50 px-3 py-2.5 dark:bg-zinc-800/60">
+                  <div className="flex flex-wrap items-center gap-2 text-xs text-zinc-600 dark:text-zinc-300">
                     <span className="font-medium">
                       {course.completedLessonsCount}/{course.totalLessonsCount} ch.
                     </span>

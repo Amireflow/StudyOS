@@ -1,21 +1,25 @@
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowLeft01Icon,
   ArrowRight01Icon,
   BookOpen02Icon,
   CheckmarkCircle02Icon,
   Rocket01Icon,
+  ViewIcon,
 } from '@hugeicons/core-free-icons';
 import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
 import { Icon } from '../../components/ui/Icon';
 import { MarkdownContent } from '../../components/ui/MarkdownContent';
-import type { CourseSubmissionInput } from '../../lib/coursesApi';
+import { cn } from '../../lib/cn';
+import type { CourseLessonTutorAskInput, CourseSubmissionInput } from '../../lib/coursesApi';
 import type {
   CourseLesson,
   CourseLevel,
   CourseSubmission,
 } from '../../types/domain';
 import { CourseExercisePanel } from './CourseExercisePanel';
+import { CourseTutorPanel } from './CourseTutorPanel';
 
 interface CourseLessonReaderProps {
   lesson: CourseLesson;
@@ -24,6 +28,53 @@ interface CourseLessonReaderProps {
   onToggleComplete: (lesson: CourseLesson) => Promise<void>;
   onSubmitExercise: (input: CourseSubmissionInput) => Promise<CourseSubmission | null>;
   onGoToProject: () => void;
+  onStepChange?: (lesson: CourseLesson, stepIndex: number) => Promise<void> | void;
+  onAskTutor?: (lesson: CourseLesson, input: CourseLessonTutorAskInput) => Promise<boolean>;
+}
+
+interface LessonStep {
+  title: string;
+  markdown: string;
+}
+
+/** Découpe le chapitre en étapes digestes sur les titres `## ` (hors blocs de code). */
+export function splitLessonIntoSteps(markdown: string, fallbackTitle: string): LessonStep[] {
+  const lines = (markdown || '').split(/\r?\n/);
+  const steps: LessonStep[] = [];
+  let intro: string[] = [];
+  let current: LessonStep | null = null;
+  let buffer: string[] = [];
+  let inFence = false;
+
+  for (const line of lines) {
+    if (/^\s*(```|~~~)/.test(line)) inFence = !inFence;
+    const heading = !inFence ? line.match(/^##\s+(.+?)\s*#*\s*$/) : null;
+    if (heading) {
+      if (current) {
+        current.markdown = buffer.join('\n').trim();
+        steps.push(current);
+      } else {
+        intro = buffer;
+      }
+      current = { title: heading[1].replace(/^\d+[.)]\s*/, '').trim(), markdown: '' };
+      buffer = [];
+    } else {
+      buffer.push(line);
+    }
+  }
+
+  if (current) {
+    current.markdown = buffer.join('\n').trim();
+    steps.push(current);
+  } else {
+    return [{ title: fallbackTitle, markdown: (markdown || '').trim() }];
+  }
+
+  const introText = intro.join('\n').trim();
+  if (introText && steps.length > 0) {
+    steps[0] = { ...steps[0], markdown: `${introText}\n\n${steps[0].markdown}`.trim() };
+  }
+  return steps.filter((s) => s.markdown.length > 0 || s.title.length > 0);
 }
 
 export function CourseLessonReader({
@@ -33,15 +84,59 @@ export function CourseLessonReader({
   onToggleComplete,
   onSubmitExercise,
   onGoToProject,
+  onStepChange,
+  onAskTutor,
 }: CourseLessonReaderProps) {
   const ordered = [...level.lessons].sort((a, b) => a.position - b.position);
   const currentIdx = ordered.findIndex((item) => item.id === lesson.id);
   const prevLesson = currentIdx > 0 ? ordered[currentIdx - 1] : null;
   const nextLesson = currentIdx >= 0 && currentIdx < ordered.length - 1 ? ordered[currentIdx + 1] : null;
   const isCompleted = lesson.status === 'completed';
+  const extraCodeExamples = lesson.codeExamples.filter(
+    (example) => !lesson.contentMarkdown.includes(example.code.trim()),
+  );
+
+  const steps = useMemo(
+    () => splitLessonIntoSteps(lesson.contentMarkdown, lesson.title),
+    [lesson.contentMarkdown, lesson.title],
+  );
+  const lastStepIndex = Math.max(0, steps.length - 1);
+
+  const [stepIndex, setStepIndex] = useState(() =>
+    Math.min(lastStepIndex, Math.max(0, lesson.currentStepIndex ?? 0)),
+  );
+  const [showAll, setShowAll] = useState(false);
+  const stepRefs = useRef<Array<HTMLElement | null>>([]);
+  const didMount = useRef(false);
+
+  useEffect(() => {
+    setStepIndex((prev) => Math.min(lastStepIndex, Math.max(prev, lesson.currentStepIndex ?? 0)));
+  }, [lesson.currentStepIndex, lastStepIndex]);
+
+  useEffect(() => {
+    if (!didMount.current) {
+      didMount.current = true;
+      return;
+    }
+    stepRefs.current[stepIndex]?.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
+  }, [stepIndex]);
+
+  const fullyRevealed = showAll || isCompleted || stepIndex >= lastStepIndex;
+  const visibleCount = fullyRevealed ? steps.length : stepIndex + 1;
+  const activeStep = steps[Math.min(stepIndex, lastStepIndex)];
+  const progressPct = Math.round(((fullyRevealed ? steps.length : stepIndex + 1) / steps.length) * 100);
+  const isMultiStep = steps.length > 1;
+
+  const goNextStep = () => {
+    const next = Math.min(lastStepIndex, stepIndex + 1);
+    setStepIndex(next);
+    void onStepChange?.(lesson, next);
+  };
+
+  const tutorMessages = lesson.tutorMessages ?? [];
 
   return (
-    <article className="space-y-5 rounded-2xl bg-white p-5 sm:p-6 dark:bg-zinc-900">
+    <article className="min-w-0 max-w-full overflow-hidden space-y-5 rounded-2xl bg-white p-4 sm:p-6 dark:bg-zinc-900">
       <header className="space-y-2.5">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex flex-wrap items-center gap-1.5">
@@ -49,6 +144,11 @@ export function CourseLessonReader({
               Chapitre {lesson.position}/{ordered.length}
             </Badge>
             <Badge variant="neutral">{lesson.estimatedMinutes} min</Badge>
+            {isMultiStep && (
+              <Badge variant="neutral">
+                Étape {fullyRevealed ? steps.length : stepIndex + 1}/{steps.length}
+              </Badge>
+            )}
             {isCompleted && <Badge variant="success">Lu</Badge>}
           </div>
 
@@ -63,41 +163,100 @@ export function CourseLessonReader({
           </Button>
         </div>
 
-        <div>
-          <h2 className="text-lg font-bold tracking-tight text-zinc-950 sm:text-xl dark:text-zinc-50">
+        <div className="min-w-0">
+          <h2 className="break-words text-lg font-bold tracking-tight text-zinc-950 sm:text-xl dark:text-zinc-50">
             {lesson.title}
           </h2>
           {lesson.summary && (
-            <p className="mt-1 text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">
+            <p className="mt-1 break-words text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">
               {lesson.summary}
             </p>
           )}
         </div>
+
+        {isMultiStep && (
+          <div className="flex items-center gap-3">
+            <div
+              className="h-1.5 flex-1 overflow-hidden rounded-full bg-zinc-100 dark:bg-zinc-800"
+              role="progressbar"
+              aria-label="Progression dans le chapitre"
+              aria-valuenow={progressPct}
+              aria-valuemin={0}
+              aria-valuemax={100}
+            >
+              <div
+                className="h-full rounded-full bg-teal-600 transition-all duration-500"
+                style={{ width: `${progressPct}%` }}
+              />
+            </div>
+            {!fullyRevealed && (
+              <button
+                type="button"
+                onClick={() => setShowAll(true)}
+                className="inline-flex shrink-0 cursor-pointer items-center gap-1 text-[11px] font-medium text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-100"
+              >
+                <Icon icon={ViewIcon} size={13} />
+                Tout afficher
+              </button>
+            )}
+          </div>
+        )}
       </header>
 
-      <div className="text-sm leading-relaxed text-zinc-800 dark:text-zinc-200">
-        <MarkdownContent content={lesson.contentMarkdown} />
+      <div className="min-w-0 max-w-full space-y-4">
+        {steps.slice(0, visibleCount).map((step, idx) => {
+          const isActive = !fullyRevealed && idx === stepIndex;
+          return (
+            <section
+              key={`${lesson.id}-step-${idx}`}
+              ref={(el) => {
+                stepRefs.current[idx] = el;
+              }}
+              aria-label={isMultiStep ? `Étape ${idx + 1} : ${step.title}` : undefined}
+              className="min-w-0 max-w-full scroll-mt-4 text-sm leading-relaxed text-zinc-800 dark:text-zinc-200"
+            >
+              {isMultiStep && (
+                <div className="mb-2 flex items-center gap-2">
+                  <span
+                    className={cn(
+                      'flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-bold',
+                      isActive
+                        ? 'bg-teal-600 text-white'
+                        : 'bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300',
+                    )}
+                  >
+                    {idx + 1}
+                  </span>
+                  <h3 className="min-w-0 break-words text-base font-semibold text-zinc-900 dark:text-zinc-100">
+                    {step.title}
+                  </h3>
+                </div>
+              )}
+              <MarkdownContent content={step.markdown} />
+            </section>
+          );
+        })}
       </div>
 
-      {lesson.codeExamples.length > 0 && (
-        <section aria-label="Exemples de code commentés" className="space-y-3">
+      {fullyRevealed && extraCodeExamples.length > 0 && (
+        <section aria-label="Exemples de code commentés" className="min-w-0 max-w-full space-y-3">
           <h3 className="inline-flex items-center gap-2 text-sm font-semibold text-zinc-900 dark:text-zinc-100">
             <Icon icon={BookOpen02Icon} size={16} className="text-teal-700 dark:text-teal-400" />
             Exemples commentés
           </h3>
           <div className="space-y-3">
-            {lesson.codeExamples.map((example, idx) => (
+            {extraCodeExamples.map((example, idx) => (
               <div
                 key={`${lesson.id}-ex-${idx}`}
-                className="space-y-2 rounded-2xl bg-zinc-50 p-4 dark:bg-zinc-800/70"
+                className="min-w-0 max-w-full overflow-hidden space-y-2 rounded-2xl bg-zinc-50 p-3.5 sm:p-4 dark:bg-zinc-800/70"
               >
-                <p className="text-xs font-semibold text-zinc-900 dark:text-zinc-100">
+                <p className="break-words text-xs font-semibold text-zinc-900 dark:text-zinc-100">
                   {example.title}
                 </p>
                 <MarkdownContent
                   content={`\`\`\`${example.language}\n${example.code}\n\`\`\``}
                 />
-                <p className="text-xs leading-relaxed text-zinc-600 dark:text-zinc-400">
+                <p className="break-words text-xs leading-relaxed text-zinc-600 dark:text-zinc-400">
                   {example.explanation}
                 </p>
               </div>
@@ -106,12 +265,37 @@ export function CourseLessonReader({
         </section>
       )}
 
-      <CourseExercisePanel
-        lessonId={lesson.id}
-        exercises={lesson.exercises}
-        submissions={level.submissions}
-        onSubmitExercise={onSubmitExercise}
-      />
+      {onAskTutor && activeStep && (
+        <CourseTutorPanel
+          lessonTitle={lesson.title}
+          stepIndex={fullyRevealed ? lastStepIndex : stepIndex}
+          stepTitle={fullyRevealed && !isMultiStep ? lesson.title : activeStep.title}
+          stepContent={activeStep.markdown}
+          messages={tutorMessages}
+          onAsk={(input) => onAskTutor(lesson, input)}
+        />
+      )}
+
+      {!fullyRevealed && (
+        <div className="flex flex-col gap-2 rounded-2xl bg-teal-50 p-3.5 sm:flex-row sm:items-center sm:justify-between dark:bg-teal-950/40">
+          <p className="text-xs leading-relaxed text-teal-900 dark:text-teal-100">
+            Prends le temps de bien comprendre cette étape. Une question ? Demande au tuteur ci-dessus.
+          </p>
+          <Button type="button" variant="primary" size="sm" onClick={goNextStep}>
+            J’ai compris, étape suivante
+            <Icon icon={ArrowRight01Icon} size={14} />
+          </Button>
+        </div>
+      )}
+
+      {fullyRevealed && (
+        <CourseExercisePanel
+          lessonId={lesson.id}
+          exercises={lesson.exercises}
+          submissions={level.submissions}
+          onSubmitExercise={onSubmitExercise}
+        />
+      )}
 
       <footer className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-zinc-50 p-3 dark:bg-zinc-800/60">
         <div>
@@ -131,7 +315,7 @@ export function CourseLessonReader({
           {nextLesson ? (
             <Button
               type="button"
-              variant="primary"
+              variant={fullyRevealed ? 'primary' : 'secondary'}
               size="sm"
               onClick={() => onSelectLesson(nextLesson.id)}
             >
@@ -139,7 +323,12 @@ export function CourseLessonReader({
               <Icon icon={ArrowRight01Icon} size={14} />
             </Button>
           ) : (
-            <Button type="button" variant="primary" size="sm" onClick={onGoToProject}>
+            <Button
+              type="button"
+              variant={fullyRevealed ? 'primary' : 'secondary'}
+              size="sm"
+              onClick={onGoToProject}
+            >
               <Icon icon={Rocket01Icon} size={14} />
               Passer au projet du niveau
             </Button>

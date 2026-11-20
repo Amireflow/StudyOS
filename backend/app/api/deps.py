@@ -435,6 +435,7 @@ def get_ai_orchestrator(
         course_repo=course_repo,
         goal_repo=goal_repo,
         ai_memory_repo=ai_memory_repo,
+        planning_repo=planning_repo,
     )
     prompt_manager = PromptManager(tool_registry=tool_registry)
     action_validator = ActionValidator(

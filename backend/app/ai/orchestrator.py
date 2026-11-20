@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+import json
 import logging
 import re
 from typing import Any, Callable, Literal
@@ -144,7 +145,7 @@ PROVIDER_CATALOG: list[AiProviderCatalogItem] = [
     ),
     AiProviderCatalogItem(
         id="local",
-        label="Local (déterministe, sans clé API)",
+        label="Moteur local déterministe (règles métier, sans LLM)",
         console_url=None,
         default_base_url="",
         requires_api_key=False,
@@ -401,7 +402,7 @@ class AIOrchestrator:
         if self._has_custom_provider:
             return self._provider
         provider_key, api_key, base_url, model, source = self._resolve_effective_ai_config(user_id)
-        if source == "user":
+        if source in ("user", "server_env"):
             timeout = self._settings.ai_timeout_seconds if self._settings else 20.0
             return build_ai_provider_from_config(
                 provider=provider_key,
@@ -410,6 +411,7 @@ class AIOrchestrator:
                 base_url=base_url,
                 timeout_seconds=timeout,
                 settings=self._settings,
+                require_api_key_for_remote=True,
             )
         return self._provider
 
@@ -578,6 +580,8 @@ class AIOrchestrator:
         self,
         record: AiActionProposalRecord,
         now_utc: datetime,
+        *,
+        persist: bool = True,
     ) -> AiActionProposalRecord:
         if (
             record.status == ProposalStatus.pending
@@ -590,96 +594,12 @@ class AIOrchestrator:
                     "resolved_at": now_utc,
                 }
             )
-            return self._ai_repo.save_proposal(expired)
+            return self._ai_repo.save_proposal(expired) if persist else expired
         return record
 
-    def _synthesize_missing_plan_proposals(
-        self,
-        user_id: UUID,
-        conversation_id: UUID,
-        assistant_reply: str,
-        created_at: datetime,
-    ) -> list[AiActionProposalRecord]:
-        text = (assistant_reply or "").strip()
-        if not text:
-            return []
-        lowered = text.lower()
-        announces_validation = any(
-            phrase in lowered
-            for phrase in (
-                "soumise à ta validation",
-                "soumises à ta validation",
-                "soumis à ta validation",
-                "soumise à votre validation",
-                "soumises à votre validation",
-                "veux-tu que je crée ce programme",
-                "emploi du temps d'apprentissage",
-                "emploi du temps d’apprentissage",
-            )
-        ) or ("planification des" in lowered and "créneau" in lowered)
-        if not announces_validation:
-            return []
-
-        synthesized: list[AiActionProposalRecord] = []
-        from app.schemas.ai import RawProposalCandidate
-
-        candidates: list[RawProposalCandidate] = [
-            RawProposalCandidate(
-                action_type=AiActionType.generate_learning_plan.value,
-                title="Générer et appliquer le programme sur vos créneaux libres",
-                explanation="Planifie automatiquement vos séances d’étude sans chevaucher vos cours universitaires.",
-                payload={
-                    "horizon_days": 7,
-                    "include_potential_slots": True,
-                    "create_missing_courses": False,
-                    "apply_immediately": True,
-                    "replace_future_planned": True,
-                },
-            )
-        ]
-
-        task_m = re.search(
-            r"Cr[ée]ation de la t[âa]che\s+(?:de\s+|:\s*|[«\"']\s*)?([^\n\.»\"']{4,120})",
-            text,
-            re.IGNORECASE,
-        )
-        if task_m:
-            raw_task_title = task_m.group(1).strip(" :.-»\"'")
-            if len(raw_task_title) >= 3:
-                task_title = raw_task_title[0].upper() + raw_task_title[1:]
-                candidates.append(
-                    RawProposalCandidate(
-                        action_type=AiActionType.create_task.value,
-                        title=f"Créer la tâche : {task_title[:120]}",
-                        explanation="Tâche de préparation proposée dans votre plan d’étude.",
-                        payload={
-                            "title": task_title[:140],
-                            "priority": "high",
-                        },
-                    )
-                )
-
-        for cand in candidates:
-            try:
-                validated = self._action_validator.validate_candidate(user_id, cand)
-                rec = self._ai_repo.save_proposal(
-                    AiActionProposalRecord(
-                        id=uuid4(),
-                        user_id=user_id,
-                        conversation_id=conversation_id,
-                        action_type=validated.action_type.value,
-                        title=validated.title,
-                        explanation=validated.explanation,
-                        payload=validated.payload,
-                        status=ProposalStatus.pending,
-                        expires_at=created_at + timedelta(days=PROPOSAL_TTL_DAYS),
-                        created_at=created_at,
-                    )
-                )
-                synthesized.append(rec)
-            except AppError:
-                continue
-        return synthesized
+    @staticmethod
+    def _proposal_signature(action_type: str, payload: dict[str, Any]) -> str:
+        return f"{action_type}::{json.dumps(payload, sort_keys=True, ensure_ascii=False, default=str)}"
 
     def list_conversations(self, user_id: UUID) -> list[AiConversationResponse]:
         records = self._ai_repo.list_conversations(user_id)
@@ -707,6 +627,7 @@ class AIOrchestrator:
         user_id: UUID,
         conversation_id: UUID,
     ) -> AiConversationDetailResponse:
+        """Lecture pure (sans effet de bord en base) d'une conversation et de ses propositions."""
         conv = self._ai_repo.get_conversation(user_id, conversation_id)
         if conv is None:
             raise AppError(404, "NOT_FOUND", "Conversation IA introuvable.")
@@ -730,8 +651,63 @@ class AIOrchestrator:
                 re_parsed = _parse_llm_json_output(
                     msg.content,
                     dummy_ctx,
-                    str((msg.metadata or {}).get("provider") or "river"),
-                    str((msg.metadata or {}).get("model") or "gpt-4o-mini"),
+                    str((msg.metadata or {}).get("provider") or "local"),
+                    str((msg.metadata or {}).get("model") or "local-coach-v1"),
+                )
+                if re_parsed.reply != msg.content:
+                    msg = msg.model_copy(update={"content": re_parsed.reply})
+            messages.append(msg)
+
+        proposals = [
+            self._refresh_proposal_expiration(item, now, persist=False)
+            for item in self._ai_repo.list_proposals(user_id, conversation_id=conversation_id)
+        ]
+        proposals.sort(key=lambda item: item.created_at, reverse=True)
+
+        return AiConversationDetailResponse(
+            conversation=AiConversationResponse.model_validate(conv.model_dump()),
+            messages=[AiMessageResponse.model_validate(m.model_dump()) for m in messages],
+            proposals=[AiActionProposalResponse.model_validate(p.model_dump()) for p in proposals],
+        )
+
+    def repair_conversation(
+        self,
+        user_id: UUID,
+        conversation_id: UUID,
+    ) -> AiConversationDetailResponse:
+        """Opération dédiée, contrôlée et idempotente pour nettoyer d'anciens messages JSON et expirer les propositions échues."""
+        conv = self._ai_repo.get_conversation(user_id, conversation_id)
+        if conv is None:
+            raise AppError(404, "NOT_FOUND", "Conversation IA introuvable.")
+
+        now = datetime.now(timezone.utc)
+        raw_messages = self._ai_repo.list_messages(user_id, conversation_id)
+        raw_messages.sort(key=lambda item: item.created_at)
+
+        existing_proposals = self._ai_repo.list_proposals(user_id, conversation_id=conversation_id)
+        existing_sigs = {
+            self._proposal_signature(p.action_type, p.payload)
+            for p in existing_proposals
+            if p.status == ProposalStatus.pending
+        }
+
+        repaired_messages: list[AiMessageRecord] = []
+        for msg in raw_messages:
+            if (
+                msg.role == AiMessageRole.assistant
+                and ("```" in msg.content or msg.content.lstrip().startswith("{"))
+                and _PROTOCOL_JSON_MARKERS_RE.search(msg.content)
+            ):
+                dummy_ctx = self._context_builder.build_context(
+                    user_id,
+                    explicit_scopes=[AiContextScope.auto],
+                    now_utc=now,
+                )
+                re_parsed = _parse_llm_json_output(
+                    msg.content,
+                    dummy_ctx,
+                    str((msg.metadata or {}).get("provider") or "local"),
+                    str((msg.metadata or {}).get("model") or "local-coach-v1"),
                 )
                 if re_parsed.reply != msg.content:
                     meta = dict(msg.metadata or {})
@@ -740,6 +716,9 @@ class AIOrchestrator:
                         for cand in re_parsed.proposals:
                             try:
                                 validated = self._action_validator.validate_candidate(user_id, cand)
+                                sig = self._proposal_signature(validated.action_type.value, validated.payload)
+                                if sig in existing_sigs:
+                                    continue
                                 saved_p = self._ai_repo.save_proposal(
                                     AiActionProposalRecord(
                                         id=uuid4(),
@@ -754,6 +733,7 @@ class AIOrchestrator:
                                         created_at=msg.created_at,
                                     )
                                 )
+                                existing_sigs.add(sig)
                                 existing_prop_ids.append(str(saved_p.id))
                             except AppError:
                                 continue
@@ -766,40 +746,17 @@ class AIOrchestrator:
                             }
                         )
                     )
-            messages.append(msg)
+            repaired_messages.append(msg)
 
         proposals = [
-            self._refresh_proposal_expiration(item, now)
+            self._refresh_proposal_expiration(item, now, persist=True)
             for item in self._ai_repo.list_proposals(user_id, conversation_id=conversation_id)
         ]
-
-        # Auto-récupération si le dernier message assistant annonce des propositions à valider mais qu'aucune n'a été enregistrée
-        last_asst_idx = next(
-            (i for i in range(len(messages) - 1, -1, -1) if messages[i].role == AiMessageRole.assistant),
-            None,
-        )
-        if last_asst_idx is not None:
-            last_asst = messages[last_asst_idx]
-            last_meta = dict(last_asst.metadata or {})
-            if not last_meta.get("proposal_ids") and not proposals:
-                recovered = self._synthesize_missing_plan_proposals(
-                    user_id,
-                    conversation_id,
-                    last_asst.content,
-                    now,
-                )
-                if recovered:
-                    last_meta["proposal_ids"] = [str(p.id) for p in recovered]
-                    messages[last_asst_idx] = self._ai_repo.save_message(
-                        last_asst.model_copy(update={"metadata": last_meta})
-                    )
-                    proposals.extend(recovered)
-
         proposals.sort(key=lambda item: item.created_at, reverse=True)
 
         return AiConversationDetailResponse(
             conversation=AiConversationResponse.model_validate(conv.model_dump()),
-            messages=[AiMessageResponse.model_validate(m.model_dump()) for m in messages],
+            messages=[AiMessageResponse.model_validate(m.model_dump()) for m in repaired_messages],
             proposals=[AiActionProposalResponse.model_validate(p.model_dump()) for p in proposals],
         )
 
@@ -915,9 +872,21 @@ class AIOrchestrator:
         rejected_candidates_count = 0
         reply_Now = datetime.now(timezone.utc)
 
+        existing_pending_sigs = {
+            self._proposal_signature(p.action_type, p.payload)
+            for p in self._ai_repo.list_proposals(user_id, conversation_id=conversation_id)
+            if p.status == ProposalStatus.pending
+            and (p.expires_at is None or p.expires_at > reply_Now)
+        }
+        seen_turn_sigs: set[str] = set()
+
         for idx, candidate in enumerate(provider_result.proposals):
             try:
                 validated = self._action_validator.validate_candidate(user_id, candidate)
+                sig = self._proposal_signature(validated.action_type.value, validated.payload)
+                if sig in seen_turn_sigs or sig in existing_pending_sigs:
+                    continue
+                seen_turn_sigs.add(sig)
                 prop_idem = (
                     f"m:{payload.idempotency_key[:68]}:{idx}"
                     if payload.idempotency_key
@@ -941,16 +910,6 @@ class AIOrchestrator:
                 saved_proposals.append(proposal_record)
             except AppError:
                 rejected_candidates_count += 1
-
-        if not saved_proposals:
-            saved_proposals.extend(
-                self._synthesize_missing_plan_proposals(
-                    user_id,
-                    conversation_id,
-                    provider_result.reply,
-                    reply_Now,
-                )
-            )
 
         # Confirmation intelligente : exécution directe uniquement pour une action simple explicitement autorisée
         memory_allow_simple = (
@@ -1065,7 +1024,7 @@ class AIOrchestrator:
     ) -> list[AiActionProposalResponse]:
         now = datetime.now(timezone.utc)
         records = [
-            self._refresh_proposal_expiration(item, now)
+            self._refresh_proposal_expiration(item, now, persist=False)
             for item in self._ai_repo.list_proposals(user_id)
         ]
         if status_filter is not None:
@@ -1077,7 +1036,7 @@ class AIOrchestrator:
         record = self._ai_repo.get_proposal(user_id, proposal_id)
         if record is None:
             raise AppError(404, "NOT_FOUND", "Proposition d’action introuvable.")
-        refreshed = self._refresh_proposal_expiration(record, datetime.now(timezone.utc))
+        refreshed = self._refresh_proposal_expiration(record, datetime.now(timezone.utc), persist=False)
         return AiActionProposalResponse.model_validate(refreshed.model_dump())
 
     def update_proposal(
@@ -1312,6 +1271,26 @@ class AIOrchestrator:
         compensations: list[Callable[[], None]] | None = None,
     ) -> dict[str, Any]:
         if action_type == AiActionType.create_task:
+            norm_title = " ".join(str(payload["title"]).strip().lower().split())
+            existing_task = next(
+                (
+                    t
+                    for t in self._task_service.list_tasks(user_id)
+                    if t.status in (TaskStatus.todo, TaskStatus.in_progress, TaskStatus.parked)
+                    and " ".join(t.title.strip().lower().split()) == norm_title
+                ),
+                None,
+            )
+            if existing_task is not None:
+                return {
+                    "entity": "task",
+                    "entity_id": str(existing_task.id),
+                    "task_id": str(existing_task.id),
+                    "title": existing_task.title,
+                    "project_id": str(existing_task.project_id) if existing_task.project_id else None,
+                    "source": existing_task.source.value,
+                    "reused_existing": True,
+                }
             created_task = self._task_service.create_task(
                 user_id,
                 TaskCreate(
@@ -1400,6 +1379,27 @@ class AIOrchestrator:
         if action_type == AiActionType.create_project:
             if self._project_service is None:
                 raise AppError(500, "PROJECT_SERVICE_UNAVAILABLE", "Le service Projets est indisponible.")
+            norm_proj = " ".join(str(payload["name"]).strip().lower().split())
+            existing_proj = next(
+                (
+                    p
+                    for p in self._project_service.list_projects(user_id)
+                    if p.status != ProjectStatus.archived
+                    and " ".join(p.name.strip().lower().split()) == norm_proj
+                ),
+                None,
+            )
+            if existing_proj is not None:
+                return {
+                    "entity": "project",
+                    "entity_id": str(existing_proj.id),
+                    "project_id": str(existing_proj.id),
+                    "name": existing_proj.name,
+                    "goal": existing_proj.goal,
+                    "next_action": existing_proj.next_action,
+                    "status": existing_proj.status.value,
+                    "reused_existing": True,
+                }
             proj_status = ProjectStatus(payload.get("status", "active"))
             next_act = str(payload.get("next_action") or "").strip()
             if proj_status == ProjectStatus.active and len(next_act) < 2:
@@ -1575,6 +1575,26 @@ class AIOrchestrator:
             }
 
         if action_type == AiActionType.create_skill:
+            norm_skill_name = " ".join(str(payload["name"]).strip().lower().split())
+            existing_skill = next(
+                (
+                    s
+                    for s in self._skill_service.list_skills(user_id)
+                    if " ".join(s.name.strip().lower().split()) == norm_skill_name
+                ),
+                None,
+            )
+            if existing_skill is not None:
+                return {
+                    "entity": "skill",
+                    "entity_id": str(existing_skill.id),
+                    "skill_id": str(existing_skill.id),
+                    "name": existing_skill.name,
+                    "current_level": existing_skill.current_level,
+                    "goal_id": payload.get("goal_id"),
+                    "learning_path_id": payload.get("learning_path_id"),
+                    "reused_existing": True,
+                }
             created_skill = self._skill_service.create_skill(
                 user_id,
                 SkillCreate(
@@ -1679,6 +1699,25 @@ class AIOrchestrator:
         if action_type == AiActionType.create_learning_path:
             if self._learning_service is None:
                 raise AppError(500, "LEARNING_SERVICE_UNAVAILABLE", "Le service Apprentissage est indisponible.")
+            norm_lp = " ".join(str(payload["title"]).strip().lower().split())
+            overview_lp = self._learning_service.get_overview(user_id)
+            existing_lp = next(
+                (
+                    p
+                    for p in overview_lp.paths
+                    if " ".join(p.title.strip().lower().split()) == norm_lp
+                ),
+                None,
+            )
+            if existing_lp is not None:
+                return {
+                    "entity": "learning_path",
+                    "entity_id": str(existing_lp.id),
+                    "learning_path_id": str(existing_lp.id),
+                    "title": existing_lp.title,
+                    "module_ids": [],
+                    "reused_existing": True,
+                }
             created_path = self._learning_service.create_path(
                 user_id,
                 LearningPathCreate(
@@ -1766,6 +1805,26 @@ class AIOrchestrator:
         if action_type == AiActionType.create_personal_goal:
             if self._objectives_service is None:
                 raise AppError(500, "OBJECTIVES_SERVICE_UNAVAILABLE", "Le service Objectifs est indisponible.")
+            norm_goal = " ".join(str(payload["title"]).strip().lower().split())
+            existing_goal = next(
+                (
+                    g
+                    for g in self._objectives_service.list_goals(user_id)
+                    if g.status != ObjectiveStatus.archived
+                    and " ".join(g.title.strip().lower().split()) == norm_goal
+                ),
+                None,
+            )
+            if existing_goal is not None:
+                return {
+                    "entity": "personal_goal",
+                    "entity_id": str(existing_goal.id),
+                    "goal_id": str(existing_goal.id),
+                    "title": existing_goal.title,
+                    "learning_path_id": str(existing_goal.learning_path_id) if existing_goal.learning_path_id else None,
+                    "skill_id": str(existing_goal.skill_id) if existing_goal.skill_id else None,
+                    "reused_existing": True,
+                }
             created_goal = self._objectives_service.create_goal(
                 user_id,
                 PersonalGoalCreate(
@@ -2126,6 +2185,31 @@ class AIOrchestrator:
                     "COURSE_SERVICE_UNAVAILABLE",
                     "Le service Cours n’est pas configuré.",
                 )
+            norm_subj = " ".join(str(payload["subject"]).strip().lower().split())
+            norm_ctitle = " ".join(str(payload.get("title") or "").strip().lower().split())
+            existing_course = next(
+                (
+                    c
+                    for c in self._course_service.list_courses(user_id)
+                    if c.status.value != "archived"
+                    and (
+                        " ".join(c.subject.strip().lower().split()) == norm_subj
+                        or (norm_ctitle and " ".join(c.title.strip().lower().split()) == norm_ctitle)
+                    )
+                ),
+                None,
+            )
+            if existing_course is not None:
+                return {
+                    "entity": "course",
+                    "entity_id": str(existing_course.id),
+                    "course_id": str(existing_course.id),
+                    "title": existing_course.title,
+                    "subject": existing_course.subject,
+                    "current_level": existing_course.current_level,
+                    "total_levels": existing_course.total_levels,
+                    "reused_existing": True,
+                }
             created_course = self._course_service.create_course(
                 user_id,
                 CourseCreate(

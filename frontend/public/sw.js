@@ -1,4 +1,5 @@
-const CACHE_NAME = 'amireflow-study-os-v1';
+const CACHE_PREFIX = 'amireflow-study-os-';
+const CACHE_NAME = `${CACHE_PREFIX}v2`;
 const APP_SHELL_ASSETS = [
   '/',
   '/index.html',
@@ -27,7 +28,7 @@ self.addEventListener('activate', (event) => {
       .then((keys) =>
         Promise.all(
           keys
-            .filter((key) => key !== CACHE_NAME)
+            .filter((key) => key.startsWith(CACHE_PREFIX) && key !== CACHE_NAME)
             .map((oldKey) => caches.delete(oldKey)),
         ),
       )

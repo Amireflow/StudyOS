@@ -127,8 +127,15 @@ export function AuthProvider({ children, initialSession }: AuthProviderProps) {
           authProvider: 'password',
         });
       })
-      .catch(() => {
-        setApiSessionHint(false);
+      .catch((err: unknown) => {
+        const status =
+          typeof err === 'object' && err !== null && 'status' in err
+            ? Number((err as { status?: number }).status)
+            : 0;
+        // Ne purger l'indice de session que sur refus d'authentification explicite (401/403), pas sur coupure réseau
+        if (status === 401 || status === 403) {
+          setApiSessionHint(false);
+        }
       })
       .finally(() => {
         if (active) {

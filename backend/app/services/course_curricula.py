@@ -41,6 +41,17 @@ CURATED_RESOURCES: dict[str, list[dict[str, Any]]] = {
             "max_level": 3,
         },
         {
+            "title": "Harvard CS50P — Introduction to Programming with Python (Cours vidéo officiel)",
+            "url": "https://cs50.harvard.edu/python/2022/weeks/",
+            "resource_type": "video",
+            "language": "en",
+            "is_official": True,
+            "source_name": "Harvard University (CS50)",
+            "notes": "Cours vidéo universitaire complet avec démonstrations pas à pas et exercices progressifs.",
+            "min_level": 1,
+            "max_level": 3,
+        },
+        {
             "title": "Pytest — Documentation officielle",
             "url": "https://docs.pytest.org/en/stable/",
             "resource_type": "documentation",
@@ -510,8 +521,58 @@ def normalize_lesson_to_eight_parts(
     raw_md = str(lesson.get("content_markdown") or "").strip()
     summary = str(lesson.get("summary") or "").strip()
     title = str(lesson.get("title") or "Chapitre").strip()
-    examples = list(lesson.get("code_examples") or [])
+    examples = [dict(ex) for ex in (lesson.get("code_examples") or []) if isinstance(ex, dict)]
     exercises = list(lesson.get("exercises") or [])
+
+    if len(examples) == 1:
+        primary_ex = examples[0]
+        ex_lang = str(primary_ex.get("language") or code_lang or "markdown")
+        if ex_lang == "python":
+            second_code = (
+                f"# Cas d'utilisation réel & gestion des cas limites : {title}\n"
+                "def validate_and_apply(items: list[str]) -> list[str]:\n"
+                "    if not items:\n"
+                "        raise ValueError('Entrée vide : au moins un élément est requis.')\n"
+                "    return [item.strip() for item in items if item and item.strip()]\n"
+                "\n"
+                "assert validate_and_apply(['  ok  ', '']) == ['ok']"
+            )
+        elif ex_lang in ("typescript", "javascript", "tsx"):
+            second_code = (
+                f"// Cas d'utilisation réel & garde d'entrée : {title}\n"
+                "function normalizeEntries(items) {\n"
+                "  if (!Array.isArray(items) || items.length === 0) {\n"
+                "    throw new Error('Entrée vide : fournissez au moins un élément.');\n"
+                "  }\n"
+                "  return items.map((x) => String(x).trim()).filter(Boolean);\n"
+                "}"
+            )
+        elif ex_lang == "sql":
+            second_code = (
+                f"-- Cas d'utilisation réel & protection NULL : {title}\n"
+                "SELECT id, COALESCE(title, 'Sans titre') AS safe_title\n"
+                "FROM course_items\n"
+                "WHERE status = 'active'\n"
+                "ORDER BY created_at DESC;"
+            )
+        else:
+            second_code = (
+                f"Cas réel ({subject} · Niveau {level_number}) : {title}\n"
+                "1. Contrôler les préconditions (entrée vide, borne invalide, valeur nulle).\n"
+                "2. Appliquer la règle métier principale de manière déterministe.\n"
+                "3. Vérifier la sortie attendue sur un jeu de test nominal et un cas d'erreur."
+            )
+        examples.append(
+            {
+                "title": f"Cas réel et gestion des cas limites — {title}",
+                "language": ex_lang,
+                "code": second_code,
+                "explanation": (
+                    "Complète le premier exemple en montrant comment protéger les entrées invalides "
+                    "et vérifier le résultat attendu avant déploiement."
+                ),
+            }
+        )
 
     if "### 2. Prérequis" not in raw_md and "### 2. Prerequisites" not in raw_md:
         ex_code_block = ""
@@ -526,9 +587,9 @@ def normalize_lesson_to_eight_parts(
         if language_pref == "en":
             sections = [
                 f"## 1. Learning Objective\n\n{summary or title}",
-                f"### 2. Prerequisites & Intuition\n\nEnsure previous concepts in **{subject}** (Level {level_number}) are solid before combining them here.",
+                f"### 2. Prerequisites & Real-World Use Case\n\nEnsure previous concepts in **{subject}** (Level {level_number}) are solid before combining them here. In production systems, **{title}** prevents silent data corruption and enforces clear contracts.",
                 f"### 3. Step-by-Step Explanation\n\n{raw_md}",
-                f"### 4. Annotated Example\n\nInspect the input contract, transformation logic, and explicit return value.{ex_code_block}",
+                f"### 4. Annotated Examples\n\nInspect the input contract, transformation logic, edge-case guard, and explicit return value.{ex_code_block}",
                 "### 5. Edge Cases & Common Pitfalls\n\n- Always validate empty, null, or out-of-bounds inputs early.\n- Avoid silent fallbacks when an invariant fails.",
                 "### 6. Best Practices\n\n- Keep functions single-purpose with shallow nesting and explicit types or contracts.",
                 f"### 7. Key Takeaway\n\nMastering **{title}** relies on explicit boundaries, readable invariants, and reproducible verification.",
@@ -542,10 +603,10 @@ def normalize_lesson_to_eight_parts(
             )
             sections = [
                 f"## 1. Objectif pédagogique\n\n{summary or title}{bilingual_note}",
-                f"### 2. Prérequis & intuition\n\nPour aborder **{title}** en **{subject}** (Niveau {level_number}), appuyez-vous sur des entrées clairement typées et une séparation nette entre validation et calcul.",
+                f"### 2. Prérequis & cas d'utilisation réel\n\nPour aborder **{title}** en **{subject}** (Niveau {level_number}), appuyez-vous sur des entrées clairement typées et une séparation nette entre validation et calcul. En conditions réelles, cette pratique évite les régressions silencieuses lors du traitement de données externes.",
                 f"### 3. Explication pas à pas\n\n{raw_md}",
-                f"### 4. Exemple concret commenté\n\nObservez comment l’exemple ci-dessous protège les entrées et rend le résultat explicite.{ex_code_block}",
-                "### 5. Cas limites & pièges fréquents\n\n- Entrée vide, nulle (`None`/`null`) ou hors bornes : validez dès le début de la fonction.\n- Ne masquez jamais une erreur par un résultat par défaut trompeur.",
+                f"### 4. Exemples pratiques commentés\n\nObservez comment les exemples ci-dessous protègent les entrées et rendent le résultat explicite.{ex_code_block}",
+                "### 5. Cas limites & erreurs fréquentes\n\n- Entrée vide, nulle (`None`/`null`) ou hors bornes : validez dès le début de la fonction.\n- Ne masquez jamais une erreur par un résultat par défaut trompeur.",
                 "### 6. Bonnes pratiques\n\n- Fonctions courtes à responsabilité unique, noms explicites et gestion d’erreurs déterministe.",
                 f"### 7. Synthèse à retenir\n\n« {title} » repose sur un contrat clair (entrées attendues -> traitement -> sortie ou erreur explicite).",
                 "### 8. Contrôle de compréhension\n\nAvant de passer au chapitre suivant, résumez le rôle du cas limite principal avec vos mots et réalisez l’exercice guidé ci-dessous.",
@@ -567,6 +628,12 @@ def normalize_lesson_to_eight_parts(
                 item["exercise_type"] = "open_explanation"
         item.setdefault("choices", [])
         item.setdefault("expected_answer", None)
+        hints_list = [str(h).strip() for h in (item.get("hints") or []) if str(h).strip()]
+        if len(hints_list) < 2:
+            hints_list.append(
+                "Vérifiez d'abord les entrées invalides (vide, nul ou hors bornes) avant d'écrire le cas nominal, puis testez avec une assertion explicite."
+            )
+        item["hints"] = hints_list
         normalized_exercises.append(item)
         # Ajouter un quiz fermé de contrôle de compréhension sur le premier chapitre si absent
         if idx == 0 and len(exercises) == 1 and int(lesson.get("position") or 1) == 4:
@@ -601,6 +668,7 @@ def normalize_lesson_to_eight_parts(
     return {
         **lesson,
         "content_markdown": normalized_md,
+        "code_examples": examples,
         "exercises": normalized_exercises,
     }
 

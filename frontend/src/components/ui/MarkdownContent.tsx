@@ -50,7 +50,7 @@ function renderInline(text: string): ReactNode[] {
       tokens.push(
         <code
           key={`md-code-${key++}`}
-          className="rounded-md bg-zinc-200/80 px-1.5 py-0.5 font-mono text-[0.85em] text-zinc-900 dark:bg-zinc-700/80 dark:text-zinc-100"
+          className="break-words rounded-md bg-zinc-200/75 px-1.5 py-0.5 font-mono text-[0.84em] text-zinc-900 [overflow-wrap:anywhere] dark:bg-zinc-700/80 dark:text-zinc-100"
         >
           {chosen.match[1]}
         </code>,
@@ -65,7 +65,7 @@ function renderInline(text: string): ReactNode[] {
             href={href}
             target="_blank"
             rel="noopener noreferrer"
-            className="font-medium text-teal-700 underline decoration-teal-500/50 underline-offset-2 transition-colors hover:text-teal-800 dark:text-teal-400 dark:hover:text-teal-300"
+            className="break-words font-medium text-teal-700 underline decoration-teal-500/50 underline-offset-2 transition-colors [overflow-wrap:anywhere] hover:text-teal-800 dark:text-teal-400 dark:hover:text-teal-300"
           >
             {label}
           </a>,
@@ -109,22 +109,22 @@ function CodeBlock({ language, code }: { language: string; code: string }) {
   };
 
   return (
-    <div className="my-3 overflow-hidden rounded-xl bg-zinc-900 text-zinc-100 dark:bg-zinc-950">
-      <div className="flex items-center justify-between bg-zinc-800/90 px-3.5 py-2 text-[11px] font-medium text-zinc-300 dark:bg-zinc-900">
-        <span className="font-mono uppercase tracking-wider text-teal-300">
+    <div className="my-3 min-w-0 max-w-full overflow-hidden rounded-xl bg-zinc-900 text-zinc-100 dark:bg-zinc-950">
+      <div className="flex items-center justify-between gap-2 bg-zinc-800/90 px-3.5 py-2 text-[11px] font-medium text-zinc-300 dark:bg-zinc-900">
+        <span className="truncate font-mono uppercase tracking-wider text-teal-300">
           {language || 'code'}
         </span>
         <button
           type="button"
           onClick={() => void handleCopy()}
           aria-label="Copier le code"
-          className="inline-flex items-center gap-1 rounded-md bg-zinc-700/70 px-2 py-1 text-[11px] font-medium text-zinc-100 transition-colors hover:bg-zinc-600/80"
+          className="inline-flex shrink-0 items-center gap-1 rounded-md bg-zinc-700/70 px-2 py-1 text-[11px] font-medium text-zinc-100 transition-colors hover:bg-zinc-600/80"
         >
           <Icon icon={copied ? Tick01Icon : Copy01Icon} size={13} />
           <span>{copied ? 'Copié' : 'Copier'}</span>
         </button>
       </div>
-      <pre className="overflow-x-auto p-3.5 font-mono text-xs leading-relaxed text-zinc-100">
+      <pre className="max-w-full overflow-x-auto p-3.5 font-mono text-xs leading-relaxed text-zinc-100">
         <code>{code}</code>
       </pre>
     </div>
@@ -231,9 +231,9 @@ export function MarkdownContent({ content, className }: MarkdownContentProps) {
       blocks.push(
         <div
           key={`tbl-${idx}`}
-          className="my-3 overflow-x-auto rounded-xl bg-zinc-50 dark:bg-zinc-800/60"
+          className="my-3 min-w-0 max-w-full overflow-x-auto rounded-xl bg-zinc-50 dark:bg-zinc-800/60"
         >
-          <table className="w-full text-left text-xs leading-relaxed">
+          <table className="w-full min-w-[260px] text-left text-xs leading-relaxed">
             <thead className="bg-zinc-100/90 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-100">
               <tr>
                 {headers.map((head, hIdx) => (
@@ -250,7 +250,7 @@ export function MarkdownContent({ content, className }: MarkdownContentProps) {
                   className="odd:bg-transparent even:bg-white/70 dark:even:bg-zinc-900/40"
                 >
                   {headers.map((_, cIdx) => (
-                    <td key={`td-${rIdx}-${cIdx}`} className="px-3 py-2 align-top">
+                    <td key={`td-${rIdx}-${cIdx}`} className="px-3 py-2 align-top break-words">
                       {renderInline(row[cIdx] ?? '')}
                     </td>
                   ))}
@@ -272,7 +272,7 @@ export function MarkdownContent({ content, className }: MarkdownContentProps) {
         blocks.push(
           <h2
             key={`h-${idx}`}
-            className="mt-4 first:mt-0 text-base font-bold tracking-tight text-zinc-950 dark:text-zinc-50"
+            className="mt-5 first:mt-0 break-words text-base font-bold tracking-tight text-zinc-950 dark:text-zinc-50"
           >
             {headingText}
           </h2>,
@@ -281,7 +281,7 @@ export function MarkdownContent({ content, className }: MarkdownContentProps) {
         blocks.push(
           <h3
             key={`h-${idx}`}
-            className="mt-4 first:mt-0 text-sm font-bold tracking-tight text-zinc-900 dark:text-zinc-100"
+            className="mt-5 first:mt-0 break-words text-[15px] font-bold tracking-tight text-zinc-900 dark:text-zinc-100"
           >
             {headingText}
           </h3>,
@@ -290,7 +290,7 @@ export function MarkdownContent({ content, className }: MarkdownContentProps) {
         blocks.push(
           <h4
             key={`h-${idx}`}
-            className="mt-3 first:mt-0 text-[13px] font-semibold tracking-tight text-zinc-900 dark:text-zinc-100"
+            className="mt-4 first:mt-0 break-words text-xs font-semibold uppercase tracking-wide text-teal-800 dark:text-teal-300"
           >
             {headingText}
           </h4>,
@@ -309,7 +309,7 @@ export function MarkdownContent({ content, className }: MarkdownContentProps) {
       }
       const joined = quoteLines.join(' ');
       blocks.push(
-        <div key={`quote-${idx}`} className={cn('my-2.5', getCalloutClasses(joined))}>
+        <div key={`quote-${idx}`} className={cn('my-3 break-words', getCalloutClasses(joined))}>
           {renderInline(joined)}
         </div>,
       );
@@ -327,9 +327,9 @@ export function MarkdownContent({ content, className }: MarkdownContentProps) {
         idx += 1;
       }
       blocks.push(
-        <ul key={`ul-${idx}`} className="my-2 list-disc space-y-1.5 pl-5 text-sm leading-relaxed">
+        <ul key={`ul-${idx}`} className="my-2.5 list-disc space-y-1.5 pl-5 text-sm leading-relaxed break-words">
           {items.map((item, i) => (
-            <li key={`li-${i}`}>{renderInline(item)}</li>
+            <li key={`li-${i}`} className="break-words">{renderInline(item)}</li>
           ))}
         </ul>,
       );
@@ -344,9 +344,9 @@ export function MarkdownContent({ content, className }: MarkdownContentProps) {
         idx += 1;
       }
       blocks.push(
-        <ol key={`ol-${idx}`} className="my-2 list-decimal space-y-1.5 pl-5 text-sm leading-relaxed">
+        <ol key={`ol-${idx}`} className="my-2.5 list-decimal space-y-1.5 pl-5 text-sm leading-relaxed break-words">
           {items.map((item, i) => (
-            <li key={`oli-${i}`}>{renderInline(item)}</li>
+            <li key={`oli-${i}`} className="break-words">{renderInline(item)}</li>
           ))}
         </ol>,
       );
@@ -370,7 +370,7 @@ export function MarkdownContent({ content, className }: MarkdownContentProps) {
       idx += 1;
     }
     blocks.push(
-      <p key={`p-${idx}`} className="my-2 text-sm leading-relaxed first:mt-0 last:mb-0">
+      <p key={`p-${idx}`} className="my-2.5 break-words text-sm leading-relaxed first:mt-0 last:mb-0">
         {paraLines.map((pl, pIdx) => (
           <Fragment key={`pl-${pIdx}`}>
             {pIdx > 0 && ' '}
@@ -382,7 +382,7 @@ export function MarkdownContent({ content, className }: MarkdownContentProps) {
   }
 
   return (
-    <div className={cn('space-y-1.5 text-zinc-800 dark:text-zinc-200', className)}>
+    <div className={cn('min-w-0 max-w-full space-y-2 break-words text-zinc-800 dark:text-zinc-200', className)}>
       {blocks}
     </div>
   );

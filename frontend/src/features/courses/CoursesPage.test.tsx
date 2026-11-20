@@ -179,6 +179,28 @@ describe('CoursesPage & verrou pédagogique multi-niveaux', () => {
     });
   });
 
+  it('permet de poser une question au tuteur du chapitre et affiche sa réponse', async () => {
+    const api = installMockStudyApi();
+    const user = userEvent.setup();
+    renderCoursesApp();
+
+    await user.click(await screen.findByRole('button', { name: 'Nouveau cours' }));
+    await user.type(screen.getByLabelText(/Sujet ou langage/), 'Python');
+    await user.click(screen.getByRole('button', { name: 'Prévisualiser le plan' }));
+    await user.click(await screen.findByRole('button', { name: 'Créer le cours complet' }));
+
+    expect(await screen.findByRole('region', { name: 'Tuteur du chapitre' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /Explique plus simplement/ }));
+
+    expect(await screen.findByText(/Réponse du tuteur/)).toBeInTheDocument();
+    const askReq = api.requests.find((r) => r.url.endsWith('/ask'));
+    expect(askReq?.body).toMatchObject({ quick_action: 'simplify' });
+
+    await user.type(screen.getByLabelText('Question au tuteur'), 'Pourquoi ValueError ?');
+    await user.click(screen.getByRole('button', { name: 'Envoyer la question au tuteur' }));
+    expect(await screen.findByText('Pourquoi ValueError ?')).toBeInTheDocument();
+  });
+
   it('permet de créer un cours depuis le Copilote IA uniquement après validation explicite', async () => {
     const api = installMockStudyApi();
     const user = userEvent.setup();

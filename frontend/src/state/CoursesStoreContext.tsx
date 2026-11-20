@@ -10,6 +10,7 @@ import {
 } from 'react';
 import { ApiError } from '../lib/api-client';
 import {
+  askCourseLessonTutorApi,
   createCourseApi,
   createCourseResourceApi,
   deleteCourseApi,
@@ -23,6 +24,8 @@ import {
   updateCourseLessonStatusApi,
   validateCourseLevelApi,
   type CourseCreateInput,
+  type CourseLessonTutorAskInput,
+  type CourseLessonTutorAskResult,
   type CoursePreviewInput,
   type CourseResourceInput,
   type CourseSubmissionInput,
@@ -52,8 +55,14 @@ export interface CoursesStoreContextValue {
   updateLessonStatus: (
     courseId: string,
     lessonId: string,
-    status: CourseLessonStatus,
+    status?: CourseLessonStatus,
+    currentStepIndex?: number,
   ) => Promise<boolean>;
+  askLessonTutor: (
+    courseId: string,
+    lessonId: string,
+    input: CourseLessonTutorAskInput,
+  ) => Promise<CourseLessonTutorAskResult | null>;
   addResource: (courseId: string, input: CourseResourceInput) => Promise<CourseResource | null>;
   deleteResource: (courseId: string, resourceId: string) => Promise<boolean>;
   submitWork: (
@@ -204,7 +213,8 @@ export function CoursesStoreProvider({ children }: { children: ReactNode }) {
     async (
       courseId: string,
       lessonId: string,
-      status: CourseLessonStatus,
+      status?: CourseLessonStatus,
+      currentStepIndex?: number,
     ): Promise<boolean> => {
       setMutationError(null);
       if (!isApiMode) {
@@ -212,7 +222,7 @@ export function CoursesStoreProvider({ children }: { children: ReactNode }) {
         return false;
       }
       try {
-        await updateCourseLessonStatusApi(accessToken, courseId, lessonId, status);
+        await updateCourseLessonStatusApi(accessToken, courseId, lessonId, status, currentStepIndex);
         await Promise.all([
           queryClient.invalidateQueries({ queryKey: ['courses'] }),
           queryClient.invalidateQueries({ queryKey: ['course-detail', userIdKey, courseId] }),
@@ -223,6 +233,37 @@ export function CoursesStoreProvider({ children }: { children: ReactNode }) {
           err instanceof Error ? err.message : 'Impossible de mettre à jour la progression du chapitre.',
         );
         return false;
+      }
+    },
+    [accessToken, isApiMode, queryClient, userIdKey],
+  );
+
+  const askLessonTutor = useCallback(
+    async (
+      courseId: string,
+      lessonId: string,
+      input: CourseLessonTutorAskInput,
+    ): Promise<CourseLessonTutorAskResult | null> => {
+      setMutationError(null);
+      if (input.message.trim().length < 1) {
+        setMutationError('Veuillez saisir une question pour le tuteur.');
+        return null;
+      }
+      if (!isApiMode) {
+        setMutationError('Connexion requise.');
+        return null;
+      }
+      try {
+        const result = await askCourseLessonTutorApi(accessToken, courseId, lessonId, input);
+        await queryClient.invalidateQueries({
+          queryKey: ['course-detail', userIdKey, courseId],
+        });
+        return result;
+      } catch (err) {
+        setMutationError(
+          err instanceof Error ? err.message : 'Impossible de contacter le tuteur de ce chapitre.',
+        );
+        return null;
       }
     },
     [accessToken, isApiMode, queryClient, userIdKey],
@@ -391,6 +432,7 @@ export function CoursesStoreProvider({ children }: { children: ReactNode }) {
       updateCourse,
       deleteCourse,
       updateLessonStatus,
+      askLessonTutor,
       addResource,
       deleteResource,
       submitWork,
@@ -409,6 +451,7 @@ export function CoursesStoreProvider({ children }: { children: ReactNode }) {
       updateCourse,
       deleteCourse,
       updateLessonStatus,
+      askLessonTutor,
       addResource,
       deleteResource,
       submitWork,

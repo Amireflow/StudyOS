@@ -445,18 +445,32 @@ class LearningPlanningService:
 
         to_replace_ids: set[UUID] = set()
         replaced_snapshots: list[dict[str, Any]] = []
-        if payload.replace_future_planned and prev_event_ids:
+        if payload.replace_future_planned:
             for ev in live_events:
                 ev_s = _ensure_utc(ev.starts_at) or now
-                if str(ev.id) in prev_event_ids and ev_s >= now - timedelta(minutes=5):
+                is_prev_plan_event = str(ev.id) in prev_event_ids
+                is_future_ai_study_event = (
+                    ev.source == ScheduleEventSource.ai_proposal
+                    and ev.type in (ScheduleEventType.learning, ScheduleEventType.project)
+                )
+                if (is_prev_plan_event or is_future_ai_study_event) and ev_s >= now - timedelta(minutes=5):
                     to_replace_ids.add(ev.id)
                     replaced_snapshots.append(ev.model_dump(mode="json"))
 
-        # Vérification des conflits en temps réel sur l'agenda restant (événements fixes + manuels)
+        # Vérification des conflits en temps réel sur l'agenda restant (événements fixes + manuels) et entre séances du plan
         remaining_events = [ev for ev in live_events if ev.id not in to_replace_ids]
+        checked_new: list[tuple[datetime, datetime, str]] = []
         for sess in sessions:
             s_utc = _ensure_utc(sess.starts_at) or now
             e_utc = _ensure_utc(sess.ends_at) or now
+            for prev_s, prev_e, prev_title in checked_new:
+                if _intervals_overlap(s_utc, e_utc, prev_s, prev_e):
+                    raise AppError(
+                        409,
+                        "PLANNING_CONFLICT_DETECTED",
+                        f"Chevauchement interne détecté entre « {prev_title} » et « {sess.title} ». Recalculez le programme.",
+                    )
+            checked_new.append((s_utc, e_utc, sess.title))
             for ev in remaining_events:
                 ev_s = _ensure_utc(ev.starts_at) or now
                 ev_e = _ensure_utc(ev.ends_at) or now

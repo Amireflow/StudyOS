@@ -80,9 +80,9 @@ export function CourseProjectPanel({
   };
 
   return (
-    <div className="space-y-4">
+    <div className="min-w-0 max-w-full space-y-4">
       {/* Bandeau de déblocage du niveau en haut pour une visibilité immédiate */}
-      <section className="rounded-2xl bg-white p-4 sm:p-5 dark:bg-zinc-900">
+      <section className="min-w-0 max-w-full overflow-hidden rounded-2xl bg-white p-4 sm:p-5 dark:bg-zinc-900">
         {isValidated ? (
           <div className="flex items-start gap-3 rounded-xl bg-emerald-50 p-3.5 text-xs text-emerald-950 dark:bg-emerald-950/40 dark:text-emerald-100">
             <Icon icon={Award02Icon} size={18} className="mt-0.5 shrink-0 text-emerald-700 dark:text-emerald-300" />
@@ -147,13 +147,13 @@ export function CourseProjectPanel({
         )}
       </section>
 
-      <section className="space-y-4 rounded-2xl bg-white p-5 sm:p-6 dark:bg-zinc-900">
+      <section className="min-w-0 max-w-full overflow-hidden space-y-4 rounded-2xl bg-white p-4 sm:p-6 dark:bg-zinc-900">
         <div className="flex flex-wrap items-start justify-between gap-2">
-          <div>
+          <div className="min-w-0 flex-1">
             <p className="text-xs font-medium text-teal-700 dark:text-teal-400">
               Projet du niveau {level.levelNumber}
             </p>
-            <h2 className="mt-0.5 text-lg font-bold tracking-tight text-zinc-950 dark:text-zinc-50">
+            <h2 className="mt-0.5 break-words text-lg font-bold tracking-tight text-zinc-950 dark:text-zinc-50">
               {level.projectTitle ?? `Mini-projet Niveau ${level.levelNumber}`}
             </h2>
           </div>

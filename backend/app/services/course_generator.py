@@ -1643,6 +1643,43 @@ def _select_levels_map(
     return get_generic_levels(subject, total_levels, language_pref=language_pref)
 
 
+def validate_generated_level_content(parsed: dict[str, Any]) -> tuple[bool, list[str]]:
+    """Valide la structure, la profondeur et la cohérence d'un niveau généré par LLM avant enregistrement."""
+    issues: list[str] = []
+    if not isinstance(parsed, dict):
+        return False, ["Format JSON racine invalide."]
+    title = str(parsed.get("title") or "").strip()
+    summary = str(parsed.get("summary") or "").strip()
+    objectives = parsed.get("objectives")
+    if len(title) < 4:
+        issues.append("Titre de niveau absent ou trop court.")
+    if len(summary) < 25:
+        issues.append("Résumé pédagogique trop court.")
+    if not isinstance(objectives, list) or len([o for o in objectives if str(o).strip()]) < 2:
+        issues.append("Au moins 2 objectifs pédagogiques mesurables sont requis.")
+
+    raw_lessons = parsed.get("lessons")
+    if raw_lessons is not None:
+        if not isinstance(raw_lessons, list) or len(raw_lessons) < 3:
+            issues.append("Un niveau complet généré par IA doit contenir au moins 3 chapitres détaillés.")
+        else:
+            for idx, ch in enumerate(raw_lessons, start=1):
+                if not isinstance(ch, dict):
+                    issues.append(f"Chapitre {idx} invalide.")
+                    continue
+                ch_title = str(ch.get("title") or "").strip()
+                ch_md = str(ch.get("content_markdown") or "").strip()
+                ch_examples = ch.get("code_examples")
+                ch_exercises = ch.get("exercises")
+                if len(ch_title) < 3 or len(ch_md) < 80:
+                    issues.append(f"Chapitre {idx} insuffisamment détaillé.")
+                if not isinstance(ch_examples, list) or len(ch_examples) < 1:
+                    issues.append(f"Chapitre {idx} sans exemple pratique commenté.")
+                if not isinstance(ch_exercises, list) or len(ch_exercises) < 1:
+                    issues.append(f"Chapitre {idx} sans exercice progressif.")
+    return len(issues) == 0, issues
+
+
 def _try_enrich_level_with_llm(
     *,
     subject: str,
@@ -1652,7 +1689,7 @@ def _try_enrich_level_with_llm(
     user_ai_config: dict[str, Any] | None = None,
     focus_hint: str | None = None,
 ) -> tuple[dict[str, Any] | None, str | None, str | None]:
-    """Enrichit optionnellement la fiche de niveau via le fournisseur IA utilisateur puis serveur."""
+    """Génère un niveau pédagogique complet via le fournisseur IA configuré (chapitres, exemples, exercices, projet)."""
     from app.ai.provider import canonicalize_provider_name, normalize_provider_base_url
 
     provider = "local"
@@ -1690,11 +1727,19 @@ def _try_enrich_level_with_llm(
     )
     focus_clause = f" Focus demandé par l'apprenant : {focus_hint.strip()}." if focus_hint and focus_hint.strip() else ""
     prompt = (
-        f"Génère un plan pédagogique JSON strict pour le niveau {level_number} d'un cours sur « {subject} » "
-        f"rédigé en {lang_text}.{focus_clause} Réponds en JSON strict avec les clés : "
-        '{"title": "...", "summary": "...", "objectives": ["..."], "project_title": "...", "project_brief": "..."}.'
+        f"Génère un niveau pédagogique COMPLET en JSON strict pour le niveau {level_number} d'un cours sur « {subject} » "
+        f"rédigé en {lang_text}.{focus_clause} "
+        "Chaque chapitre doit contenir des explications progressives, un cas d'utilisation réel, les erreurs fréquentes et bonnes pratiques, "
+        "au moins 2 exemples pratiques commentés et au moins 1 exercice progressif avec indices qui ne dévoilent pas la solution. "
+        "Réponds UNIQUEMENT en JSON strict avec les clés : "
+        '{"title": "...", "summary": "...", "objectives": ["...", "..."], '
+        '"lessons": [{"position": 1, "title": "...", "summary": "...", "estimated_minutes": 25, "content_markdown": "...", '
+        '"code_examples": [{"title": "...", "language": "...", "code": "...", "explanation": "..."}], '
+        '"exercises": [{"id": "ch1-ex1", "title": "...", "difficulty": "guide", "exercise_type": "code", '
+        '"instructions_markdown": "...", "starter_code": "...", "hints": ["Indice 1 sans solution", "Indice 2 sans solution"], "expected_concepts": ["..."]}]}], '
+        '"project_title": "...", "project_brief": "...", "project_deliverables": ["...", "..."]}.'
     )
-    timeout_seconds = min(12.0, settings.ai_timeout_seconds) if settings is not None else 12.0
+    timeout_seconds = min(18.0, settings.ai_timeout_seconds) if settings is not None else 18.0
     try:
         if provider == "gemini":
             model = validate_model_identifier(model_name)
@@ -1761,6 +1806,276 @@ def _try_enrich_level_with_llm(
     except Exception:
         return None, None, None
     return None, None, None
+
+
+def _build_local_tutor_response(
+    *,
+    subject: str,
+    level_number: int,
+    lesson_title: str,
+    lesson_markdown: str,
+    code_examples: list[dict[str, Any]],
+    user_message: str,
+    quick_action: str | None,
+    step_index: int,
+    step_title: str | None,
+    step_content: str | None,
+) -> tuple[str, list[str]]:
+    topic_key = resolve_topic_key(subject.strip())
+    code_lang = SUBJECT_CODE_LANG.get(topic_key, "python")
+    active_step_label = (step_title or lesson_title).strip()
+    snippet_source = (step_content or lesson_markdown or "").strip()
+
+    first_code = ""
+    if code_examples:
+        first_code = str(code_examples[0].get("code") or "").strip()
+    if not first_code:
+        code_match = re.search(r"```[a-zA-Z0-9_-]*\n(.*?)```", snippet_source, flags=re.DOTALL)
+        if code_match:
+            first_code = code_match.group(1).strip()
+
+    bullet_lines = [
+        line.strip().lstrip("-* ").strip()
+        for line in snippet_source.splitlines()
+        if line.strip().startswith(("- ", "* ", "1.", "2.")) and len(line.strip()) > 12
+    ]
+    core_points = bullet_lines[:3] or [
+        f"Comprendre le rôle exact de **{active_step_label}** dans {subject}.",
+        "Valider systématiquement les entrées et les cas limites avant d'exécuter la logique.",
+        "Vérifier le comportement attendu avec un test ou un exemple reproductible.",
+    ]
+
+    msg_lower = user_message.lower()
+    if quick_action == "simplify" or any(k in msg_lower for k in ("simpl", "analogie", "résume", "comprends pas")):
+        code_block = (
+            f"\n\n```{code_lang}\n{first_code}\n```"
+            if first_code
+            else ""
+        )
+        reply = (
+            f"### Explication simplifiée — {active_step_label}\n\n"
+            f"Retiens l'idée centrale en **3 points simples** pour **{lesson_title}** (Niveau {level_number} · {subject}) :\n\n"
+            f"1. **Pourquoi on l'utilise :** {core_points[0]}\n"
+            f"2. **La règle d'or :** {core_points[1] if len(core_points) > 1 else 'Garder une structure claire, explicite et vérifiable.'}\n"
+            f"3. **Ce qu'il faut éviter :** Ne jamais supposer que l'entrée est toujours valide sans contrôle préalable."
+            f"{code_block}\n\n"
+            "Dis-moi quelle ligne ou quel terme te semble encore flou, ou clique sur **Étape suivante** si c'est clair !"
+        )
+        follow_ups = [
+            "Donne-moi un autre exemple concret",
+            "Pose-moi une question rapide pour vérifier",
+            "Pourquoi ce cas limite est-il important ?",
+        ]
+        return reply, follow_ups
+
+    if quick_action == "example" or any(k in msg_lower for k in ("exemple", "cas concret", "montre", "code")):
+        code_to_show = first_code or f"# Exemple minimal — {subject} ({lesson_title})\n"
+        reply = (
+            f"### Exemple concret commenté — {active_step_label}\n\n"
+            f"Voici comment appliquer **{lesson_title}** pas à pas en **{subject}** :\n\n"
+            f"```{code_lang}\n{code_to_show}\n```\n\n"
+            "**Lecture pas à pas :**\n"
+            f"- **Entrée & contrat :** On définit explicitement les données manipulées pour **{active_step_label}**.\n"
+            f"- **Traitement sûr :** {core_points[0]}\n"
+            "- **Vérification :** On contrôle toujours le résultat sur un cas normal ET un cas limite.\n\n"
+            "Veux-tu qu'on modifie cet exemple ensemble ou qu'on teste ta compréhension avec une question rapide ?"
+        )
+        follow_ups = [
+            "Explique cet exemple ligne par ligne",
+            "Teste-moi avec un mini-quiz sur cet exemple",
+            "Que se passe-t-il si l'entrée est vide ou invalide ?",
+        ]
+        return reply, follow_ups
+
+    if quick_action == "quiz" or any(k in msg_lower for k in ("quiz", "teste", "question de vérification", "interroge")):
+        reply = (
+            f"### Mini-défi rapide — {active_step_label}\n\n"
+            f"Avant de passer à l'étape suivante de **{lesson_title}**, réponds en 1 ou 2 phrases directement ici :\n\n"
+            f"> **Question :** Dans le cadre de **{active_step_label}** en **{subject}**, pourquoi est-il essentiel de vérifier les cas limites ({core_points[0][:90]}...) plutôt que de traiter uniquement le cas nominal ?\n\n"
+            "Écris ta réponse dans le champ ci-dessous et je te dirai tout de suite si tu as le bon réflexe !"
+        )
+        follow_ups = [
+            "Parce que cela évite les erreurs silencieuses sur des entrées invalides",
+            "Donne-moi un indice pour répondre",
+            "Explique-moi d'abord plus simplement",
+        ]
+        return reply, follow_ups
+
+    # Réponse interactive libre (question spécifique de l'étudiant ou réponse au mini-quiz)
+    is_quiz_attempt = any(
+        k in msg_lower
+        for k in ("parce que", "car ", "pour éviter", "afin de", "erreur", "limite", "valide", "invalide")
+    )
+    if is_quiz_attempt:
+        reply = (
+            f"### Très bon raisonnement sur « {active_step_label} » !\n\n"
+            f"Tu as bien identifié le point clé : en **{subject}**, expliciter les invariants et contrôler les cas limites garantit un comportement prévisible et robuste.\n\n"
+            f"- **Point validé :** {core_points[0]}\n"
+            f"- **Pour aller plus loin :** {core_points[1] if len(core_points) > 1 else 'Tu peux maintenant passer sereinement à la suite du chapitre.'}\n\n"
+            "Tu peux cliquer sur **Étape suivante** pour dérouler la suite du cours, ou me poser une autre question."
+        )
+    else:
+        code_hint = f"\n\n```{code_lang}\n{first_code}\n```" if first_code else ""
+        reply = (
+            f"### Réponse du tuteur — {active_step_label}\n\n"
+            f"Pour répondre directement à ta question *(« {user_message[:140]} »)* dans **{lesson_title}** :\n\n"
+            f"- **Principe clé :** {core_points[0]}\n"
+            f"- **En pratique :** {core_points[1] if len(core_points) > 1 else 'Applique toujours la règle étape par étape sur un petit exemple.'}"
+            f"{code_hint}\n\n"
+            "Est-ce que cette explication répond à ton doute, ou veux-tu un exemple encore plus ciblé ?"
+        )
+
+    follow_ups = [
+        "Explique plus simplement avec une analogie",
+        "Donne un autre exemple concret",
+        "Teste-moi avec une question rapide",
+    ]
+    return reply, follow_ups
+
+
+def answer_course_lesson_tutor_question(
+    *,
+    subject: str,
+    language: CourseLanguage,
+    level_number: int,
+    lesson_title: str,
+    lesson_markdown: str,
+    code_examples: list[dict[str, Any]],
+    prior_messages: list[dict[str, Any]],
+    user_message: str,
+    quick_action: str | None = None,
+    step_index: int = 0,
+    step_title: str | None = None,
+    step_content: str | None = None,
+    settings: Settings | None = None,
+    user_ai_config: dict[str, Any] | None = None,
+) -> tuple[str, list[str]]:
+    """Répond comme un tuteur interactif progressif (type ChatGPT) sur l'étape active du chapitre."""
+    from app.ai.provider import canonicalize_provider_name, normalize_provider_base_url
+
+    fallback_reply, fallback_follow_ups = _build_local_tutor_response(
+        subject=subject,
+        level_number=level_number,
+        lesson_title=lesson_title,
+        lesson_markdown=lesson_markdown,
+        code_examples=code_examples,
+        user_message=user_message,
+        quick_action=quick_action,
+        step_index=step_index,
+        step_title=step_title,
+        step_content=step_content,
+    )
+
+    provider = "local"
+    api_key = ""
+    raw_base_url: str | None = None
+    raw_model: str | None = None
+
+    if user_ai_config is not None:
+        provider = canonicalize_provider_name(user_ai_config.get("provider"))
+        raw_base_url = user_ai_config.get("base_url")
+        api_key = str(user_ai_config.get("api_key") or "").strip()
+        raw_model = str(user_ai_config.get("model") or "").strip() or None
+        if not api_key and provider != "local" and settings is not None:
+            env_provider = canonicalize_provider_name(settings.ai_provider)
+            resolved_user_url = normalize_provider_base_url(provider, raw_base_url)
+            resolved_env_url = normalize_provider_base_url(env_provider, settings.ai_base_url)
+            if env_provider == provider and resolved_user_url == resolved_env_url:
+                api_key = (settings.ai_api_key or "").strip()
+    elif settings is not None:
+        provider = canonicalize_provider_name(settings.ai_provider)
+        api_key = (settings.ai_api_key or "").strip()
+        raw_base_url = settings.ai_base_url
+        raw_model = (settings.ai_model or "").strip() or None
+
+    if not api_key or provider == "local":
+        return fallback_reply, fallback_follow_ups
+
+    model_name = raw_model or _default_model_for_provider(provider)
+    active_context = (step_content or lesson_markdown or "")[:3200]
+    history_lines = []
+    for item in (prior_messages or [])[-6:]:
+        role_label = "Étudiant" if item.get("role") == "user" else "Tuteur"
+        history_lines.append(f"{role_label}: {str(item.get('content') or '')[:450]}")
+    history_block = "\n".join(history_lines)
+
+    system_prompt = (
+        f"Tu es un tuteur personnel bienveillant, clair et interactif (comme ChatGPT en mode professeur) "
+        f"pour le cours « {subject} » (Niveau {level_number}, Chapitre : « {lesson_title} », "
+        f"Étape #{step_index + 1} : « {step_title or lesson_title} »).\n"
+        "- Réponds de manière progressive, concise et très pédagogique en Markdown clair.\n"
+        "- Ne génère jamais tout le cours d'un coup : concentre-toi uniquement sur la question de l'étudiant et l'étape en cours.\n"
+        "- Termine toujours ta réponse par une question courte ou une invitation à passer à l'étape suivante.\n"
+        f"\nExtrait de l'étape en cours :\n{active_context}\n"
+    )
+    if history_block:
+        system_prompt += f"\nÉchanges récents :\n{history_block}\n"
+
+    timeout_seconds = min(14.0, settings.ai_timeout_seconds) if settings is not None else 14.0
+    try:
+        if provider == "gemini":
+            model = validate_model_identifier(model_name)
+            base_url = validate_outbound_url(
+                normalize_provider_base_url("gemini", raw_base_url),
+                settings=settings,
+                allow_http_local=True,
+                verify_dns=False,
+            )
+            url = f"{base_url}/models/{model}:generateContent"
+            res = safe_http_request(
+                "POST",
+                url,
+                settings=settings,
+                headers={"x-goog-api-key": api_key, "Content-Type": "application/json"},
+                json_body={
+                    "contents": [
+                        {"role": "user", "parts": [{"text": f"{system_prompt}\n\nQuestion de l'étudiant : {user_message}"}]}
+                    ],
+                    "generationConfig": {"temperature": 0.35},
+                },
+                timeout_seconds=timeout_seconds,
+                max_bytes=MAX_AI_RESPONSE_BYTES,
+            )
+            res.raise_for_status()
+            payload_json = res.json()
+            candidates = payload_json.get("candidates") or []
+            parts = ((candidates[0].get("content") or {}).get("parts") or []) if candidates else []
+            raw_text = str(parts[0].get("text") or "").strip() if parts else ""
+        else:
+            model = model_name
+            base_url = validate_outbound_url(
+                normalize_provider_base_url(provider, raw_base_url),
+                settings=settings,
+                allow_http_local=True,
+                verify_dns=False,
+            )
+            res = safe_http_request(
+                "POST",
+                f"{base_url}/chat/completions",
+                settings=settings,
+                headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+                json_body={
+                    "model": model,
+                    "messages": [
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_message},
+                    ],
+                    "temperature": 0.35,
+                },
+                timeout_seconds=timeout_seconds,
+                max_bytes=MAX_AI_RESPONSE_BYTES,
+            )
+            res.raise_for_status()
+            payload_json = res.json()
+            choices = payload_json.get("choices") or []
+            raw_text = str((choices[0].get("message") or {}).get("content") or "").strip() if choices else ""
+
+        if raw_text and len(raw_text) >= 15:
+            return raw_text[:4500], fallback_follow_ups
+    except Exception:
+        pass
+
+    return fallback_reply, fallback_follow_ups
 
 
 def build_course_blueprint(
@@ -1840,17 +2155,53 @@ def generate_level_content(
         focus_hint=focus_hint,
     )
     if llm_patch:
-        if isinstance(llm_patch.get("summary"), str) and llm_patch["summary"].strip():
-            spec["summary"] = llm_patch["summary"].strip()[:1000]
-        if isinstance(llm_patch.get("project_brief"), str) and len(llm_patch["project_brief"].strip()) >= 30:
-            spec["project_brief"] = llm_patch["project_brief"].strip()
-        if isinstance(llm_patch.get("project_title"), str) and llm_patch["project_title"].strip():
-            spec["project_title"] = llm_patch["project_title"].strip()[:180]
-        raw_objs = llm_patch.get("objectives")
-        if isinstance(raw_objs, list):
-            cleaned_objs = [str(o).strip() for o in raw_objs if str(o).strip()][:5]
-            if len(cleaned_objs) >= 2:
-                spec["objectives"] = cleaned_objs
+        is_valid_llm, _validation_issues = validate_generated_level_content(llm_patch)
+        if is_valid_llm:
+            if isinstance(llm_patch.get("title"), str) and llm_patch["title"].strip():
+                spec["title"] = llm_patch["title"].strip()[:180]
+            if isinstance(llm_patch.get("summary"), str) and llm_patch["summary"].strip():
+                spec["summary"] = llm_patch["summary"].strip()[:1000]
+            if isinstance(llm_patch.get("project_brief"), str) and len(llm_patch["project_brief"].strip()) >= 30:
+                spec["project_brief"] = llm_patch["project_brief"].strip()
+            if isinstance(llm_patch.get("project_title"), str) and llm_patch["project_title"].strip():
+                spec["project_title"] = llm_patch["project_title"].strip()[:180]
+            raw_objs = llm_patch.get("objectives")
+            if isinstance(raw_objs, list):
+                cleaned_objs = [str(o).strip() for o in raw_objs if str(o).strip()][:5]
+                if len(cleaned_objs) >= 2:
+                    spec["objectives"] = cleaned_objs
+            raw_delivs = llm_patch.get("project_deliverables")
+            if isinstance(raw_delivs, list):
+                cleaned_delivs = [str(d).strip() for d in raw_delivs if str(d).strip()][:6]
+                if len(cleaned_delivs) >= 2:
+                    spec["project_deliverables"] = cleaned_delivs
+            raw_llm_lessons = llm_patch.get("lessons")
+            if isinstance(raw_llm_lessons, list) and len(raw_llm_lessons) >= 3:
+                merged_lessons: list[dict[str, Any]] = []
+                for idx, ch in enumerate(raw_llm_lessons[:6], start=1):
+                    if not isinstance(ch, dict):
+                        continue
+                    merged_lessons.append(
+                        {
+                            "position": int(ch.get("position") or idx),
+                            "title": str(ch.get("title") or f"Chapitre {idx}").strip()[:160],
+                            "summary": str(ch.get("summary") or "").strip()[:500],
+                            "estimated_minutes": max(10, min(90, int(ch.get("estimated_minutes") or 25))),
+                            "content_markdown": str(ch.get("content_markdown") or "").strip(),
+                            "code_examples": [
+                                dict(ex) for ex in (ch.get("code_examples") or []) if isinstance(ex, dict)
+                            ],
+                            "exercises": [
+                                dict(ex) for ex in (ch.get("exercises") or []) if isinstance(ex, dict)
+                            ],
+                        }
+                    )
+                if len(merged_lessons) >= 3:
+                    spec["lessons"] = merged_lessons
+        else:
+            # Repli propre sur le référentiel spécialisé si la sortie LLM est incomplète ou incohérente
+            ai_source = None
+            ai_model = None
 
     normalized_lessons = [
         normalize_lesson_to_eight_parts(
@@ -2142,16 +2493,16 @@ def evaluate_course_submission(
             )
         elif key == "coverage":
             concept_hits = len(matched_concepts)
-            if concept_hits >= 2 or (has_artifact_kw and len(words) >= 12) or (gh_verified and len(words) >= 8):
+            if concept_hits >= 2 or (has_artifact_kw and concept_hits >= 1 and len(words) >= 12) or (gh_verified and len(words) >= 8):
                 score_val = max_score if concept_hits >= 3 else round(max_score * 0.85)
                 crit_passed = True
                 crit_fb = f"Notions clés de {subject} mobilisées ({', '.join(matched_concepts[:4]) or 'concepts vérifiés'})."
-            elif concept_hits >= 1 or len(words) >= 10:
+            elif concept_hits >= 1:
                 score_val = round(max_score * 0.65)
                 crit_passed = True
                 crit_fb = f"Couverture partielle des attendus sur {subject}."
             else:
-                score_val = round(max_score * 0.35)
+                score_val = round(max_score * 0.25)
                 crit_passed = False
                 crit_fb = f"Reliez explicitement votre solution aux notions attendues du chapitre ({', '.join(concept_pool[:3]) or subject})."
 
@@ -2177,37 +2528,36 @@ def evaluate_course_submission(
                 crit_passed = True
                 crit_fb = "Analyse technique argumentée et conforme aux objectifs."
             else:
-                score_val = round(max_score * 0.35)
+                score_val = round(max_score * 0.25)
                 crit_passed = False
-                crit_fb = f"Fournissez du code concret ({code_lang or subject}) complet et syntaxiquement valide."
+                crit_fb = (
+                    f"Une explication théorique ne suffit pas : fournissez du code concret ({code_lang or subject}) "
+                    "complet, non vide et syntaxiquement valide."
+                )
 
         elif key == "reasoning":
             if has_reasoning and len(words) >= 12:
                 score_val = max_score if len(words) >= 20 else round(max_score * 0.88)
                 crit_passed = True
                 crit_fb = "Raisonnement clair : choix techniques et gestion des cas d'erreur explicités."
-            elif len(words) >= 12:
-                score_val = round(max_score * 0.65)
-                crit_passed = True
-                crit_fb = "Démarche compréhensible ; précisez davantage le *pourquoi* et au moins un cas limite."
             else:
                 score_val = round(max_score * 0.3)
                 crit_passed = False
-                crit_fb = "Détaillez votre raisonnement (« parce que… ») et la gestion des entrées invalides."
+                crit_fb = "Détaillez votre raisonnement (« parce que… », « afin de… ») et la gestion d'au moins un cas limite."
 
         else:  # deliverables
-            if has_verification_evidence and (has_code_construct or len(words) >= 10):
+            if has_verification_evidence and (has_code_construct or gh_verified or len(words) >= 10):
                 score_val = max_score
                 crit_passed = True
                 crit_fb = "Vérifications concrètes ou jeu de tests explicitement documentés."
-            elif (has_code_construct and kind == CourseSubmissionKind.exercise) or gh_verified or len(words) >= 14:
+            elif (has_code_construct and kind == CourseSubmissionKind.exercise) or gh_verified:
                 score_val = round(max_score * 0.72)
                 crit_passed = True
                 crit_fb = "Livrable fourni ; ajoutez vos assertions ou résultats d’exécution pour viser 20/20."
             else:
-                score_val = round(max_score * 0.35)
+                score_val = round(max_score * 0.3)
                 crit_passed = False
-                crit_fb = "Indiquez comment vous avez testé votre travail et le résultat concret observé."
+                crit_fb = "Indiquez comment vous avez testé votre travail (assertions, cas limites) et le résultat concret observé."
 
         criteria_results.append(
             {

@@ -318,9 +318,13 @@ class PlanningContextCollector:
             else []
         )
 
-        # F. Historique de travail réel
+        # F. Historique de travail réel (incluant les séances planifiées manquées)
         sessions = list(self._session_repo.list_by_user(user_id))
-        work_history = self._build_work_history(sessions, current_utc)
+        work_history = self._build_work_history(
+            sessions,
+            current_utc,
+            planned_learning_events=planned_learning_events,
+        )
         difficulties = self._collect_difficulty_signals(
             skills=skills,
             failed_assessments=failed_assessments,
@@ -373,6 +377,8 @@ class PlanningContextCollector:
         self,
         sessions: list[SessionRecord],
         current_utc: datetime,
+        *,
+        planned_learning_events: list[ScheduleEventRecord] | None = None,
     ) -> PedagogicalWorkHistory:
         window_start = current_utc - timedelta(days=14)
         completed_count = 0
@@ -381,12 +387,14 @@ class PlanningContextCollector:
         recent_durations: list[int] = []
         by_subject: dict[str, int] = {}
         difficulty_notes: list[str] = []
+        completed_recent_sessions: list[SessionRecord] = []
 
         for sess in sessions:
             started = _ensure_utc(sess.started_at) or current_utc
             if sess.status == SessionStatus.completed:
                 completed_count += 1
                 if started >= window_start:
+                    completed_recent_sessions.append(sess)
                     mins = 0
                     if sess.ended_at is not None:
                         ended = _ensure_utc(sess.ended_at) or started
@@ -404,6 +412,35 @@ class PlanningContextCollector:
             )
             if any(k in combined for k in ("bloqué", "difficile", "échec", "raté", "incompris")):
                 difficulty_notes.append(sess.title)
+
+        # Comptabiliser les séances d'apprentissage planifiées passées (14j) non honorées
+        used_session_ids: set[UUID] = set()
+        for ev in planned_learning_events or []:
+            ev_start = _ensure_utc(ev.starts_at) or current_utc
+            ev_end = _ensure_utc(ev.ends_at) or current_utc
+            if not (window_start <= ev_start and ev_end < current_utc):
+                continue
+            ev_title_low = ev.title.strip().lower()
+            matched = None
+            for sess in completed_recent_sessions:
+                if sess.id in used_session_ids:
+                    continue
+                s_start = _ensure_utc(sess.started_at) or current_utc
+                s_end = _ensure_utc(sess.ended_at) or s_start
+                st = sess.title.strip().lower()
+                title_hit = bool(st and (ev_title_low in st or st in ev_title_low))
+                time_near = (
+                    s_start <= ev_end + timedelta(hours=3)
+                    and s_end >= ev_start - timedelta(hours=3)
+                )
+                if title_hit or time_near:
+                    matched = sess
+                    break
+            if matched is not None:
+                used_session_ids.add(matched.id)
+            else:
+                cancelled_count += 1
+                difficulty_notes.append(f"Séance manquée : {ev.title}")
 
         total_attempts = completed_count + cancelled_count
         completion_rate = (completed_count / total_attempts) if total_attempts > 0 else 1.0
