@@ -756,6 +756,9 @@ class CourseService:
             step_content=payload.step_content,
             settings=self._settings,
             user_ai_config=self._safe_user_ai_config(user_id),
+            learner_context=self._build_learner_context(user_id),
+            course_goal=course.description,
+            level_blueprint=self._level_blueprint(level),
         )
 
         user_msg_dict = {
