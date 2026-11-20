@@ -1866,7 +1866,7 @@ def _call_course_ai_json(
             "Une erreur est survenue pendant la génération IA. Vérifiez la configuration du fournisseur.",
         ) from exc
 
-    cleaned = re.sub(r"^\`\`\`(?:json)?\\s*|\\s*\`\`\`$", "", raw_text.strip(), flags=re.DOTALL | re.IGNORECASE).strip()
+    cleaned = re.sub(r"^\`\`\`(?:json)?\s*|\s*\`\`\`$", "", raw_text.strip(), flags=re.DOTALL | re.IGNORECASE).strip()
     if not cleaned:
         raise AppError(502, "AI_COURSE_EMPTY_RESPONSE", "Le fournisseur IA a retourné une réponse vide.")
     try:
@@ -1978,7 +1978,7 @@ def _try_enrich_level_with_llm(
     """Génère un niveau détaillé cohérent avec la feuille de route et le profil de l'apprenant."""
     roadmap_json = json.dumps(level_blueprint or {}, ensure_ascii=False, default=str)
     learner_json = json.dumps(learner_context or {}, ensure_ascii=False, default=str)
-    focus_clause = f"FOCUS COMPLÉMENTAIRE : {focus_hint.strip()}\\n" if focus_hint and focus_hint.strip() else ""
+    focus_clause = f"FOCUS COMPLÉMENTAIRE : {focus_hint.strip()}\n" if focus_hint and focus_hint.strip() else ""
     prompt = (
         "Tu es un excellent professeur particulier et concepteur de formation. Rédige un niveau complet, "
         "exact, concret et adapté à cette personne. Ne produis pas du remplissage générique. "
@@ -1990,10 +1990,10 @@ def _try_enrich_level_with_llm(
         "au moins 2 exemples commentés distincts et un exercice progressif avec indices qui ne donnent pas la solution. "
         "Le projet final doit être concret, faisable, vérifiable et directement lié à l'objectif de l'apprenant. "
         "Évite de réenseigner les notions déjà maîtrisées; comble plutôt les prérequis et lacunes identifiés. "
-        f"SUJET : {subject}\\nOBJECTIF DU PARCOURS : {course_goal or subject}\\n"
-        f"NIVEAU : {level_number} sur le parcours. LANGUE : {language.value}.\\n"
-        f"FEUILLE DE ROUTE DE CE NIVEAU : {roadmap_json}\\n"
-        f"PROFIL ET HISTORIQUE PERTINENTS : {learner_json}\\n{focus_clause}"
+        f"SUJET : {subject}\nOBJECTIF DU PARCOURS : {course_goal or subject}\\n"
+        f"NIVEAU : {level_number} sur le parcours. LANGUE : {language.value}.\n"
+        f"FEUILLE DE ROUTE DE CE NIVEAU : {roadmap_json}\n"
+        f"PROFIL ET HISTORIQUE PERTINENTS : {learner_json}\n{focus_clause}"
         "Retourne uniquement un JSON strict avec title, summary, objectives, lessons, project_title, project_brief, project_deliverables. "
         "Chaque leçon contient position, title, summary, estimated_minutes, content_markdown, code_examples et exercises. "
         "Chaque code_examples contient title, language, code, explanation. "
