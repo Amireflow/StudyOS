@@ -5,6 +5,7 @@ from typing import Any
 from uuid import UUID, uuid4
 from app.core.config import Settings
 from app.core.errors import AppError
+from app.repositories.ai_sql import SqlAiMemoryRepository
 from app.repositories.courses_sql import (
     CourseLessonRecord,
     CourseLevelRecord,
@@ -133,11 +134,13 @@ class CourseService:
         repo: SqlCourseRepository,
         skill_repo: SqlSkillRepository | None = None,
         profile_service: ProfileService | None = None,
+        ai_memory_repo: SqlAiMemoryRepository | None = None,
         settings: Settings | None = None,
     ) -> None:
         self._repo = repo
         self._skill_repo = skill_repo
         self._profile_service = profile_service
+        self._ai_memory_repo = ai_memory_repo
         self._settings = settings
 
     def _safe_user_ai_config(self, user_id: UUID | None) -> dict[str, Any] | None:
@@ -174,6 +177,19 @@ class CourseService:
                 }
                 for item in skills[:30]
             ]
+        if self._ai_memory_repo is not None:
+            memory = self._ai_memory_repo.get(user_id)
+            if memory is not None:
+                context["learning_memory"] = {
+                    "academic_context": dict(memory.academic_context or {}),
+                    "learning_preferences": dict(memory.learning_preferences or {}),
+                    "constraints": list(memory.constraints or [])[:20],
+                    "long_term_goals": list(memory.long_term_goals or [])[:20],
+                    "recent_decisions": list(memory.recent_decisions or [])[:6],
+                    "execution_history": list(memory.execution_history or [])[:6],
+                    "weekly_study_hours": memory.weekly_study_hours,
+                    "default_session_minutes": memory.default_session_minutes,
+                }
         existing_courses = self._repo.list_courses(user_id)
         context["existing_learning"] = [
             {
