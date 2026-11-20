@@ -1,11 +1,12 @@
 from contextlib import asynccontextmanager
 import logging
+from pathlib import Path
 import time
 from typing import Any
 from uuid import uuid4
-from fastapi import FastAPI, Request, Response
+from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 from jwt import PyJWKClient
 from sqlalchemy import text
 import app.models  # noqa: F401 - enregistre les modèles ORM dans Base.metadata
@@ -155,13 +156,20 @@ def create_app(
         )
         return response
 
-    @application.get("/", include_in_schema=False)
-    def service_root() -> dict[str, str]:
-        return {
-            "service": "Amireflow Study OS API",
-            "status": "ok",
-            "health": "/health",
-        }
+    spa_dist_dir: Path | None = None
+    if resolved_settings.frontend_dist_dir.strip():
+        candidate_dir = Path(resolved_settings.frontend_dist_dir.strip()).resolve()
+        if (candidate_dir / "index.html").is_file():
+            spa_dist_dir = candidate_dir
+
+    if spa_dist_dir is None:
+        @application.get("/", include_in_schema=False)
+        def service_root() -> dict[str, str]:
+            return {
+                "service": "Amireflow Study OS API",
+                "status": "ok",
+                "health": "/health",
+            }
 
     @application.get("/health", tags=["Santé"], summary="Vérifier la disponibilité de l'API")
     def health_check(request: Request) -> Response:
@@ -203,6 +211,39 @@ def create_app(
     application.include_router(objectives.router, prefix=api_prefix)
     application.include_router(planning.router, prefix=api_prefix)
     application.include_router(ai.router, prefix=api_prefix)
+
+    if spa_dist_dir is not None:
+        spa_index = spa_dist_dir / "index.html"
+
+        @application.get("/", include_in_schema=False)
+        def spa_root() -> FileResponse:
+            return FileResponse(spa_index, headers={"Cache-Control": "no-cache"})
+
+        @application.get("/{full_path:path}", include_in_schema=False)
+        def spa_fallback(full_path: str) -> FileResponse:
+            cleaned = full_path.lstrip("/")
+            if (
+                cleaned == "api"
+                or cleaned.startswith("api/")
+                or cleaned in {"health", "docs", "redoc", "openapi.json"}
+            ):
+                raise HTTPException(status_code=404, detail="Ressource introuvable.")
+
+            if cleaned:
+                candidate = (spa_dist_dir / cleaned).resolve()
+                if not candidate.is_relative_to(spa_dist_dir):
+                    raise HTTPException(status_code=404, detail="Ressource introuvable.")
+                if candidate.is_file():
+                    headers = (
+                        {"Cache-Control": "public, max-age=31536000, immutable"}
+                        if cleaned.startswith("assets/")
+                        else None
+                    )
+                    return FileResponse(candidate, headers=headers)
+                if cleaned.startswith("assets/"):
+                    raise HTTPException(status_code=404, detail="Ressource statique introuvable.")
+
+            return FileResponse(spa_index, headers={"Cache-Control": "no-cache"})
 
     return application
 

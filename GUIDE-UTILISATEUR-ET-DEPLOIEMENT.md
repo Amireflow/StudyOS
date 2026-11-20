@@ -87,29 +87,30 @@ VITE_SUPABASE_ANON_KEY=votre-cle-publique-anon-supabase
 ```
 Commande de build : `npm ci && npm run build` (répertoire de sortie : `frontend/dist`).
 
-### Étape 4 — Déploiement sur Render (Blueprint `render.yaml`)
-Le fichier [render.yaml](./render.yaml) provisionne en une fois les deux services :
-- `amireflow-study-os-api` (Web Service Docker, région `frankfurt`, `rootDir: backend`, `healthCheckPath: /health`).
-- `amireflow-study-os-web` (Static Site CDN, `rootDir: frontend`, Node `22`, réécriture SPA `/* -> /index.html`).
+### Étape 4 — Déploiement unifié sur Render (1 seul service Web via `render.yaml`)
+Le [Dockerfile](./Dockerfile) racine et le Blueprint [render.yaml](./render.yaml) empaquettent le frontend Vite et l’API FastAPI dans **un seul Web Service** (`amireflow-study-os`, région `frankfurt`, plan `free`, healthcheck `/health`).
 
-1. **Créer le Blueprint** : dans Render Dashboard, cliquez sur **New → Blueprint**, sélectionnez le dépôt GitHub `AmireflowStudyOS` (branche `main`) et laissez Render détecter [render.yaml](./render.yaml).
-2. **Renseigner les variables synchronisées manuellement (`sync: false`)** :
-   - Générer une clé AES-256-GCM 32 octets pour `AI_KEY_ENCRYPTION_KEY` :
+Avantages du mode unifié :
+- Une seule URL publique (l’API répond sur `/api/v1/*` et l’application React est servie sur `/`, `/login`, etc.).
+- Mêmes origine et domaine : les cookies `HttpOnly` utilisent `AUTH_COOKIE_SAMESITE=lax` sans blocage cross-site sur Safari/Brave ni besoin de configurer `VITE_API_BASE_URL` ou `FRONTEND_ORIGIN`.
+- Compatible indifféremment avec **New → Blueprint** (`render.yaml`) ou **New → Web Service** (Docker, fichier `./Dockerfile` à la racine du dépôt).
+
+1. **Créer le service** : dans Render Dashboard, cliquez sur **+ New → Blueprint** (ou **Web Service**), sélectionnez `Amireflow/StudyOS` (branche `main`).
+2. **Renseigner uniquement les 2 variables obligatoires (`sync: false`)** :
+   - Générer la clé AES-256-GCM 32 octets pour `AI_KEY_ENCRYPTION_KEY` :
      ```bash
      python -c "import secrets; print('k1:' + secrets.token_hex(32))"
      ```
-   - Sur `amireflow-study-os-api` : `DATABASE_URL` (Session/Transaction Pooler Supabase en IPv4 ou PostgreSQL Render managé), `AI_KEY_ENCRYPTION_KEY`, `FRONTEND_ORIGIN` (laissez une URL temporaire si besoin au 1er déploiement puis mettez l’URL finale exacte du frontend sans slash final).
-   - Sur `amireflow-study-os-web` : `VITE_API_BASE_URL` = `<URL_HTTPS_API>/api/v1` (ex. `https://amireflow-study-os-api.onrender.com/api/v1`). *Note : `VITE_*` est injecté au build — relancez **Manual Deploy** sur `amireflow-study-os-web` si vous modifiez `VITE_API_BASE_URL` après le premier déploiement.*
-3. **Finaliser le câblage CORS** : vérifiez que `FRONTEND_ORIGIN` sur l’API correspond exactement à l’URL HTTPS publique du Static Site (et inversement que `VITE_API_BASE_URL` pointe vers l’API publique), sans slash final.
-4. **Spécificités du plan Render Free** :
-   - *Mise en veille (cold start)* : le service Docker Free se met en veille après ~15 min d’inactivité et redémarre en ~30–50 s à la première requête HTTP.
-   - *Migrations Alembic* : le plan Free ne supporte pas `preDeployCommand` ; `backend/Dockerfile` exécute `python -m alembic upgrade head` automatiquement au démarrage du conteneur avant Uvicorn.
-   - *Cookies de session (`refresh_token` HttpOnly)* : `AUTH_COOKIE_SAMESITE=none` + `Secure` est configuré dans `render.yaml` pour les sous-domaines distincts `*.onrender.com`. Pour éviter tout blocage des cookies tiers sur Safari/Brave, associez un domaine personnalisé commun (ex. `app.votredomaine.com` et `api.votredomaine.com`) puis passez `AUTH_COOKIE_SAMESITE=lax`.
-5. **Checklist de validation post-déploiement** :
-   - `GET https://<votre-api>.onrender.com/` → `200` `{"service": "Amireflow Study OS API", "status": "ok", "health": "/health"}`.
-   - `GET https://<votre-api>.onrender.com/health` → `200` `{"status": "ok", "env": "production", "database": "ok"}`.
-   - Dans le Shell Render du service API : `python scripts/verify_cloud_config.py` → révision Alembic `0013_schedule_event_links` et `30/30` tables.
-   - Ouvrir `https://<votre-web>.onrender.com/login` (et tester un rechargement direct sur `/tasks` ou `/planning` pour valider le rewrite SPA), créer/connecter un compte, puis rafraîchir la page (`F5`).
+   - `DATABASE_URL` : URL **Supabase Session Pooler** en IPv4 (port `5432`, hôte `*.pooler.supabase.com`) ou Transaction Pooler (port `6543`) ou base PostgreSQL Render.
+   - `AI_KEY_ENCRYPTION_KEY` : la clé `k1:...` générée ci-dessus.
+   - *(Laissez `FRONTEND_ORIGIN` vide sauf si vous attachez un domaine personnalisé ; `RENDER_EXTERNAL_URL` est autorisé automatiquement.)*
+3. **Spécificités du plan Render Free** :
+   - *Mise en veille (cold start)* : le conteneur Docker Free se met en veille après ~15 min d’inactivité et redémarre en ~30–50 s à la première requête HTTP.
+   - *Migrations Alembic* : le plan Free ne supporte pas `preDeployCommand` ; le [Dockerfile](./Dockerfile) exécute `python -m alembic upgrade head` automatiquement au démarrage avant Uvicorn.
+4. **Checklist de validation post-déploiement** :
+   - `GET https://<votre-app>.onrender.com/health` → `200` `{"status": "ok", "env": "production", "database": "ok"}`.
+   - Dans le Shell Render : `python scripts/verify_cloud_config.py` → révision Alembic `0013_schedule_event_links`, `30/30` tables et `Frontend SPA servi depuis /app/frontend_dist`.
+   - Ouvrir `https://<votre-app>.onrender.com/login`, tester un rechargement direct sur `/tasks` ou `/planning`, créer/connecter un compte et rafraîchir (`F5`).
 
 ---
 

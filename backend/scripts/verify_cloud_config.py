@@ -29,9 +29,17 @@ def main() -> int:
     normalized_db_url = normalize_database_url(settings.database_url.strip())
     is_postgres = normalized_db_url.startswith("postgresql")
     is_prod = settings.app_env.strip().lower() == "production"
+    spa_dist = (
+        Path(settings.frontend_dist_dir.strip())
+        if settings.frontend_dist_dir.strip()
+        else None
+    )
+    has_spa_dist = bool(spa_dist and (spa_dist / "index.html").is_file())
 
     print(f"[1/4] Environnement : APP_ENV={settings.app_env}")
     print(f"[2/4] Moteur BDD   : {'PostgreSQL (Cloud)' if is_postgres else 'SQLite (Local)'}")
+    if has_spa_dist:
+        print(f"      Mode unifié  : Frontend SPA servi depuis {spa_dist}")
 
     if is_prod:
         if settings.allow_local_dev_auth:
@@ -49,7 +57,9 @@ def main() -> int:
         if "*" in settings.cors_origins:
             print("ERREUR : FRONTEND_ORIGIN ne doit pas autoriser '*' en production.")
             return 1
-        if any("localhost" in origin or "127.0.0.1" in origin for origin in settings.cors_origins):
+        if (not has_spa_dist or settings.frontend_origin.strip()) and any(
+            "localhost" in origin or "127.0.0.1" in origin for origin in settings.cors_origins
+        ):
             print(
                 "AVERTISSEMENT : FRONTEND_ORIGIN contient localhost/127.0.0.1 en production "
                 f"({', '.join(settings.cors_origins)})."

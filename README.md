@@ -54,9 +54,9 @@ Documentation Swagger locale : `http://localhost:8000/docs`
 3. Appliquer les politiques idempotentes de défense en profondeur dans Supabase via [backend/alembic/rls_supabase.sql](./backend/alembic/rls_supabase.sql) (couvre les 30 tables applicatives/auth).
 4. Vérifier la configuration cloud avant déploiement avec `.\.venv\Scripts\python.exe scripts/verify_cloud_config.py` et contrôler `/health` (vérifie la connectivité réelle à la base et renvoie `503` sans fuite de secret en cas de panne).
 
-### Déploiement sur Render
+### Déploiement sur Render (unifié)
 
-Un Blueprint full-stack prêt à l'emploi ([render.yaml](./render.yaml)) déploie simultanément l'API Docker (`amireflow-study-os-api`) et le site statique SPA (`amireflow-study-os-web`). Consultez la section **Déploiement sur Render** dans [GUIDE-UTILISATEUR-ET-DEPLOIEMENT.md](./GUIDE-UTILISATEUR-ET-DEPLOIEMENT.md) pour la configuration des secrets et du Session Pooler IPv4 Supabase.
+Le [Dockerfile](./Dockerfile) racine et le Blueprint [render.yaml](./render.yaml) déploient le frontend Vite et l'API FastAPI dans **un seul service Web Render** (`amireflow-study-os`, même origine `/api/v1`, cookies `SameSite=Lax`). Consultez l'étape 4 dans [GUIDE-UTILISATEUR-ET-DEPLOIEMENT.md](./GUIDE-UTILISATEUR-ET-DEPLOIEMENT.md) pour la configuration des 2 variables requises (`DATABASE_URL` et `AI_KEY_ENCRYPTION_KEY`).
 
 ## Verrou pédagogique & Validation réelle des compétences
 

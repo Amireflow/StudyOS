@@ -207,11 +207,18 @@ def test_render_production_app_dry_run_cors_and_docs_disabled(tmp_path) -> None:
         assert cors_res.headers.get("access-control-allow-credentials") == "true"
 
 
-def test_render_blueprint_declares_api_and_static_spa() -> None:
+def test_render_blueprint_declares_unified_single_service() -> None:
     from pathlib import Path
 
-    render_yaml = Path(__file__).resolve().parents[2] / "render.yaml"
+    repo_root = Path(__file__).resolve().parents[2]
+    render_yaml = repo_root / "render.yaml"
+    dockerfile = repo_root / "Dockerfile"
     content = render_yaml.read_text(encoding="utf-8")
+    docker_content = dockerfile.read_text(encoding="utf-8")
+
+    assert "FROM node:22-slim AS frontend-builder" in docker_content
+    assert "FRONTEND_DIST_DIR=/app/frontend_dist" in docker_content
+    assert "VITE_API_BASE_URL=/api/v1" in docker_content
 
     try:
         import yaml  # type: ignore[import-not-found]
@@ -220,38 +227,102 @@ def test_render_blueprint_declares_api_and_static_spa() -> None:
 
     if yaml is not None:
         parsed = yaml.safe_load(content)
-        services = {svc["name"]: svc for svc in parsed["services"]}
-        api = services["amireflow-study-os-api"]
-        assert api["runtime"] == "docker"
-        assert api["rootDir"] == "backend"
-        assert api["healthCheckPath"] == "/health"
-        assert "preDeployCommand" not in api
-        api_env = {item["key"]: item for item in api["envVars"]}
-        assert api_env["APP_ENV"]["value"] == "production"
-        assert api_env["ALLOW_LOCAL_DEV_AUTH"]["value"] == "false"
-        assert api_env["AUTH_COOKIE_SAMESITE"]["value"] == "none"
-
-        web = services["amireflow-study-os-web"]
-        assert web["runtime"] == "static"
-        assert web["rootDir"] == "frontend"
-        assert web["staticPublishPath"] == "./dist"
-        web_env = {item["key"]: item for item in web["envVars"]}
-        assert web_env["NODE_VERSION"]["value"] == "22"
-        assert web_env["VITE_API_BASE_URL"]["sync"] is False
-        assert any(
-            route.get("type") == "rewrite"
-            and route.get("source") == "/*"
-            and route.get("destination") == "/index.html"
-            for route in web["routes"]
-        )
+        assert len(parsed["services"]) == 1
+        service = parsed["services"][0]
+        assert service["name"] == "amireflow-study-os"
+        assert service["runtime"] == "docker"
+        assert service["dockerfilePath"] == "./Dockerfile"
+        assert service["dockerContext"] == "."
+        assert service["healthCheckPath"] == "/health"
+        assert "preDeployCommand" not in service
+        svc_env = {item["key"]: item for item in service["envVars"]}
+        assert svc_env["APP_ENV"]["value"] == "production"
+        assert svc_env["ALLOW_LOCAL_DEV_AUTH"]["value"] == "false"
+        assert svc_env["AUTH_COOKIE_SAMESITE"]["value"] == "lax"
+        assert svc_env["DATABASE_URL"]["sync"] is False
+        assert svc_env["AI_KEY_ENCRYPTION_KEY"]["sync"] is False
     else:
-        assert "name: amireflow-study-os-api" in content
+        assert content.count("- type: web") == 1
+        assert "name: amireflow-study-os" in content
         assert "runtime: docker" in content
+        assert "dockerfilePath: ./Dockerfile" in content
         assert "healthCheckPath: /health" in content
         assert "preDeployCommand" not in content
-        assert "name: amireflow-study-os-web" in content
-        assert "runtime: static" in content
-        assert "staticPublishPath: ./dist" in content
-        assert "destination: /index.html" in content
-        assert "key: NODE_VERSION" in content
-        assert "key: VITE_API_BASE_URL" in content
+        assert "value: lax" in content
+
+
+def test_unified_spa_serving_assets_fallback_api_404_and_path_traversal_guard(
+    tmp_path,
+) -> None:  # type: ignore[no-untyped-def]
+    from app.core.config import Settings
+    from app.main import create_app
+
+    dist_dir = tmp_path / "dist"
+    assets_dir = dist_dir / "assets"
+    assets_dir.mkdir(parents=True)
+    (dist_dir / "index.html").write_text("<!doctype html><html><body>SPA</body></html>", encoding="utf-8")
+    (assets_dir / "app.js").write_text("console.log('studyos');", encoding="utf-8")
+    (tmp_path / "secret.txt").write_text("TOP_SECRET", encoding="utf-8")
+
+    unified_app = create_app(
+        settings=Settings(
+            app_env="production",
+            allow_local_dev_auth=False,
+            allow_insecure_local_ai_url=False,
+            app_secret_key="render-production-secret-key-at-least-32-chars",
+            ai_key_encryption_key="k1:MDAxMTIyMzM0NDU1NjY3Nzg4OTlhYWJiY2NkZGVlZmY=",
+            auth_cookie_samesite="lax",
+            auth_jwks_url="https://example.supabase.co/auth/v1/.well-known/jwks.json",
+            auth_issuer="https://example.supabase.co/auth/v1",
+            frontend_origin="",
+            frontend_dist_dir=str(dist_dir),
+            render_external_url="https://amireflow-study-os.onrender.com",
+            database_url=f"sqlite:///{(tmp_path / 'unified_prod.db').as_posix()}",
+        ),
+        auto_create_tables=False,
+    )
+
+    with TestClient(unified_app) as client:
+        root_res = client.get("/")
+        assert root_res.status_code == 200
+        assert "SPA" in root_res.text
+        assert root_res.headers.get("cache-control") == "no-cache"
+
+        login_res = client.get("/login")
+        assert login_res.status_code == 200
+        assert "SPA" in login_res.text
+
+        course_res = client.get("/courses/abc")
+        assert course_res.status_code == 200
+        assert "SPA" in course_res.text
+
+        asset_res = client.get("/assets/app.js")
+        assert asset_res.status_code == 200
+        assert "console.log('studyos');" in asset_res.text
+        assert asset_res.headers.get("cache-control") == "public, max-age=31536000, immutable"
+
+        missing_asset = client.get("/assets/missing.js")
+        assert missing_asset.status_code == 404
+
+        missing_api = client.get("/api/v1/does-not-exist")
+        assert missing_api.status_code == 404
+        assert missing_api.json()["error"]["code"] == "NOT_FOUND"
+
+        health_res = client.get("/health")
+        assert health_res.status_code == 200
+        assert health_res.json()["database"] == "ok"
+
+        traversal_res = client.get("/%2e%2e/secret.txt")
+        assert "TOP_SECRET" not in traversal_res.text
+
+        cors_res = client.options(
+            "/api/v1/auth/login",
+            headers={
+                "Origin": "https://amireflow-study-os.onrender.com",
+                "Access-Control-Request-Method": "POST",
+                "Access-Control-Request-Headers": "authorization,content-type",
+            },
+        )
+        assert cors_res.status_code == 200
+        assert cors_res.headers.get("access-control-allow-origin") == "https://amireflow-study-os.onrender.com"
+        assert cors_res.headers.get("access-control-allow-credentials") == "true"

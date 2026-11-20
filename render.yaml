@@ -1,13 +1,9 @@
-# Render Blueprint — Déploiement full-stack Amireflow Study OS (Backend Docker + Frontend Static Site)
+# Render Blueprint — Service Web unifié Amireflow Study OS (Frontend SPA + Backend FastAPI + OCR)
 services:
-  # ---------------------------------------------------------------------------
-  # 1. Backend API — FastAPI + Alembic + OCR Tesseract (Docker)
-  # ---------------------------------------------------------------------------
   - type: web
-    name: amireflow-study-os-api
+    name: amireflow-study-os
     runtime: docker
     region: frankfurt
-    rootDir: backend
     dockerfilePath: ./Dockerfile
     dockerContext: .
     plan: free
@@ -28,11 +24,10 @@ services:
         sync: false
       - key: AI_KEY_ENCRYPTION_FALLBACK_KEYS
         sync: false
-      # Requis cross-site entre les sous-domaines *.onrender.com (cookies HttpOnly Secure)
+      # Même origine que l'API sur ce service unifié : SameSite=Lax HttpOnly Secure fonctionne nativement
       - key: AUTH_COOKIE_SAMESITE
-        value: none
-      # Render Free/Standard sort en IPv4 : avec Supabase, privilégiez le Session/Transaction Pooler (*.pooler.supabase.com)
-      # ou une URL PostgreSQL Render managée.
+        value: lax
+      # Render sort en IPv4 : avec Supabase, utilisez le Session/Transaction Pooler (*.pooler.supabase.com)
       - key: DATABASE_URL
         sync: false
       - key: AUTH_JWKS_URL
@@ -41,9 +36,9 @@ services:
         value: https://rzjjcqmsepxtpmqwzwmf.supabase.co/auth/v1
       - key: AUTH_AUDIENCE
         value: authenticated
-      # URL HTTPS exacte du frontend Render (ex. https://amireflow-study-os-web.onrender.com)
+      # Optionnel : RENDER_EXTERNAL_URL est autorisé automatiquement ; renseignez seulement pour un domaine personnalisé
       - key: FRONTEND_ORIGIN
-        sync: false
+        value: ""
       - key: DEFAULT_TIMEZONE
         value: Africa/Dakar
       - key: AI_PROVIDER
@@ -54,44 +49,3 @@ services:
         sync: false
       - key: AI_BASE_URL
         sync: false
-
-  # ---------------------------------------------------------------------------
-  # 2. Frontend SPA — React 19 + TypeScript + Vite (Static Site CDN)
-  # ---------------------------------------------------------------------------
-  - type: web
-    name: amireflow-study-os-web
-    runtime: static
-    rootDir: frontend
-    buildCommand: npm ci && npm run build
-    staticPublishPath: ./dist
-    autoDeploy: true
-    headers:
-      - path: /*
-        name: X-Content-Type-Options
-        value: nosniff
-      - path: /*
-        name: X-Frame-Options
-        value: DENY
-      - path: /*
-        name: Referrer-Policy
-        value: strict-origin-when-cross-origin
-      - path: /assets/*
-        name: Cache-Control
-        value: public, max-age=31536000, immutable
-      - path: /index.html
-        name: Cache-Control
-        value: no-cache
-    routes:
-      - type: rewrite
-        source: /*
-        destination: /index.html
-    envVars:
-      - key: NODE_VERSION
-        value: "22"
-      # URL publique de l'API déployée + /api/v1 (ex. https://amireflow-study-os-api.onrender.com/api/v1)
-      - key: VITE_API_BASE_URL
-        sync: false
-      - key: VITE_SUPABASE_URL
-        value: https://rzjjcqmsepxtpmqwzwmf.supabase.co
-      - key: VITE_SUPABASE_ANON_KEY
-        value: sb_publishable_hGTCEH3pCjQcY_M-t3snyA_FvUSCBac

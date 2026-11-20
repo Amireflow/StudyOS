@@ -17,6 +17,8 @@ class Settings(BaseSettings):
     ai_key_encryption_fallback_keys: str = ""
     database_url: str = "sqlite:///./amireflow_local.db"
     frontend_origin: str = "http://localhost:5173"
+    frontend_dist_dir: str = ""
+    render_external_url: str = ""
     allow_local_dev_auth: bool = True
     allow_insecure_local_ai_url: bool = False
     default_local_user_id: str = "00000000-0000-0000-0000-000000000001"
@@ -46,6 +48,9 @@ class Settings(BaseSettings):
             for item in self.frontend_origin.split(",")
             if item.strip().rstrip("/")
         ]
+        render_url = (self.render_external_url or "").strip().rstrip("/")
+        if render_url and render_url not in origins:
+            origins.append(render_url)
         return origins or ["http://localhost:5173"]
 
     @property
