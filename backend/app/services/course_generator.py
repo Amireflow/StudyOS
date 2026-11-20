@@ -1817,7 +1817,10 @@ def _call_course_ai_json(
                 allow_http_local=True,
                 verify_dns=False,
             )
-            use_responses_api = tutor_uses_responses_api
+            use_responses_api = (
+                base_url.rstrip("/") == OPENAI_DEFAULT_BASE_URL.rstrip("/")
+                and model.startswith("gpt-6")
+            )
             if use_responses_api:
                 request_url = f"{base_url}/responses"
                 request_body = {
@@ -2310,10 +2313,7 @@ def answer_course_lesson_tutor_question(
                 allow_http_local=True,
                 verify_dns=False,
             )
-            use_responses_api = (
-                base_url.rstrip("/") == OPENAI_DEFAULT_BASE_URL.rstrip("/")
-                and model.startswith("gpt-6")
-            )
+            use_responses_api = tutor_uses_responses_api
             if use_responses_api:
                 request_url = f"{base_url}/responses"
                 request_body = {
