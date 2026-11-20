@@ -1,23 +1,40 @@
 from __future__ import annotations
 
+import ast
 from dataclasses import dataclass
 import re
 from typing import Any
-from app.schemas.common import SkillAssessmentType, SkillEvidenceType
+from app.schemas.common import (
+    EvidenceVerificationStatus,
+    SkillAssessmentType,
+    SkillEvaluationMode,
+    SkillEvidenceType,
+)
+
+RUBRIC_VERSION = "rubric-v2"
+EVALUATOR_VERSION = "eval-v2"
 
 EXTERNAL_URL_DISCLAIMER = (
     "Référence externe non inspectée automatiquement par le serveur : la validation repose "
     "uniquement sur la production, les justifications et les résultats soumis."
 )
 
+STATIC_ANALYSIS_NOTE = (
+    "Analyse statique et structurelle effectuée côté serveur sans exécution de code arbitraire."
+)
+
 _SELF_DECLARATIVE_PATTERNS = (
-    re.compile(r"\bj['’]?ai\s+(bien\s+)?compris\b", re.IGNORECASE),
+    re.compile(r"\bj['’]?ai\s+(bien\s+|tout\s+)?compris\b", re.IGNORECASE),
+    re.compile(r"\bj['’]?ai\s+tout\s+(assimil[ée]|vu)\b", re.IGNORECASE),
     re.compile(r"\bje\s+ma[îi]trise\b", re.IGNORECASE),
     re.compile(r"\bje\s+connais\b", re.IGNORECASE),
     re.compile(r"\bc['’]?est\s+(bon|fait|acquis|ok|compris)\b", re.IGNORECASE),
     re.compile(r"\bj['’]?ai\s+(lu|vu|regard[ée]|termin[ée]|fini)\b", re.IGNORECASE),
     re.compile(r"\bje\s+sais\s+faire\b", re.IGNORECASE),
     re.compile(r"\ble[çc]on\s+termin[ée]e?\b", re.IGNORECASE),
+    re.compile(r"\bi\s+(have\s+)?understood\b", re.IGNORECASE),
+    re.compile(r"\bi\s+master(ed)?\b", re.IGNORECASE),
+    re.compile(r"\b(completed|finished)\s+the\s+lesson\b", re.IGNORECASE),
 )
 
 _CONCRETE_ARTIFACT_KEYWORDS = (
@@ -75,11 +92,23 @@ class EvidenceQualityResult:
 
 
 @dataclass(frozen=True)
+class CodeStaticAnalysisResult:
+    present: bool
+    valid: bool
+    quality_score: int  # 0..100
+    has_logic: bool
+    has_error_handling: bool
+    summary: str
+    gaps: list[str]
+
+
+@dataclass(frozen=True)
 class GeneratedExercise:
     prompt_title: str
     prompt_instructions: str
     hints: list[str]
     criteria: list[dict[str, Any]]
+    rubric_version: str = RUBRIC_VERSION
 
 
 @dataclass(frozen=True)
@@ -93,10 +122,220 @@ class EvaluatedSubmission:
     gaps_identified: list[str]
     remediation_recommendation: str | None
     external_verification_warning: str | None
+    evaluation_mode: SkillEvaluationMode = SkillEvaluationMode.automated
+    manual_review_required: bool = False
+    rubric_version: str = RUBRIC_VERSION
+    evaluator_version: str = EVALUATOR_VERSION
 
 
 def pass_threshold_for_level(target_level: int) -> int:
     return 75 if target_level >= 4 else 70
+
+
+def _balanced_delimiters(code: str) -> bool:
+    pairs = {"(": ")", "[": "]", "{": "}"}
+    stack: list[str] = []
+    in_str: str | None = None
+    escaped = False
+    for ch in code:
+        if escaped:
+            escaped = False
+            continue
+        if in_str is not None:
+            if ch == "\\":
+                escaped = True
+            elif ch == in_str:
+                in_str = None
+            continue
+        if ch in ("'", '"'):
+            in_str = ch
+        elif ch in pairs:
+            stack.append(pairs[ch])
+        elif ch in (")", "]", "}"):
+            if not stack or stack.pop() != ch:
+                return False
+    return not stack and in_str is None
+
+
+def analyze_code_statically(
+    code: str | None,
+    *,
+    skill_name: str = "",
+    skill_domain: str = "",
+) -> CodeStaticAnalysisResult:
+    """Analyse statique sûre (AST Python / structure syntaxique par langage), sans exécution."""
+    cleaned = (code or "").strip()
+    if not cleaned:
+        return CodeStaticAnalysisResult(
+            present=False,
+            valid=False,
+            quality_score=0,
+            has_logic=False,
+            has_error_handling=False,
+            summary="Aucun extrait de code fourni.",
+            gaps=["Aucun extrait de code fourni."],
+        )
+
+    hint_text = f"{skill_name} {skill_domain}".lower()
+    is_python = any(
+        tok in hint_text or tok in cleaned.lower()
+        for tok in ("python", "fastapi", "sqlalchemy", "pytest", "alembic", "def ")
+    ) and not any(tok in hint_text for tok in ("javascript", "typescript", "react", "java ", "rust"))
+    is_sql = ("sql" in hint_text or "postgres" in hint_text) and not is_python
+    is_js_ts = any(
+        tok in hint_text for tok in ("javascript", "typescript", "react", "node")
+    )
+
+    if len(cleaned) < 12 or len(set(cleaned.replace(" ", ""))) < 5:
+        return CodeStaticAnalysisResult(
+            present=True,
+            valid=False,
+            quality_score=10,
+            has_logic=False,
+            has_error_handling=False,
+            summary="Extrait de code trop court ou répétitif pour être exploitable.",
+            gaps=["Code non significatif ou trivial."],
+        )
+
+    if is_python:
+        try:
+            tree = ast.parse(cleaned)
+        except SyntaxError as exc:
+            return CodeStaticAnalysisResult(
+                present=True,
+                valid=False,
+                quality_score=15,
+                has_logic=False,
+                has_error_handling=False,
+                summary=f"Erreur de syntaxe Python détectée (ligne {exc.lineno}).",
+                gaps=[f"Erreur de syntaxe Python à la ligne {exc.lineno}."],
+            )
+
+        body_nodes = list(ast.walk(tree))
+        func_or_class = [
+            n for n in body_nodes if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
+        ]
+        control_nodes = [
+            n
+            for n in body_nodes
+            if isinstance(n, (ast.If, ast.For, ast.AsyncFor, ast.While, ast.Try, ast.With, ast.Return, ast.Raise))
+        ]
+        calls_or_assigns = [n for n in body_nodes if isinstance(n, (ast.Call, ast.Assign, ast.AnnAssign))]
+        has_error_handling = any(
+            isinstance(n, (ast.Try, ast.Raise, ast.ExceptHandler, ast.If))
+            for n in body_nodes
+        )
+        # Rejeter une fonction vide ne contenant que `pass` ou `...` ou un littéral isolé
+        non_trivial_stmts = [
+            n
+            for n in tree.body
+            if not (isinstance(n, ast.Expr) and isinstance(n.value, ast.Constant))
+            and not isinstance(n, ast.Pass)
+        ]
+        has_logic = bool(func_or_class or control_nodes or len(calls_or_assigns) >= 2)
+        if not non_trivial_stmts or not has_logic:
+            return CodeStaticAnalysisResult(
+                present=True,
+                valid=False,
+                quality_score=25,
+                has_logic=False,
+                has_error_handling=False,
+                summary="Syntaxe Python valide mais aucune logique fonctionnelle réelle détectée.",
+                gaps=["Implémentez une logique réelle (fonction, condition, transformation ou appel)."],
+            )
+
+        score = 65
+        if func_or_class or len(calls_or_assigns) >= 2:
+            score += 20
+        if has_error_handling:
+            score += 15
+        return CodeStaticAnalysisResult(
+            present=True,
+            valid=True,
+            quality_score=min(100, score),
+            has_logic=True,
+            has_error_handling=has_error_handling,
+            summary="Syntaxe Python validée par analyse statique AST.",
+            gaps=[] if has_error_handling else ["Ajoutez une gestion explicite des cas limites/erreurs."],
+        )
+
+    if is_sql:
+        upper = cleaned.upper()
+        has_sql_stmt = any(kw in upper for kw in ("SELECT ", "INSERT ", "UPDATE ", "DELETE ", "CREATE ", "WITH "))
+        balanced = _balanced_delimiters(cleaned)
+        if not has_sql_stmt or not balanced:
+            return CodeStaticAnalysisResult(
+                present=True,
+                valid=False,
+                quality_score=25,
+                has_logic=False,
+                has_error_handling=False,
+                summary="Requête SQL incomplète ou syntaxiquement déséquilibrée.",
+                gaps=["Fournissez une requête SQL complète avec clauses valides."],
+            )
+        has_filter_or_join = any(kw in upper for kw in ("WHERE ", "JOIN ", "GROUP BY ", "HAVING ", "CONSTRAINT "))
+        return CodeStaticAnalysisResult(
+            present=True,
+            valid=True,
+            quality_score=95 if has_filter_or_join else 78,
+            has_logic=True,
+            has_error_handling=has_filter_or_join,
+            summary="Structure SQL vérifiée statiquement.",
+            gaps=[],
+        )
+
+    if is_js_ts:
+        balanced = _balanced_delimiters(cleaned)
+        has_construct = any(
+            kw in cleaned for kw in ("function ", "=>", "const ", "let ", "class ", "export ", "return ")
+        )
+        if not balanced or not has_construct:
+            return CodeStaticAnalysisResult(
+                present=True,
+                valid=False,
+                quality_score=25,
+                has_logic=False,
+                has_error_handling=False,
+                summary="Extrait JS/TS déséquilibré ou dépourvu de structure fonctionnelle.",
+                gaps=["Corrigez la syntaxe JS/TS et incluez une fonction ou logique complète."],
+            )
+        has_guard = any(kw in cleaned for kw in ("if ", "if(", "try ", "catch", "throw "))
+        return CodeStaticAnalysisResult(
+            present=True,
+            valid=True,
+            quality_score=95 if has_guard else 80,
+            has_logic=True,
+            has_error_handling=has_guard,
+            summary="Structure JS/TS validée statiquement.",
+            gaps=[],
+        )
+
+    balanced = _balanced_delimiters(cleaned)
+    has_generic_construct = any(
+        tok in cleaned
+        for tok in ("def ", "class ", "function", "fn ", "public ", "return", "=>", "SELECT ", "{", "(")
+    )
+    if not balanced or not has_generic_construct or len(cleaned) < 20:
+        return CodeStaticAnalysisResult(
+            present=True,
+            valid=False,
+            quality_score=30,
+            has_logic=False,
+            has_error_handling=False,
+            summary="Extrait de code syntaxiquement déséquilibré ou incomplet.",
+            gaps=["Fournissez un extrait de code complet et syntaxiquement cohérent."],
+        )
+
+    has_guard = any(tok in cleaned.lower() for tok in ("if", "try", "catch", "raise", "throw", "match ", "err"))
+    return CodeStaticAnalysisResult(
+        present=True,
+        valid=True,
+        quality_score=92 if has_guard else 78,
+        has_logic=True,
+        has_error_handling=has_guard,
+        summary="Structure syntaxique du code vérifiée statiquement.",
+        gaps=[],
+    )
 
 
 def validate_evidence_quality(
@@ -104,15 +343,25 @@ def validate_evidence_quality(
     description: str,
     reference_url: str | None = None,
     result: str | None = None,
+    *,
+    verification_status: EvidenceVerificationStatus | str | None = None,
 ) -> EvidenceQualityResult:
     """Vérifie qu'une preuve représente un travail concret et non une simple auto-déclaration."""
-    _ = evidence_type
+    ev_type_str = evidence_type.value if hasattr(evidence_type, "value") else str(evidence_type)
     cleaned = " ".join((description or "").split())
     lowered = cleaned.lower()
     words = [w for w in re.split(r"\s+", cleaned) if len(w) >= 2]
 
     has_url = bool(reference_url and reference_url.strip())
-    verification_note = EXTERNAL_URL_DISCLAIMER if has_url else None
+    verified_external = str(verification_status or "") in (
+        EvidenceVerificationStatus.verified.value,
+        EvidenceVerificationStatus.approved.value,
+    )
+    verification_note = (
+        "Référence externe inspectée et vérifiée par le serveur."
+        if verified_external
+        else (EXTERNAL_URL_DISCLAIMER if has_url else None)
+    )
 
     if len(cleaned) < 12 or len(words) < 3:
         return EvidenceQualityResult(
@@ -121,7 +370,7 @@ def validate_evidence_quality(
                 "Preuve refusée : décrivez précisément la production réalisée "
                 "(au moins 12 caractères et 3 mots concrets, ex. exercice résolu, code écrit, résultat)."
             ),
-            external_reference_verified=False,
+            external_reference_verified=verified_external,
             verification_note=verification_note,
         )
 
@@ -136,7 +385,7 @@ def validate_evidence_quality(
                 "Preuve insuffisante : une simple affirmation (« j'ai compris », « leçon terminée ») "
                 "ne démontre pas la compétence. Décrivez l'exercice, le code ou le résultat obtenu."
             ),
-            external_reference_verified=False,
+            external_reference_verified=verified_external,
             verification_note=verification_note,
         )
 
@@ -147,14 +396,24 @@ def validate_evidence_quality(
                 "Preuve trop vague : détaillez ce qui a été produit, testé ou corrigé "
                 "ainsi que le résultat observé."
             ),
-            external_reference_verified=False,
+            external_reference_verified=verified_external,
+            verification_note=verification_note,
+        )
+
+    if ev_type_str in ("project", "deliverable") and len(words) < 4 and not has_url and not has_concrete_result:
+        return EvidenceQualityResult(
+            admissible=False,
+            reason=(
+                "Preuve projet/livrable incomplète : précisez les livrables produits, résultats ou URL associée."
+            ),
+            external_reference_verified=verified_external,
             verification_note=verification_note,
         )
 
     return EvidenceQualityResult(
         admissible=True,
         reason=None,
-        external_reference_verified=False,
+        external_reference_verified=verified_external,
         verification_note=verification_note,
     )
 
@@ -271,6 +530,7 @@ def build_assessment_exercise(
         prompt_instructions=prompt_instructions,
         hints=hints,
         criteria=criteria,
+        rubric_version=RUBRIC_VERSION,
     )
 
 
@@ -286,9 +546,13 @@ def _is_blatantly_insufficient(submission_text: str, submission_code: str | None
     if any(p.search(lowered) for p in _SELF_DECLARATIVE_PATTERNS) and len(cleaned) < 55 and not code_clean:
         return "La réponse se limite à une affirmation sans démonstration ni explication technique."
 
-    word_count = len([w for w in re.split(r"\s+", cleaned) if len(w) >= 2])
-    if len(cleaned) < 25 or (word_count < 6 and len(code_clean) < 15):
+    words = [w for w in re.split(r"\s+", cleaned) if len(w) >= 2]
+    if len(cleaned) < 25 or (len(words) < 6 and len(code_clean) < 15):
         return "La production soumise est trop courte pour évaluer une maîtrise réelle."
+
+    unique_words = {w.lower() for w in words}
+    if len(words) >= 6 and len(unique_words) <= 2:
+        return "La réponse soumise est répétitive et ne contient pas d’explication exploitable."
 
     return None
 
@@ -311,33 +575,43 @@ def evaluate_assessment_submission(
     submission_reference_url: str | None,
     evidence_records: list[Any],
     base_criteria: list[dict[str, Any]] | None = None,
-    criteria_overrides: list[dict[str, Any]] | None = None,
-    explicit_feedback: str | None = None,
-    explicit_mastered: list[str] | None = None,
-    explicit_gaps: list[str] | None = None,
-    explicit_remediation: str | None = None,
+    rubric_version: str = RUBRIC_VERSION,
+    has_isolated_sandbox: bool = False,
 ) -> EvaluatedSubmission:
+    """
+    Évalue une soumission strictement côté serveur à partir du référentiel figé.
+    N'accepte aucune note ni surcharge de critère en provenance du client.
+    """
     rubric = (
         [dict(item) for item in base_criteria]
         if base_criteria
         else default_criteria_rubric(assessment_type, target_level)
     )
-    overrides_by_key = {
-        str(item["key"]): item for item in (criteria_overrides or []) if "key" in item
-    }
 
     admissible_evidences: list[Any] = []
+    verified_external_count = 0
     has_external_url = bool(submission_reference_url and submission_reference_url.strip())
     for ev in evidence_records:
         ev_type = ev.type.value if hasattr(ev.type, "value") else str(getattr(ev, "type", "exercise"))
         desc = getattr(ev, "description", "")
         ref_url = getattr(ev, "reference_url", None)
         result = getattr(ev, "result", None)
+        verif_status = getattr(ev, "verification_status", None)
+        if hasattr(verif_status, "value"):
+            verif_status = verif_status.value
         if ref_url:
             has_external_url = True
-        quality = validate_evidence_quality(ev_type, desc, ref_url, result)
+        quality = validate_evidence_quality(
+            ev_type,
+            desc,
+            ref_url,
+            result,
+            verification_status=verif_status,
+        )
         if quality.admissible:
             admissible_evidences.append(ev)
+            if quality.external_reference_verified:
+                verified_external_count += 1
 
     insufficient_reason = _is_blatantly_insufficient(submission_text, submission_code)
     cleaned_text = " ".join((submission_text or "").split())
@@ -351,15 +625,15 @@ def evaluate_assessment_submission(
         or any(kw in combined_lower for kw in _CONCRETE_ARTIFACT_KEYWORDS)
     )
     has_reasoning_markers = any(
-        marker in lowered_text
+        re.search(rf"\b{re.escape(marker)}\b", lowered_text)
         for marker in (
-            "car ",
+            "car",
             "parce que",
-            "donc ",
+            "donc",
             "afin de",
-            "permet de",
+            "permet",
             "évite",
-            "cas ",
+            "cas",
             "erreur",
             "exception",
             "avantage",
@@ -367,14 +641,13 @@ def evaluate_assessment_submission(
             "complexité",
             "test",
             "étape",
+            "puisque",
         )
     )
-    has_code_construct = bool(
-        code_clean
-        and (
-            len(code_clean) >= 20
-            or any(tok in code_clean for tok in ("def ", "class ", "return", "=>", "SELECT ", "async ", "{", "("))
-        )
+    code_analysis = analyze_code_statically(
+        code_clean,
+        skill_name=skill_name,
+        skill_domain=skill_domain,
     )
 
     evaluated_criteria: list[dict[str, Any]] = []
@@ -384,7 +657,6 @@ def evaluate_assessment_submission(
     for crit in rubric:
         key = str(crit.get("key", ""))
         max_score = int(crit.get("max_score", crit.get("weight", 25)) or 25)
-        override = overrides_by_key.get(key)
 
         if key == "concrete_evidence":
             if len(admissible_evidences) == 0:
@@ -392,34 +664,26 @@ def evaluate_assessment_submission(
                 passed_crit = False
                 crit_fb = "Aucune preuve concrète et admissible liée à cette évaluation."
             else:
-                if override is not None:
-                    score_val = max(0, min(max_score, int(override.get("score", max_score))))
-                    passed_crit = bool(override.get("passed", score_val >= int(max_score * 0.6)))
-                    crit_fb = str(
-                        override.get("feedback")
-                        or f"{len(admissible_evidences)} preuve(s) admissible(s) associée(s)."
-                    )
-                else:
-                    score_val = max_score
-                    passed_crit = True
-                    crit_fb = f"{len(admissible_evidences)} preuve(s) concrète(s) vérifiée(s) sur votre compte."
+                score_val = max_score if verified_external_count > 0 or not has_external_url else round(max_score * 0.9)
+                passed_crit = True
+                crit_fb = (
+                    f"{len(admissible_evidences)} preuve(s) admissible(s) enregistrée(s) "
+                    f"({verified_external_count} vérifiée(s) en externe)."
+                    if has_external_url
+                    else f"{len(admissible_evidences)} preuve(s) concrète(s) admissible(s) enregistrée(s)."
+                )
 
         elif insufficient_reason is not None:
             score_val = min(5, max_score // 4) if key == "relevance" and has_topic_overlap else 0
             passed_crit = False
             crit_fb = insufficient_reason
 
-        elif override is not None:
-            score_val = max(0, min(max_score, int(override.get("score", 0))))
-            passed_crit = bool(override.get("passed", score_val >= int(max_score * 0.6)))
-            crit_fb = str(override.get("feedback") or "Critère évalué selon la grille.")
-
         elif key == "relevance":
             if len(cleaned_text) >= 40 and has_topic_overlap:
                 score_val = max_score
                 passed_crit = True
                 crit_fb = f"Production alignée avec la compétence « {skill_name} »."
-            elif len(cleaned_text) >= 35:
+            elif len(cleaned_text) >= 35 and len({w.lower() for w in text_words}) >= 7:
                 score_val = round(max_score * 0.68)
                 passed_crit = True
                 crit_fb = "Réponse globalement pertinente mais lien explicite à renforcer."
@@ -430,34 +694,43 @@ def evaluate_assessment_submission(
 
         elif key == "technical_accuracy":
             if assessment_type in (SkillAssessmentType.practical_exercise, SkillAssessmentType.code_review):
-                if has_code_construct and (has_reasoning_markers or len(text_words) >= 10):
-                    score_val = max_score
+                if code_analysis.present:
+                    if code_analysis.valid and (has_reasoning_markers or len(text_words) >= 10):
+                        score_val = round(max_score * (code_analysis.quality_score / 100.0))
+                        passed_crit = code_analysis.quality_score >= 65
+                        crit_fb = f"{code_analysis.summary} {STATIC_ANALYSIS_NOTE}"
+                    else:
+                        score_val = round(max_score * 0.3)
+                        passed_crit = False
+                        crit_fb = code_analysis.summary
+                elif has_topic_overlap and len(text_words) >= 14 and has_reasoning_markers and target_level <= 2:
+                    score_val = round(max_score * 0.78)
                     passed_crit = True
-                    crit_fb = "Code et éléments techniques cohérents avec le niveau visé."
-                elif has_topic_overlap and len(text_words) >= 12 and has_reasoning_markers:
-                    score_val = round(max_score * 0.8)
-                    passed_crit = True
-                    crit_fb = "Raisonnement technique solide ; ajouter du code vérifiable renforcerait encore la note."
+                    crit_fb = "Raisonnement technique solide ; ajouter du code vérifiable renforcerait l’évaluation."
                 else:
-                    score_val = round(max_score * 0.4) if len(text_words) >= 8 else round(max_score * 0.2)
+                    score_val = round(max_score * 0.35)
                     passed_crit = False
-                    crit_fb = "Éléments techniques ou extrait de code insuffisants pour démontrer la correction."
+                    crit_fb = "Code source valide ou démonstration technique insuffisants pour ce palier."
             else:
-                if has_topic_overlap and len(text_words) >= 12:
-                    score_val = max_score if has_code_construct or len(text_words) >= 18 else round(max_score * 0.85)
+                if has_topic_overlap and len(text_words) >= 14 and has_reasoning_markers:
+                    score_val = (
+                        max_score
+                        if (code_analysis.present and code_analysis.valid) or len(text_words) >= 22
+                        else round(max_score * 0.85)
+                    )
                     passed_crit = True
                     crit_fb = "Contenu techniquement exact et structuré."
                 else:
                     score_val = round(max_score * 0.4)
                     passed_crit = False
-                    crit_fb = "Manque de précision technique dans la réponse."
+                    crit_fb = "Manque de précision conceptuelle et de justification technique."
 
         elif key == "reasoning_explanation":
             if len(text_words) >= 12 and has_reasoning_markers:
                 score_val = max_score if len(text_words) >= 18 else round(max_score * 0.84)
                 passed_crit = True
                 crit_fb = "Explication claire du raisonnement et des cas traités."
-            elif len(text_words) >= 10:
+            elif len(text_words) >= 12:
                 score_val = round(max_score * 0.68)
                 passed_crit = True
                 crit_fb = "Explication recevable ; justifiez davantage le *pourquoi* et les cas limites."
@@ -467,9 +740,9 @@ def evaluate_assessment_submission(
                 crit_fb = "Raisonnement non détaillé : expliquez comment vous obtenez ce résultat."
 
         else:
-            score_val = round(max_score * 0.7) if len(text_words) >= 10 else round(max_score * 0.3)
-            passed_crit = score_val >= round(max_score * 0.6)
-            crit_fb = "Critère évalué."
+            score_val = round(max_score * 0.4)
+            passed_crit = False
+            crit_fb = "Critère non reconnu par le référentiel serveur."
 
         crit_label = str(crit.get("label", key))
         evaluated_criteria.append(
@@ -498,7 +771,7 @@ def evaluate_assessment_submission(
     passed_count = sum(1 for c in evaluated_criteria if c["passed"])
     threshold = pass_threshold_for_level(target_level)
 
-    passed = (
+    preliminary_pass = (
         insufficient_reason is None
         and evidence_crit_ok
         and tech_crit_ok
@@ -506,19 +779,49 @@ def evaluate_assessment_submission(
         and score >= threshold
     )
 
-    if passed:
-        if score >= 85 or target_level <= starting_level + 1:
-            proposed_level = target_level
-        else:
-            proposed_level = min(target_level, starting_level + 1)
-    else:
+    # Si aucune exécution isolée ou inspection réelle pour les niveaux avancés / livrables,
+    # ne jamais attribuer automatiquement une validation : classer en revue manuelle requise.
+    needs_manual_review = False
+    manual_reason: str | None = None
+    if preliminary_pass and not has_isolated_sandbox:
+        if assessment_type == SkillAssessmentType.deliverable and verified_external_count == 0:
+            needs_manual_review = True
+            manual_reason = (
+                "Revue manuelle requise : ce livrable pratique n'a pas été inspecté en environnement isolé "
+                "et aucune référence externe vérifiée n'est rattachée."
+            )
+        elif target_level >= 3 and assessment_type in (
+            SkillAssessmentType.practical_exercise,
+            SkillAssessmentType.code_review,
+            SkillAssessmentType.mixed,
+        ) and verified_external_count == 0:
+            needs_manual_review = True
+            manual_reason = (
+                f"Revue manuelle requise pour le niveau {target_level}/5 : aucun environnement d'exécution "
+                "isolé n'est configuré pour exécuter des tests automatisés sur ce travail."
+            )
+
+    if needs_manual_review:
+        passed = False
         proposed_level = starting_level
+        eval_mode = SkillEvaluationMode.manual_review
+        if manual_reason:
+            gaps_identified.append(manual_reason)
+    elif preliminary_pass:
+        passed = True
+        # Progression strictement bornée à +1 palier à la fois
+        proposed_level = min(5, starting_level + 1, target_level)
+        eval_mode = SkillEvaluationMode.automated
+    else:
+        passed = False
+        proposed_level = starting_level
+        eval_mode = SkillEvaluationMode.automated
 
-    final_mastered = explicit_mastered if explicit_mastered is not None else mastered_points
-    final_gaps = explicit_gaps if explicit_gaps is not None else gaps_identified
-
-    if explicit_remediation is not None:
-        remediation = explicit_remediation
+    if needs_manual_review:
+        remediation = (
+            "Faites inspecter le dépôt GitHub lié ou soumettez cette production à un évaluateur "
+            "humain avant validation finale."
+        )
     elif not passed:
         if not evidence_crit_ok:
             remediation = (
@@ -528,25 +831,31 @@ def evaluate_assessment_submission(
         else:
             remediation = (
                 f"Réalisez un exercice correctif ciblé sur « {skill_name} » en détaillant le raisonnement, "
-                "un cas d’erreur et en joignant le code/résultat vérifié."
+                "un cas d’erreur et en joignant un code valide."
             )
     else:
         remediation = None
 
-    external_warning = EXTERNAL_URL_DISCLAIMER if has_external_url else None
+    external_warning = EXTERNAL_URL_DISCLAIMER if has_external_url and verified_external_count == 0 else None
 
-    if explicit_feedback:
-        feedback = explicit_feedback.strip()
+    if needs_manual_review:
+        verdict = (
+            f"Préanalyse favorable ({score}/100, seuil {threshold}/100) — revue manuelle requise "
+            f"avant toute validation au niveau {target_level}/5."
+        )
+    elif passed:
+        verdict = f"Évaluation réussie ({score}/100, seuil {threshold}/100). Niveau proposé : {proposed_level}/5."
     else:
         verdict = (
-            f"Évaluation réussie ({score}/100, seuil {threshold}/100). Niveau proposé : {proposed_level}/5."
-            if passed
-            else f"Évaluation non validée ({score}/100, seuil requis {threshold}/100). Le niveau reste à {starting_level}/5."
+            f"Évaluation non validée ({score}/100, seuil requis {threshold}/100). "
+            f"Le niveau reste à {starting_level}/5."
         )
-        details = " · ".join(f"{c['label']} : {c['score']}/{c['max_score']}" for c in evaluated_criteria)
-        feedback = f"{verdict}\nDétail : {details}."
-        if external_warning:
-            feedback = f"{feedback}\nNote : {external_warning}"
+    details = " · ".join(f"{c['label']} : {c['score']}/{c['max_score']}" for c in evaluated_criteria)
+    feedback = f"{verdict}\nDétail : {details}."
+    if code_analysis.present and code_analysis.valid:
+        feedback = f"{feedback}\nAnalyse : {STATIC_ANALYSIS_NOTE}"
+    if external_warning:
+        feedback = f"{feedback}\nNote : {external_warning}"
 
     return EvaluatedSubmission(
         criteria=evaluated_criteria,
@@ -554,8 +863,12 @@ def evaluate_assessment_submission(
         passed=passed,
         proposed_level=proposed_level,
         feedback=feedback,
-        mastered_points=final_mastered,
-        gaps_identified=final_gaps,
+        mastered_points=mastered_points,
+        gaps_identified=gaps_identified,
         remediation_recommendation=remediation,
         external_verification_warning=external_warning,
+        evaluation_mode=eval_mode,
+        manual_review_required=needs_manual_review,
+        rubric_version=rubric_version,
+        evaluator_version=EVALUATOR_VERSION,
     )

@@ -3,6 +3,7 @@ from typing import Any
 from uuid import UUID
 from zoneinfo import ZoneInfo
 from pydantic import BaseModel, Field
+from app.repositories.ai_sql import SqlAiMemoryRepository, UserAiMemoryRecord
 from app.repositories.courses_sql import SqlCourseRepository
 from app.repositories.learning_sql import (
     SqlLearningRepository,
@@ -31,7 +32,7 @@ from app.services.sessions_service import compute_session_duration_minutes
 from app.services.tasks_service import is_active_task_status, is_task_overdue, sort_tasks_by_urgency
 
 MAX_CONTEXT_TASKS = 10
-MAX_CONTEXT_EVENTS = 20
+MAX_CONTEXT_EVENTS = 40
 MAX_CONTEXT_SESSIONS = 8
 MAX_CONTEXT_PROJECTS = 6
 MAX_CONTEXT_SKILLS = 10
@@ -48,6 +49,105 @@ DAY_NAMES_FR: tuple[str, ...] = (
     "Dimanche",
 )
 
+_DAY_NAME_TO_WEEKDAY: dict[str, int] = {
+    "lundi": 0,
+    "monday": 0,
+    "mon": 0,
+    "mardi": 1,
+    "tuesday": 1,
+    "tue": 1,
+    "mercredi": 2,
+    "wednesday": 2,
+    "wed": 2,
+    "jeudi": 3,
+    "thursday": 3,
+    "thu": 3,
+    "vendredi": 4,
+    "friday": 4,
+    "fri": 4,
+    "samedi": 5,
+    "saturday": 5,
+    "sat": 5,
+    "dimanche": 6,
+    "sunday": 6,
+    "sun": 6,
+}
+
+
+def _parse_availability_preferences(
+    preferences: dict[str, Any] | None,
+    memory: UserAiMemoryRecord | None = None,
+) -> dict[str, Any]:
+    prefs = preferences if isinstance(preferences, dict) else {}
+    avail: dict[str, Any] = {}
+    for key in (
+        "study_start_hour",
+        "study_end_hour",
+        "preferred_session_minutes",
+        "max_daily_study_minutes",
+        "excluded_days",
+        "weekly_study_hours",
+    ):
+        if key in prefs and prefs[key] is not None:
+            avail[key] = prefs[key]
+    raw_nested = prefs.get("availability")
+    if isinstance(raw_nested, dict):
+        for key, value in raw_nested.items():
+            if value is not None:
+                avail[key] = value
+    if memory is not None:
+        for key, value in (memory.availability_preferences or {}).items():
+            if value is not None:
+                avail[key] = value
+        if memory.default_session_minutes:
+            avail.setdefault("preferred_session_minutes", memory.default_session_minutes)
+        if memory.weekly_study_hours is not None:
+            avail["weekly_study_hours"] = memory.weekly_study_hours
+
+    try:
+        start_h = max(5, min(20, int(avail.get("study_start_hour", 8))))
+    except (TypeError, ValueError):
+        start_h = 8
+    try:
+        end_h = max(start_h + 1, min(23, int(avail.get("study_end_hour", 21))))
+    except (TypeError, ValueError):
+        end_h = max(start_h + 1, 21)
+    try:
+        pref_min = max(30, min(180, int(avail.get("preferred_session_minutes", 60))))
+    except (TypeError, ValueError):
+        pref_min = 60
+    try:
+        max_daily = max(60, min(480, int(avail.get("max_daily_study_minutes", 300))))
+    except (TypeError, ValueError):
+        max_daily = 300
+
+    weekly_hours: int | None = None
+    if avail.get("weekly_study_hours") is not None:
+        try:
+            weekly_hours = max(0, min(120, int(avail["weekly_study_hours"])))
+        except (TypeError, ValueError):
+            weekly_hours = None
+
+    excluded: set[int] = set()
+    for item in avail.get("excluded_days") or []:
+        if isinstance(item, int) and 0 <= item <= 6:
+            excluded.add(item)
+        elif isinstance(item, str):
+            s = item.strip().lower()
+            if s.isdigit() and 0 <= int(s) <= 6:
+                excluded.add(int(s))
+            elif s in _DAY_NAME_TO_WEEKDAY:
+                excluded.add(_DAY_NAME_TO_WEEKDAY[s])
+    return {
+        "study_start_hour": start_h,
+        "study_end_hour": end_h,
+        "preferred_session_minutes": pref_min,
+        "max_daily_study_minutes": max_daily,
+        "excluded_days": sorted(excluded),
+        "weekly_study_hours": weekly_hours,
+        "max_weekly_study_minutes": weekly_hours * 60 if weekly_hours is not None else None,
+    }
+
 
 class BoundedUserContext(BaseModel):
     included_scopes: list[str]
@@ -61,6 +161,8 @@ class BoundedUserContext(BaseModel):
     courses: list[dict[str, Any]] = Field(default_factory=list)
     skills: list[dict[str, Any]] = Field(default_factory=list)
     projects: list[dict[str, Any]] = Field(default_factory=list)
+    personal_goals: list[dict[str, Any]] = Field(default_factory=list)
+    personal_memory: dict[str, Any] = Field(default_factory=dict)
     recent_sessions: list[dict[str, Any]] = Field(default_factory=list)
     stats: dict[str, Any] = Field(default_factory=dict)
     missing_data: list[str] = Field(default_factory=list)
@@ -75,14 +177,29 @@ def infer_scopes_from_message(
         return {scope.value for scope in explicit_scopes}
 
     lowered = message.lower()
-    scopes: set[str] = {"today", "tasks", "schedule"}
+    scopes: set[str] = {"today", "tasks", "schedule", "goals", "memory"}
 
     strategic_hints = (
         "apprendre",
+        "continuer",
+        "reprendre",
+        "suspendre",
+        "pause",
         "formation",
         "nouvelle compétence",
+        "compétence",
         "idée",
         "projet",
+        "objectif",
+        "objectifs",
+        "python",
+        "react",
+        "programme",
+        "réorganise",
+        "réorganiser",
+        "disponibilité",
+        "disponibilités",
+        "heures",
         "examen",
         "partiel",
         "activité",
@@ -95,7 +212,7 @@ def infer_scopes_from_message(
         "ajuster",
     )
     if any(word in lowered for word in strategic_hints):
-        scopes.update({"learning", "skills", "projects", "schedule"})
+        scopes.update({"learning", "skills", "projects", "schedule", "goals", "memory"})
 
     if any(
         word in lowered
@@ -138,7 +255,17 @@ def infer_scopes_from_message(
         scopes.add("skills")
     if any(
         word in lowered
-        for word in ("projet", "livrable", "prochaine action", "dispersion", "devoir", "programme", "demain")
+        for word in (
+            "projet",
+            "livrable",
+            "prochaine action",
+            "dispersion",
+            "devoir",
+            "programme",
+            "demain",
+            "pause",
+            "suspendre",
+        )
     ):
         scopes.add("projects")
     if any(word in lowered for word in ("bilan", "hebdo", "semaine", "séance", "temps", "progression")):
@@ -162,6 +289,7 @@ def compute_day_availability_plan(
     now_utc: datetime,
     study_start_hour: int = 8,
     study_end_hour: int = 21,
+    excluded_days: set[int] | None = None,
 ) -> dict[str, Any]:
     """
     Calcule pour une journée donnée :
@@ -171,7 +299,12 @@ def compute_day_availability_plan(
     - Jusqu'à 3 créneaux de travail recommandés (60 à 90 min max chacun) afin de ne pas transformer chaque minute libre en travail.
     """
     window_start = datetime.combine(day_date, time(study_start_hour, 0), tzinfo=tz)
-    window_end = datetime.combine(day_date, time(study_end_hour, 30), tzinfo=tz)
+    window_end = datetime.combine(
+        day_date,
+        time(study_end_hour, 30 if study_end_hour < 23 else 0),
+        tzinfo=tz,
+    )
+    is_excluded_day = day_date.weekday() in (excluded_days or set())
 
     local_now = now_utc.astimezone(tz)
     if day_date == local_now.date() and local_now > window_start:
@@ -314,8 +447,13 @@ def compute_day_availability_plan(
                 }
             )
 
+    if is_excluded_day:
+        free_periods = []
+        recommended_windows = []
+
     return {
         "date": day_date.isoformat(),
+        "is_excluded_day": is_excluded_day,
         "university_courses": uni_courses,
         "personal_blocks": personal_blocks,
         "free_periods": free_periods,
@@ -338,6 +476,8 @@ class ContextBuilder:
         skill_repo: SqlSkillRepository,
         project_repo: SqlProjectRepository,
         course_repo: SqlCourseRepository | None = None,
+        goal_repo: Any | None = None,
+        ai_memory_repo: SqlAiMemoryRepository | None = None,
     ) -> None:
         self._profile_service = profile_service
         self._task_repo = task_repo
@@ -347,6 +487,8 @@ class ContextBuilder:
         self._skill_repo = skill_repo
         self._project_repo = project_repo
         self._course_repo = course_repo
+        self._goal_repo = goal_repo
+        self._ai_memory_repo = ai_memory_repo
 
     def build_context(
         self,
@@ -359,6 +501,7 @@ class ContextBuilder:
         ref_now = now_utc or datetime.now(timezone.utc)
         scopes = infer_scopes_from_message(message, explicit_scopes)
         profile = self._profile_service.get_or_create_record(user_id)
+        memory_record = self._ai_memory_repo.get(user_id) if self._ai_memory_repo is not None else None
         tz = ZoneInfo(profile.timezone)
         local_now = ref_now.astimezone(tz)
         today_date = local_now.date()
@@ -392,6 +535,7 @@ class ContextBuilder:
                 "status": t.status.value,
                 "priority": t.priority.value,
                 "due_at": t.due_at.isoformat() if t.due_at else None,
+                "project_id": str(t.project_id) if t.project_id else None,
                 "is_overdue": is_task_overdue(t, profile.timezone, ref_now),
             }
             for t in active_tasks[:MAX_CONTEXT_TASKS]
@@ -402,17 +546,24 @@ class ContextBuilder:
         availability_payload: dict[str, Any] = {}
         all_events: list[ScheduleEventRecord] = []
         weekly_candidate_slots: list[dict[str, Any]] = []
+        multi_week_candidate_slots: list[dict[str, Any]] = []
         weekly_scheduled_minutes = 0
         weekly_course_minutes = 0
         weekly_personal_minutes = 0
+
+        avail_prefs = _parse_availability_preferences(profile.preferences, memory_record)
+        study_start_hour = int(avail_prefs["study_start_hour"])
+        study_end_hour = int(avail_prefs["study_end_hour"])
+        max_daily_study_minutes = int(avail_prefs["max_daily_study_minutes"])
+        excluded_days_set = set(avail_prefs["excluded_days"])
 
         if "schedule" in scopes or "today" in scopes or "weekly" in scopes:
             all_events = self._schedule_repo.list_by_user(user_id)
             relevant_events = [
                 e
                 for e in all_events
-                if e.ends_at >= ref_now - timedelta(hours=12)
-                and e.starts_at <= ref_now + timedelta(days=7)
+                if e.ends_at >= ref_now - timedelta(hours=24)
+                and e.starts_at <= ref_now + timedelta(days=21)
             ]
             relevant_events.sort(key=lambda item: item.starts_at)
             if not relevant_events:
@@ -437,7 +588,7 @@ class ContextBuilder:
                     "local_date": local_s.date().isoformat(),
                     "local_start_time": local_s.strftime("%H:%M"),
                     "local_end_time": local_e.strftime("%H:%M"),
-                    "is_today": local_s.date() == today_date,
+                    "is_today": local_s.date() == today_date or local_e.date() == today_date,
                     "is_tomorrow": local_s.date() == tomorrow_date,
                 }
                 schedule_payload.append(ev_dict)
@@ -449,32 +600,44 @@ class ContextBuilder:
                 all_events=all_events,
                 tz=tz,
                 now_utc=ref_now,
+                study_start_hour=study_start_hour,
+                study_end_hour=study_end_hour,
+                excluded_days=excluded_days_set,
             )
             tomorrow_plan = compute_day_availability_plan(
                 day_date=tomorrow_date,
                 all_events=all_events,
                 tz=tz,
                 now_utc=ref_now,
+                study_start_hour=study_start_hour,
+                study_end_hour=study_end_hour,
+                excluded_days=excluded_days_set,
             )
 
             days_summary: list[dict[str, Any]] = []
-            for offset in range(7):
+            for offset in range(21):
                 day_date = today_date + timedelta(days=offset)
+                day_start_utc = datetime.combine(day_date, time(0, 0), tzinfo=tz).astimezone(
+                    timezone.utc
+                )
+                day_end_utc = day_start_utc + timedelta(days=1)
                 day_events_list = [
                     ev
                     for ev in all_events
-                    if ev.starts_at.astimezone(tz).date() == day_date
-                    or ev.ends_at.astimezone(tz).date() == day_date
+                    if ev.ends_at > day_start_utc and ev.starts_at < day_end_utc
                 ]
                 day_minutes = 0
                 for ev in day_events_list:
-                    dur_min = max(0, round((ev.ends_at - ev.starts_at).total_seconds() / 60))
+                    clipped_start = max(ev.starts_at, day_start_utc)
+                    clipped_end = min(ev.ends_at, day_end_utc)
+                    dur_min = max(0, round((clipped_end - clipped_start).total_seconds() / 60))
                     day_minutes += dur_min
-                    weekly_scheduled_minutes += dur_min
-                    if is_university_course_event(ev):
-                        weekly_course_minutes += dur_min
-                    else:
-                        weekly_personal_minutes += dur_min
+                    if offset < 7:
+                        weekly_scheduled_minutes += dur_min
+                        if is_university_course_event(ev):
+                            weekly_course_minutes += dur_min
+                        else:
+                            weekly_personal_minutes += dur_min
 
                 day_plan = (
                     today_plan
@@ -487,14 +650,16 @@ class ContextBuilder:
                             all_events=all_events,
                             tz=tz,
                             now_utc=ref_now,
+                            study_start_hour=study_start_hour,
+                            study_end_hour=study_end_hour,
+                            excluded_days=excluded_days_set,
                         )
                     )
                 )
                 rec_windows = day_plan.get("recommended_study_windows") or []
-                # Protection contre la surcharge quotidienne : >= 300 min (5h) => journée pleine, >= 210 min (3h30) => max 1 créneau
-                if day_minutes >= 300:
+                if day_minutes >= max_daily_study_minutes:
                     allowed_windows: list[dict[str, Any]] = []
-                elif day_minutes >= 210:
+                elif day_minutes >= round(max_daily_study_minutes * 0.7):
                     allowed_windows = rec_windows[:1]
                 else:
                     allowed_windows = rec_windows
@@ -502,57 +667,88 @@ class ContextBuilder:
                 day_idx = day_date.weekday()
                 day_name = DAY_NAMES_FR[day_idx]
                 for win in allowed_windows:
-                    weekly_candidate_slots.append(
+                    slot_item = {
+                        "day_of_week": day_idx,
+                        "day_label": day_name,
+                        "local_date": day_date.isoformat(),
+                        "week_index": offset // 7,
+                        "local_start_time": win["local_start_time"],
+                        "local_end_time": win["local_end_time"],
+                        "starts_at": win["starts_at"],
+                        "ends_at": win["ends_at"],
+                        "duration_minutes": win["duration_minutes"],
+                    }
+                    multi_week_candidate_slots.append(slot_item)
+                    if offset < 7:
+                        weekly_candidate_slots.append(slot_item)
+
+                if offset < 7:
+                    days_summary.append(
                         {
-                            "day_of_week": day_idx,
+                            "date": day_date.isoformat(),
                             "day_label": day_name,
-                            "local_date": day_date.isoformat(),
-                            "local_start_time": win["local_start_time"],
-                            "local_end_time": win["local_end_time"],
-                            "starts_at": win["starts_at"],
-                            "ends_at": win["ends_at"],
-                            "duration_minutes": win["duration_minutes"],
+                            "scheduled_minutes": day_minutes,
+                            "university_courses_count": len(
+                                day_plan.get("university_courses") or []
+                            ),
+                            "candidate_slots_count": len(allowed_windows),
                         }
                     )
 
-                days_summary.append(
-                    {
-                        "date": day_date.isoformat(),
-                        "day_label": day_name,
-                        "scheduled_minutes": day_minutes,
-                        "university_courses_count": len(day_plan.get("university_courses") or []),
-                        "candidate_slots_count": len(allowed_windows),
-                    }
-                )
-
             availability_payload = {
+                "preferences": avail_prefs,
                 "today": today_plan,
                 "tomorrow": tomorrow_plan,
                 "weekly_candidate_slots": weekly_candidate_slots,
+                "multi_week_candidate_slots": multi_week_candidate_slots,
                 "days_summary": days_summary,
             }
 
         learning_payload: dict[str, Any] = {}
         courses_payload: list[dict[str, Any]] = []
         active_learning_paths_count = 0
-        if "learning" in scopes or "weekly" in scopes:
+        if "learning" in scopes or "weekly" in scopes or "today" in scopes or "schedule" in scopes:
             if self._course_repo is not None:
                 user_courses = self._course_repo.list_courses(user_id)
-                courses_payload = [
-                    {
-                        "id": str(c.id),
-                        "title": c.title,
-                        "subject": c.subject,
-                        "current_level": c.current_level,
-                        "total_levels": c.total_levels,
-                        "status": c.status.value,
-                    }
-                    for c in user_courses[:MAX_CONTEXT_COURSES]
-                ]
+                user_courses.sort(
+                    key=lambda c: (0 if c.status.value == "active" else 1, c.updated_at),
+                )
+                all_course_lessons = self._course_repo.list_lessons(user_id)
+                lessons_by_course: dict[UUID, list[Any]] = {}
+                for l in all_course_lessons:
+                    lessons_by_course.setdefault(l.course_id, []).append(l)
+
+                for c in user_courses[:MAX_CONTEXT_COURSES]:
+                    c_lessons = sorted(
+                        lessons_by_course.get(c.id, []),
+                        key=lambda item: item.position,
+                    )
+                    done_cnt = sum(1 for item in c_lessons if item.status.value == "completed")
+                    next_incomplete = next(
+                        (
+                            {"id": str(item.id), "title": item.title, "position": item.position}
+                            for item in c_lessons
+                            if item.status.value != "completed"
+                        ),
+                        None,
+                    )
+                    courses_payload.append(
+                        {
+                            "id": str(c.id),
+                            "title": c.title,
+                            "subject": c.subject,
+                            "current_level": c.current_level,
+                            "total_levels": c.total_levels,
+                            "status": c.status.value,
+                            "completed_lessons_count": done_cnt,
+                            "total_lessons_count": len(c_lessons),
+                            "next_incomplete_lesson": next_incomplete,
+                        }
+                    )
             paths = self._learning_repo.list_paths(user_id)
             modules = self._learning_repo.list_modules(user_id)
             lessons = self._learning_repo.list_lessons(user_id)
-            if not paths:
+            if not paths and "learning" in scopes and not courses_payload:
                 missing_data.append("Aucun parcours d’apprentissage enregistré.")
             completed_lessons = sum(1 for l in lessons if l.status.value == "completed")
             active_learning_paths_count = sum(
@@ -633,6 +829,15 @@ class ContextBuilder:
             projects = self._project_repo.list_projects(user_id)
             if not projects and "projects" in scopes:
                 missing_data.append("Aucun projet enregistré.")
+            status_order = {
+                ProjectStatus.active: 0,
+                ProjectStatus.paused: 1,
+                ProjectStatus.planned: 2,
+                ProjectStatus.blocked: 3,
+                ProjectStatus.completed: 4,
+                ProjectStatus.archived: 5,
+            }
+            projects.sort(key=lambda p: (status_order.get(p.status, 9), p.updated_at))
             active_projects_count = sum(1 for p in projects if p.status == ProjectStatus.active)
             projects_payload = [
                 {
@@ -645,6 +850,47 @@ class ContextBuilder:
                 }
                 for p in projects[:MAX_CONTEXT_PROJECTS]
             ]
+
+        personal_goals_payload: list[dict[str, Any]] = []
+        if self._goal_repo is not None and (
+            "goals" in scopes
+            or "learning" in scopes
+            or "projects" in scopes
+            or "skills" in scopes
+            or "today" in scopes
+            or "weekly" in scopes
+            or "schedule" in scopes
+        ):
+            raw_goals = self._goal_repo.list_goals(user_id)
+            raw_goals.sort(
+                key=lambda g: (
+                    0 if getattr(g, "is_primary", False) else 1,
+                    0 if g.status.value == "active" else 1,
+                    -g.created_at.timestamp(),
+                )
+            )
+            for g in raw_goals[:10]:
+                history = list(getattr(g, "progress_history", None) or [])
+                personal_goals_payload.append(
+                    {
+                        "id": str(g.id),
+                        "title": g.title,
+                        "category": g.category.value,
+                        "goal": g.goal,
+                        "current_level": g.current_level,
+                        "target_level": g.target_level,
+                        "priority": g.priority.value,
+                        "is_primary": bool(getattr(g, "is_primary", False)),
+                        "status": g.status.value,
+                        "weekly_target_minutes": g.weekly_target_minutes,
+                        "next_action": g.next_action,
+                        "target_date": g.target_date.isoformat() if g.target_date else None,
+                        "skill_id": str(g.skill_id) if g.skill_id else None,
+                        "learning_path_id": str(g.learning_path_id) if g.learning_path_id else None,
+                        "course_id": str(g.course_id) if g.course_id else None,
+                        "latest_progress": history[-1] if history else None,
+                    }
+                )
 
         all_sessions = self._session_repo.list_by_user(user_id)
         completed_sessions_7d = [
@@ -667,6 +913,11 @@ class ContextBuilder:
                 "category": s.category,
                 "duration_minutes": compute_session_duration_minutes(s, ref_now),
                 "result": s.result,
+                "planned_activity": getattr(s, "planned_activity", None),
+                "actual_activity": getattr(s, "actual_activity", None),
+                "outcome_status": getattr(s, "outcome_status", None),
+                "deliverable_summary": getattr(s, "deliverable_summary", None),
+                "blockers": getattr(s, "blockers", None),
                 "started_at": s.started_at.isoformat(),
             }
             for s in sorted(completed_sessions_7d, key=lambda item: item.started_at, reverse=True)[
@@ -674,7 +925,7 @@ class ContextBuilder:
             ]
         ]
 
-        # Suivi des activités acceptées mais non réalisées sur les 7 derniers jours (Section 4)
+        # Suivi des activités acceptées mais non réalisées sur les 7 derniers jours (chaque session couvre au plus 1 bloc)
         past_study_blocks = [
             ev
             for ev in all_events
@@ -682,21 +933,28 @@ class ContextBuilder:
             and ev.starts_at >= week_ago_utc
             and ev.type in (ScheduleEventType.learning, ScheduleEventType.project)
         ]
-        completed_session_dates = {
-            s.started_at.astimezone(tz).date() for s in completed_sessions_7d
-        }
-        completed_session_titles = [s.title.strip().lower() for s in completed_sessions_7d]
+        used_session_ids: set[UUID] = set()
         missed_block_titles: list[str] = []
         for ev in sorted(past_study_blocks, key=lambda item: item.starts_at, reverse=True):
             ev_date = ev.starts_at.astimezone(tz).date()
             ev_title_lower = ev.title.strip().lower()
-            matched_by_date = ev_date in completed_session_dates
-            matched_by_title = any(
-                ev_title_lower in st or st in ev_title_lower
-                for st in completed_session_titles
-                if st
-            )
-            if not (matched_by_date or matched_by_title):
+            matched_session = None
+            for s in completed_sessions_7d:
+                if s.id in used_session_ids:
+                    continue
+                st = s.title.strip().lower()
+                s_date = s.started_at.astimezone(tz).date()
+                title_match = bool(st and (ev_title_lower in st or st in ev_title_lower))
+                time_overlap = (
+                    s.started_at <= ev.ends_at + timedelta(hours=2)
+                    and (s.ended_at or s.started_at) >= ev.starts_at - timedelta(hours=2)
+                )
+                if title_match or time_overlap or s_date == ev_date:
+                    matched_session = s
+                    break
+            if matched_session is not None:
+                used_session_ids.add(matched_session.id)
+            else:
                 missed_block_titles.append(ev.title)
 
         missed_study_blocks_count = len(missed_block_titles)
@@ -726,6 +984,21 @@ class ContextBuilder:
             "needs_schedule_readjustment": missed_study_blocks_count >= 2,
         }
 
+        personal_memory_payload: dict[str, Any] = {}
+        if memory_record is not None:
+            personal_memory_payload = {
+                "academic_context": dict(memory_record.academic_context or {}),
+                "availability_preferences": dict(memory_record.availability_preferences or {}),
+                "learning_preferences": dict(memory_record.learning_preferences or {}),
+                "constraints": list(memory_record.constraints or []),
+                "long_term_goals": list(memory_record.long_term_goals or []),
+                "weekly_study_hours": memory_record.weekly_study_hours,
+                "default_session_minutes": memory_record.default_session_minutes,
+                "auto_execute_simple_actions": memory_record.auto_execute_simple_actions,
+                "recent_decisions": list(memory_record.recent_decisions or [])[:6],
+                "execution_history": list(memory_record.execution_history or [])[:6],
+            }
+
         return BoundedUserContext(
             included_scopes=sorted(scopes),
             profile={
@@ -744,6 +1017,8 @@ class ContextBuilder:
             courses=courses_payload,
             skills=skills_payload,
             projects=projects_payload,
+            personal_goals=personal_goals_payload,
+            personal_memory=personal_memory_payload,
             recent_sessions=recent_sessions_payload,
             stats={
                 "active_tasks_count": len(active_tasks),

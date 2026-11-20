@@ -16,7 +16,9 @@ from app.schemas.schedule import (
     TimetableImportConfirmRequest,
     TimetableImportConfirmResponse,
     TimetableImportResponse,
+    TimetableImportRestoreResponse,
     TimetableImportUpdateDraftRequest,
+    TimetableReplacePreviewResponse,
 )
 from app.services.profile_service import ProfileService
 from app.services.schedule_service import ScheduleService
@@ -70,6 +72,7 @@ def duplicate_week(
         user_id,
         source_week_start=payload.source_week_start,
         tz_name=profile.timezone,
+        target_week_start=payload.target_week_start,
     )
 
 
@@ -83,14 +86,28 @@ def _resolve_user_ai_config(
     profile_service: ProfileService,
     settings: Settings,
 ) -> dict[str, object]:
+    from app.ai.provider import canonicalize_provider_name, normalize_provider_base_url
+
     saved = profile_service.get_ai_provider_config(user_id)
     if saved and saved.get("provider") and saved.get("provider") != "local":
+        provider_key = canonicalize_provider_name(str(saved.get("provider")))
+        base_url = normalize_provider_base_url(provider_key, saved.get("base_url"))
+        default_url = normalize_provider_base_url(provider_key, None)
+        env_provider = canonicalize_provider_name(settings.ai_provider)
+        env_url = normalize_provider_base_url(env_provider, settings.ai_base_url)
+        is_custom_url = bool(base_url and base_url != default_url and not (env_provider == provider_key and base_url == env_url))
+
+        resolved_key = str(saved.get("api_key") or "").strip()
+        if not resolved_key and env_provider == provider_key and not is_custom_url:
+            resolved_key = (settings.ai_api_key or "").strip()
+
         return {
-            "provider": saved.get("provider"),
-            "api_key": saved.get("api_key") or settings.ai_api_key,
+            "provider": provider_key,
+            "api_key": resolved_key,
             "model": saved.get("model") or settings.ai_model,
-            "base_url": saved.get("base_url") or settings.ai_base_url,
+            "base_url": base_url,
             "timeout_seconds": settings.ai_timeout_seconds,
+            "settings": settings,
         }
     return {
         "provider": settings.ai_provider,
@@ -98,6 +115,7 @@ def _resolve_user_ai_config(
         "model": settings.ai_model,
         "base_url": settings.ai_base_url,
         "timeout_seconds": settings.ai_timeout_seconds,
+        "settings": settings,
     }
 
 
@@ -210,6 +228,42 @@ def update_timetable_import_draft(
         payload,
         tz_name=profile.timezone,
     )
+
+
+@router.get(
+    "/imports/{import_id}/replace-preview",
+    response_model=TimetableReplacePreviewResponse,
+    summary="Prévisualiser les cours importés qui seraient remplacés sur la période",
+)
+def preview_replace_imported_schedule(
+    import_id: UUID,
+    target_week_start: date | None = Query(default=None),
+    recurrence_weeks: int = Query(default=1, ge=1, le=24),
+    user_id: UUID = Depends(get_current_user_id),
+    profile_service: ProfileService = Depends(get_profile_service),
+    schedule_service: ScheduleService = Depends(get_schedule_service),
+) -> TimetableReplacePreviewResponse:
+    profile = profile_service.get_or_create_record(user_id)
+    return schedule_service.preview_replace_imported(
+        user_id,
+        import_id,
+        target_week_start=target_week_start,
+        recurrence_weeks=recurrence_weeks,
+        tz_name=profile.timezone,
+    )
+
+
+@router.post(
+    "/imports/{import_id}/restore",
+    response_model=TimetableImportRestoreResponse,
+    summary="Restaurer les anciens créneaux importés remplacés lors de cet import",
+)
+def restore_replaced_timetable_import(
+    import_id: UUID,
+    user_id: UUID = Depends(get_current_user_id),
+    schedule_service: ScheduleService = Depends(get_schedule_service),
+) -> TimetableImportRestoreResponse:
+    return schedule_service.restore_import_snapshot(user_id, import_id)
 
 
 @router.post(

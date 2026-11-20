@@ -86,6 +86,16 @@ interface ApiSkillEvidence {
   is_admissible?: boolean;
   external_reference_verified?: boolean;
   verification_note?: string | null;
+  verification_status?:
+    | 'declared'
+    | 'uploaded'
+    | 'inspected'
+    | 'verified'
+    | 'approved'
+    | 'unreachable';
+  inspection_metadata?: Record<string, unknown> | null;
+  inspected_at?: string | null;
+  is_locked?: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -134,6 +144,16 @@ interface ApiSkillAssessment {
   evaluator_name: string | null;
   decision_reason: string | null;
   applied_level_delta: number | null;
+  rubric_version?: string;
+  evaluator_version?: string;
+  evaluation_mode?:
+    | 'heuristic_precheck'
+    | 'code_static'
+    | 'project_rubric'
+    | 'ai_assisted'
+    | 'manual_review';
+  manual_review_required?: boolean;
+  reviewed_by?: string | null;
   submitted_at: string | null;
   evaluated_at: string | null;
   validated_at: string | null;
@@ -200,8 +220,6 @@ export interface SkillAssessmentCreateInput {
   pathId?: string | null;
   moduleId?: string | null;
   lessonId?: string | null;
-  promptTitle?: string;
-  promptInstructions?: string;
 }
 
 export interface SkillAssessmentSubmitInput {
@@ -293,6 +311,10 @@ function mapEvidence(dto: ApiSkillEvidence): SkillEvidence {
     isAdmissible: dto.is_admissible ?? true,
     externalReferenceVerified: dto.external_reference_verified ?? false,
     verificationNote: dto.verification_note ?? null,
+    verificationStatus: dto.verification_status ?? 'declared',
+    inspectionMetadata: dto.inspection_metadata ?? null,
+    inspectedAt: dto.inspected_at ?? null,
+    isLocked: dto.is_locked ?? false,
     createdAt: dto.created_at,
     updatedAt: dto.updated_at,
   };
@@ -345,6 +367,11 @@ function mapAssessment(dto: ApiSkillAssessment): SkillAssessment {
     evaluatorName: dto.evaluator_name,
     decisionReason: dto.decision_reason,
     appliedLevelDelta: dto.applied_level_delta,
+    rubricVersion: dto.rubric_version,
+    evaluatorVersion: dto.evaluator_version,
+    evaluationMode: dto.evaluation_mode,
+    manualReviewRequired: dto.manual_review_required,
+    reviewedBy: dto.reviewed_by ?? null,
     submittedAt: dto.submitted_at,
     evaluatedAt: dto.evaluated_at,
     validatedAt: dto.validated_at,
@@ -565,6 +592,21 @@ export async function createSkillEvidenceApi(
   return mapEvidence(dto);
 }
 
+export async function inspectSkillEvidenceApi(
+  accessToken: string,
+  skillId: string,
+  evidenceId: string,
+): Promise<SkillEvidence> {
+  const dto = await apiRequest<ApiSkillEvidence>(
+    `/skills/${skillId}/evidence/${evidenceId}/inspect`,
+    {
+      method: 'POST',
+      accessToken,
+    },
+  );
+  return mapEvidence(dto);
+}
+
 export async function deleteSkillEvidenceApi(
   accessToken: string,
   skillId: string,
@@ -597,8 +639,6 @@ export async function createSkillAssessmentApi(
       path_id: input.pathId || null,
       module_id: input.moduleId || null,
       lesson_id: input.lessonId || null,
-      prompt_title: input.promptTitle?.trim() || null,
-      prompt_instructions: input.promptInstructions?.trim() || null,
     },
   });
   return mapAssessment(dto);

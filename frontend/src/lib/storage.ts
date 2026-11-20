@@ -7,8 +7,10 @@ export const STORAGE_KEYS = {
   studyState: 'amireflow.studyOs.v1.state',
   learningState: 'amireflow.studyOs.v1.learning',
   coursesState: 'amireflow.studyOs.v1.courses',
+  objectivesState: 'amireflow.study_os.objectives.v1',
   aiState: 'amireflow.studyOs.v1.ai',
   authSession: 'amireflow.studyOs.v1.session',
+  apiSessionHint: 'amireflow.studyos.api_session_hint',
   theme: 'amireflow.studyOs.v1.theme',
 } as const;
 

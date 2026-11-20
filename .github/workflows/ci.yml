@@ -29,8 +29,10 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements-dev.txt
 
-      - name: Run Alembic migrations
-        run: python -m alembic upgrade head
+      - name: Run Alembic migrations & verify reversibility
+        run: |
+          python -m alembic upgrade head
+          python -c "from pathlib import Path; from alembic import command; from alembic.config import Config; import tempfile; tmp=Path(tempfile.mkdtemp()); cfg=Config('alembic.ini'); cfg.set_main_option('sqlalchemy.url', f'sqlite:///{(tmp / \"rev.db\").as_posix()}'); command.upgrade(cfg, 'head'); command.downgrade(cfg, 'base'); command.upgrade(cfg, 'head')"
 
       - name: Run Pytest suite (Unit, Integration & E2E-01..04)
         run: python -m pytest -v

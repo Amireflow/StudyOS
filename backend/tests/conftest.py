@@ -7,6 +7,9 @@ from app.core.config import Settings
 from app.main import create_app
 
 
+TEST_AI_ENCRYPTION_KEY = "k1:MDAxMTIyMzM0NDU1NjY3Nzg4OTlhYWJiY2NkZGVlZmY="
+
+
 @pytest.fixture
 def app(tmp_path: Path) -> FastAPI:
     db_file = tmp_path / "test_study_os.db"
@@ -14,6 +17,7 @@ def app(tmp_path: Path) -> FastAPI:
         settings=Settings(
             app_env="local",
             allow_local_dev_auth=True,
+            ai_key_encryption_key=TEST_AI_ENCRYPTION_KEY,
             database_url=f"sqlite:///{db_file.as_posix()}",
         ),
     )
@@ -32,6 +36,7 @@ def strict_auth_client(tmp_path: Path) -> Iterator[TestClient]:
         settings=Settings(
             app_env="local",
             allow_local_dev_auth=False,
+            ai_key_encryption_key=TEST_AI_ENCRYPTION_KEY,
             database_url=f"sqlite:///{db_file.as_posix()}",
         ),
     )

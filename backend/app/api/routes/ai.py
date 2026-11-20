@@ -1,21 +1,26 @@
 from datetime import datetime
 from uuid import UUID
-from fastapi import APIRouter, Depends, Query, Response, status
+from fastapi import APIRouter, Depends, Header, Query, Request, Response, status
 from app.ai.orchestrator import AIOrchestrator
-from app.api.deps import get_ai_orchestrator, get_utc_now
-from app.core.security import get_current_user_id
+from app.api.deps import get_ai_orchestrator, get_rate_limiter, get_utc_now
+from app.core.config import Settings
+from app.core.security import get_app_settings, get_current_user_id
+from app.services.rate_limiter import PersistentRateLimiter, resolve_client_ip
 from app.schemas.ai import (
     AcceptProposalRequest,
     AiActionProposalResponse,
     AiConversationCreate,
     AiConversationDetailResponse,
     AiConversationResponse,
+    AiMemoryResponse,
+    AiMemoryUpdateRequest,
     AiMessageCreate,
     AiProviderConfigResponse,
     AiProviderConfigUpdate,
     AiReportResponse,
     AiToolSpec,
     AiTurnResponse,
+    EnsureAiReportsResponse,
     FetchProviderModelsRequest,
     FetchProviderModelsResponse,
     RejectProposalRequest,
@@ -58,10 +63,18 @@ def update_ai_provider_config(
 )
 def fetch_ai_provider_models(
     payload: FetchProviderModelsRequest,
+    request: Request,
     user_id: UUID = Depends(get_current_user_id),
     orchestrator: AIOrchestrator = Depends(get_ai_orchestrator),
+    rate_limiter: PersistentRateLimiter = Depends(get_rate_limiter),
+    settings: Settings = Depends(get_app_settings),
 ) -> FetchProviderModelsResponse:
-    return orchestrator.fetch_available_models(user_id, payload)
+    return orchestrator.fetch_available_models(
+        user_id,
+        payload,
+        client_ip=resolve_client_ip(request, settings),
+        rate_limiter=rate_limiter,
+    )
 
 
 @router.get(
@@ -138,10 +151,16 @@ def delete_conversation(
 def send_message(
     conversation_id: UUID,
     payload: AiMessageCreate,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
     user_id: UUID = Depends(get_current_user_id),
     orchestrator: AIOrchestrator = Depends(get_ai_orchestrator),
 ) -> AiTurnResponse:
-    return orchestrator.send_message(user_id, conversation_id, payload)
+    resolved = (
+        payload.model_copy(update={"idempotency_key": idempotency_key.strip()[:80]})
+        if idempotency_key and idempotency_key.strip() and not payload.idempotency_key
+        else payload
+    )
+    return orchestrator.send_message(user_id, conversation_id, resolved)
 
 
 @router.get(
@@ -192,10 +211,16 @@ def update_proposal(
 def accept_proposal(
     proposal_id: UUID,
     payload: AcceptProposalRequest | None = None,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
     user_id: UUID = Depends(get_current_user_id),
     orchestrator: AIOrchestrator = Depends(get_ai_orchestrator),
 ) -> AiActionProposalResponse:
-    return orchestrator.accept_proposal(user_id, proposal_id, payload)
+    resolved_req = payload or AcceptProposalRequest()
+    if idempotency_key and idempotency_key.strip() and not resolved_req.idempotency_key:
+        resolved_req = resolved_req.model_copy(
+            update={"idempotency_key": idempotency_key.strip()[:80]}
+        )
+    return orchestrator.accept_proposal(user_id, proposal_id, resolved_req)
 
 
 @router.post(
@@ -219,11 +244,12 @@ def reject_proposal(
     summary="Générer un briefing quotidien fondé sur les données réelles (P1)",
 )
 def create_daily_briefing(
+    force: bool = Query(default=False),
     user_id: UUID = Depends(get_current_user_id),
     orchestrator: AIOrchestrator = Depends(get_ai_orchestrator),
     now_utc: datetime = Depends(get_utc_now),
 ) -> AiReportResponse:
-    return orchestrator.generate_daily_briefing(user_id, now_utc=now_utc)
+    return orchestrator.generate_daily_briefing(user_id, now_utc=now_utc, force=force)
 
 
 @router.post(
@@ -233,11 +259,25 @@ def create_daily_briefing(
     summary="Générer un bilan hebdomadaire fondé sur les données réelles (P1)",
 )
 def create_weekly_review(
+    force: bool = Query(default=False),
     user_id: UUID = Depends(get_current_user_id),
     orchestrator: AIOrchestrator = Depends(get_ai_orchestrator),
     now_utc: datetime = Depends(get_utc_now),
 ) -> AiReportResponse:
-    return orchestrator.generate_weekly_review(user_id, now_utc=now_utc)
+    return orchestrator.generate_weekly_review(user_id, now_utc=now_utc, force=force)
+
+
+@router.post(
+    "/reports/ensure",
+    response_model=EnsureAiReportsResponse,
+    summary="Garantir de manière idempotente le briefing quotidien et le bilan hebdomadaire sur le fuseau de l'utilisateur",
+)
+def ensure_periodic_reports(
+    user_id: UUID = Depends(get_current_user_id),
+    orchestrator: AIOrchestrator = Depends(get_ai_orchestrator),
+    now_utc: datetime = Depends(get_utc_now),
+) -> EnsureAiReportsResponse:
+    return orchestrator.ensure_periodic_reports(user_id, now_utc=now_utc)
 
 
 @router.get(
@@ -251,3 +291,28 @@ def list_reports(
     orchestrator: AIOrchestrator = Depends(get_ai_orchestrator),
 ) -> list[AiReportResponse]:
     return orchestrator.list_reports(user_id, report_type=report_type)
+
+
+@router.get(
+    "/memory",
+    response_model=AiMemoryResponse,
+    summary="Consulter la mémoire structurée persistante du Copilote IA",
+)
+def get_ai_memory(
+    user_id: UUID = Depends(get_current_user_id),
+    orchestrator: AIOrchestrator = Depends(get_ai_orchestrator),
+) -> AiMemoryResponse:
+    return orchestrator.get_memory(user_id)
+
+
+@router.patch(
+    "/memory",
+    response_model=AiMemoryResponse,
+    summary="Mettre à jour la mémoire structurée et le mode d'autonomie simple du Copilote IA",
+)
+def update_ai_memory(
+    payload: AiMemoryUpdateRequest,
+    user_id: UUID = Depends(get_current_user_id),
+    orchestrator: AIOrchestrator = Depends(get_ai_orchestrator),
+) -> AiMemoryResponse:
+    return orchestrator.update_memory(user_id, payload)

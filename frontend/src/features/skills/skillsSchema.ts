@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import type { BadgeVariant } from '../../components/ui/Badge';
 import type {
+  EvidenceVerificationStatus,
   SkillAssessmentStatus,
   SkillAssessmentType,
   SkillEvidenceType,
@@ -38,9 +39,22 @@ export const ASSESSMENT_STATUS_META: Record<
   pending: { label: 'En attente de production', badgeVariant: 'warning' },
   submitted: { label: 'Production soumise', badgeVariant: 'primary' },
   evaluated: { label: 'Évaluée', badgeVariant: 'primary' },
+  needs_manual_review: { label: 'Revue manuelle requise', badgeVariant: 'warning' },
   approved: { label: 'Validée', badgeVariant: 'success' },
   rejected: { label: 'Non validée', badgeVariant: 'danger' },
   cancelled: { label: 'Annulée', badgeVariant: 'neutral' },
+};
+
+export const EVIDENCE_VERIFICATION_META: Record<
+  EvidenceVerificationStatus,
+  { label: string; badgeVariant: BadgeVariant }
+> = {
+  declared: { label: 'Déclarée', badgeVariant: 'neutral' },
+  uploaded: { label: 'Téléversée', badgeVariant: 'primary' },
+  inspected: { label: 'Inspectée', badgeVariant: 'primary' },
+  verified: { label: 'Vérifiée', badgeVariant: 'success' },
+  approved: { label: 'Approuvée', badgeVariant: 'success' },
+  unreachable: { label: 'Inaccessible', badgeVariant: 'danger' },
 };
 
 export const ASSESSMENT_TYPE_META: Record<SkillAssessmentType, { label: string }> = {

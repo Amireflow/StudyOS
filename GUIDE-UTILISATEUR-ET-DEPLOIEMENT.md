@@ -40,32 +40,41 @@ Ce guide synthétise l’utilisation quotidienne d’**Amireflow Study OS** (Par
 - **Base de données & Auth :** Supabase (PostgreSQL managé + Supabase Auth JWKS).
 - **Backend API :** Conteneur Docker Python 3.12 (`backend/Dockerfile`) déployé sur Render, Railway, Fly.io ou Google Cloud Run.
 - **Frontend SPA :** Build statique Vite (`frontend/dist` + `frontend/vercel.json`) déployé sur Vercel, Netlify ou Cloudflare Pages.
-- **Intégration continue (CI) :** GitHub Actions (`.github/workflows/ci.yml`) exécutant automatiquement Alembic, Pytest (25 tests), TypeScript strict, Vitest (40 tests) et le build de production.
+- **Intégration continue (CI) :** GitHub Actions (`.github/workflows/ci.yml`) exécutant automatiquement Alembic (`upgrade head`, réversibilité `downgrade base -> upgrade head`), Pytest, TypeScript strict, Vitest et le build de production.
 
 ### Étape 1 — Préparer la base PostgreSQL (Supabase)
 1. Créez un projet Supabase et récupérez l’URL de connexion PostgreSQL (`postgresql+psycopg://...`), l’URL JWKS (`https://<PROJECT_REF>.supabase.co/auth/v1/.well-known/jwks.json`) et l’Issuer (`https://<PROJECT_REF>.supabase.co/auth/v1`).
-2. Exécutez les migrations Alembic (`0001` à `0005_timetable_imports`) :
+2. Exécutez les migrations Alembic (`0001` à `0010_personal_goals_planning`) :
    ```bash
    cd backend
    DATABASE_URL="postgresql+psycopg://..." python -m alembic upgrade head
    ```
-3. Appliquez les politiques Row-Level Security (défense en profondeur sur les 16 tables, incluant `skill_assessments` et `timetable_imports`) dans l’éditeur SQL Supabase en exécutant [backend/alembic/rls_supabase.sql](./backend/alembic/rls_supabase.sql) ou les migrations incrémentales dans [supabase/migrations/](./supabase/migrations/).
+3. Appliquez les politiques Row-Level Security idempotentes (couvrant les 27 tables applicatives/auth ainsi que `alembic_version`) dans l’éditeur SQL Supabase en exécutant [backend/alembic/rls_supabase.sql](./backend/alembic/rls_supabase.sql) ou les migrations incrémentales dans [supabase/migrations/](./supabase/migrations/).
+4. Vérifiez l’état de préparation avant bascule :
+   ```bash
+   cd backend
+   python scripts/verify_cloud_config.py
+   ```
 
 ### Étape 2 — Déployer le Backend FastAPI
 Configurez les variables d’environnement suivantes sur votre hébergeur (sans jamais les commiter) :
 ```env
 APP_ENV=production
 APP_SECRET_KEY=<secret-aleatoire-32-octets-minimum>
+AI_KEY_ENCRYPTION_KEY=<cle-aes256-32-octets-base64-ou-hex>
+# Optionnel pour rotation sans coupure : AI_KEY_ENCRYPTION_FALLBACK_KEYS=k0:<ancienne_cle>
 ALLOW_LOCAL_DEV_AUTH=false
+ALLOW_INSECURE_LOCAL_AI_URL=false
 DATABASE_URL=postgresql+psycopg://postgres:PASSWORD@HOST:5432/postgres
 AUTH_JWKS_URL=https://PROJECT_REF.supabase.co/auth/v1/.well-known/jwks.json
 AUTH_ISSUER=https://PROJECT_REF.supabase.co/auth/v1
 AUTH_AUDIENCE=authenticated
+AUTH_COOKIE_SAMESITE=lax
 FRONTEND_ORIGIN=https://votre-domaine-frontend.app
 AI_PROVIDER=local
 # Optionnel : AI_PROVIDER=openai ou gemini, AI_API_KEY=..., AI_MODEL=...
 ```
-> **Garde-fou intégré :** si `APP_ENV=production` et `ALLOW_LOCAL_DEV_AUTH=true`, le serveur refuse de démarrer afin d’empêcher toute exposition accidentelle des jetons de développement.
+> **Garde-fous intégrés :** si `APP_ENV=production` et `ALLOW_LOCAL_DEV_AUTH=true`, `ALLOW_INSECURE_LOCAL_AI_URL=true`, `APP_SECRET_KEY` < 32 caractères ou `FRONTEND_ORIGIN=*`, le serveur refuse de démarrer. Le stockage de clés API IA utilisateur échoue de façon sûre (`503`) si `AI_KEY_ENCRYPTION_KEY` est absent. Le conteneur Docker embarque `tesseract-ocr` (`fra`/`eng`) et un `HEALTHCHECK` interrogeant `GET /health`.
 
 ### Étape 3 — Déployer le Frontend React / Vite
 Configurez les variables d’environnement du build frontend :
@@ -89,4 +98,4 @@ pg_dump --format=custom --no-owner --no-privileges "$DATABASE_URL" --file="backu
 ```bash
 pg_restore --clean --if-exists --no-owner --no-privileges --dbname="$RESTORE_DATABASE_URL" "backup_amireflow_YYYYMMDD.dump"
 ```
-Après restauration, vérifiez l’état de la révision Alembic (`python -m alembic current` → `0005_timetable_imports (head)`) et l’endpoint de santé `GET /health`.
+Après restauration, vérifiez l’état de la révision Alembic (`python -m alembic current` → `0010_personal_goals_planning (head)`) et l’endpoint de santé `GET /health` (`database: ok`).

@@ -84,12 +84,12 @@ export function filterTasks(tasks: Task[], filters: TaskFilters, now = new Date(
     if (filters.due === 'overdue' && !isTaskOverdue(task, now)) {
       return false;
     }
-    if (filters.due === 'today' && !isTaskDueToday(task, now)) {
+    if (filters.due === 'today' && (!isActiveTaskStatus(task.status) || !isTaskDueToday(task, now))) {
       return false;
     }
     if (filters.due === 'upcoming') {
       const dueKey = task.dueAt ? toLocalDateKey(task.dueAt) : '';
-      if (!dueKey || dueKey <= todayKey) {
+      if (!isActiveTaskStatus(task.status) || !dueKey || dueKey <= todayKey) {
         return false;
       }
     }
@@ -109,10 +109,16 @@ export function filterTasks(tasks: Task[], filters: TaskFilters, now = new Date(
 }
 
 /**
- * Trie par priorité décroissante, puis échéance la plus proche, puis création récente.
+ * Trie par tâches en retard en premier, puis priorité décroissante, échéance la plus proche, et création récente.
  */
-export function sortTasksByUrgency(tasks: Task[]): Task[] {
+export function sortTasksByUrgency(tasks: Task[], now = new Date()): Task[] {
   return [...tasks].sort((a, b) => {
+    const overdueA = isTaskOverdue(a, now) ? 1 : 0;
+    const overdueB = isTaskOverdue(b, now) ? 1 : 0;
+    if (overdueA !== overdueB) {
+      return overdueB - overdueA;
+    }
+
     const priorityDiff =
       TASK_PRIORITY_META[b.priority].weight - TASK_PRIORITY_META[a.priority].weight;
     if (priorityDiff !== 0) {

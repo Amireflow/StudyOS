@@ -101,8 +101,8 @@ export const NAVIGATION_ITEMS: readonly NavigationItem[] = [
   },
   {
     id: 'projects',
-    label: 'Projets',
-    shortLabel: 'Projets',
+    label: 'Mes objectifs et projets',
+    shortLabel: 'Objectifs',
     path: '/projects',
     icon: FolderKanbanIcon,
     group: 'principal',

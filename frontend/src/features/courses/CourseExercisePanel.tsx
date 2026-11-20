@@ -40,6 +40,8 @@ function ExerciseCard({
   attempts: CourseSubmission[];
   onSubmitExercise: (input: CourseSubmissionInput) => Promise<CourseSubmission | null>;
 }) {
+  const isClosedQuiz =
+    exercise.exerciseType === 'closed_quiz' && (exercise.choices?.length ?? 0) > 0;
   const [hintsShown, setHintsShown] = useState(0);
   const [answerText, setAnswerText] = useState('');
   const [submittedCode, setSubmittedCode] = useState(exercise.starterCode ?? '');
@@ -51,7 +53,12 @@ function ExerciseCard({
 
   const handleSubmit = async () => {
     setLocalError(null);
-    if (answerText.trim().length < 12) {
+    if (isClosedQuiz) {
+      if (!answerText.trim()) {
+        setLocalError('Sélectionnez une réponse avant de soumettre le quiz.');
+        return;
+      }
+    } else if (answerText.trim().length < 12) {
       setLocalError('Expliquez votre démarche en au moins 12 caractères avant de soumettre.');
       return;
     }
@@ -63,7 +70,7 @@ function ExerciseCard({
         exerciseId: exercise.id,
         title: exercise.title,
         answerText: answerText.trim(),
-        submittedCode: submittedCode.trim() || undefined,
+        submittedCode: isClosedQuiz ? undefined : submittedCode.trim() || undefined,
       });
     } finally {
       setIsSubmitting(false);
@@ -119,31 +126,65 @@ function ExerciseCard({
       )}
 
       <div className="space-y-3 rounded-xl bg-white p-3.5 dark:bg-zinc-900">
-        <FormField
-          id={`ex-answer-${exercise.id}`}
-          label="Votre explication technique"
-          required
-          error={localError ?? undefined}
-        >
-          <Textarea
-            id={`ex-answer-${exercise.id}`}
-            rows={2}
-            value={answerText}
-            onChange={(e) => setAnswerText(e.target.value)}
-            placeholder="Décrivez votre logique, les types employés et le cas limite géré…"
-          />
-        </FormField>
+        {isClosedQuiz ? (
+          <fieldset className="space-y-2">
+            <legend className="text-xs font-semibold text-zinc-800 dark:text-zinc-200">
+              Sélectionnez votre réponse
+            </legend>
+            <div className="space-y-1.5">
+              {(exercise.choices ?? []).map((choice, cIdx) => {
+                const inputId = `quiz-${exercise.id}-${cIdx}`;
+                return (
+                  <label
+                    key={inputId}
+                    htmlFor={inputId}
+                    className="flex cursor-pointer items-start gap-2 rounded-lg bg-zinc-50 p-2.5 text-xs transition-colors hover:bg-zinc-100 dark:bg-zinc-800/70 dark:hover:bg-zinc-800"
+                  >
+                    <input
+                      id={inputId}
+                      type="radio"
+                      name={`quiz-${exercise.id}`}
+                      value={choice}
+                      checked={answerText === choice}
+                      onChange={() => setAnswerText(choice)}
+                      className="mt-0.5"
+                    />
+                    <span className="text-zinc-800 dark:text-zinc-100">{choice}</span>
+                  </label>
+                );
+              })}
+            </div>
+            {localError && <p className="text-xs text-red-600 dark:text-red-400">{localError}</p>}
+          </fieldset>
+        ) : (
+          <>
+            <FormField
+              id={`ex-answer-${exercise.id}`}
+              label="Votre explication technique"
+              required
+              error={localError ?? undefined}
+            >
+              <Textarea
+                id={`ex-answer-${exercise.id}`}
+                rows={2}
+                value={answerText}
+                onChange={(e) => setAnswerText(e.target.value)}
+                placeholder="Décrivez votre logique, les types employés et le cas limite géré…"
+              />
+            </FormField>
 
-        <FormField id={`ex-code-${exercise.id}`} label="Code de votre solution (optionnel)">
-          <Textarea
-            id={`ex-code-${exercise.id}`}
-            rows={4}
-            value={submittedCode}
-            onChange={(e) => setSubmittedCode(e.target.value)}
-            className="font-mono text-xs"
-            placeholder="Collez votre code ici…"
-          />
-        </FormField>
+            <FormField id={`ex-code-${exercise.id}`} label="Code de votre solution (optionnel)">
+              <Textarea
+                id={`ex-code-${exercise.id}`}
+                rows={4}
+                value={submittedCode}
+                onChange={(e) => setSubmittedCode(e.target.value)}
+                className="font-mono text-xs"
+                placeholder="Collez votre code ici…"
+              />
+            </FormField>
+          </>
+        )}
 
         <Button
           type="button"
@@ -169,10 +210,18 @@ function ExerciseCard({
             <span className="inline-flex items-center gap-1.5 font-semibold">
               <Icon icon={CheckmarkCircle02Icon} size={15} />
               Correction : {latestAttempt.score ?? 0}/100
+              {latestAttempt.attemptNumber && latestAttempt.attemptNumber > 1
+                ? ` · Tentative #${latestAttempt.attemptNumber}`
+                : ''}
             </span>
-            <Badge variant={latestAttempt.passed ? 'success' : 'warning'}>
-              {latestAttempt.passed ? 'Exercice validé' : 'À retravailler'}
-            </Badge>
+            <div className="flex items-center gap-1.5">
+              {latestAttempt.evaluationMode && (
+                <Badge variant="neutral">{latestAttempt.evaluationMode}</Badge>
+              )}
+              <Badge variant={latestAttempt.passed ? 'success' : 'warning'}>
+                {latestAttempt.passed ? 'Exercice validé' : 'À retravailler'}
+              </Badge>
+            </div>
           </div>
           {latestAttempt.nextStepHint && <p>{latestAttempt.nextStepHint}</p>}
           {latestAttempt.improvements.length > 0 && (

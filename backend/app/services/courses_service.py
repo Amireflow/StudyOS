@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from typing import Any
 from uuid import UUID, uuid4
 from app.core.config import Settings
 from app.core.errors import AppError
@@ -24,6 +25,7 @@ from app.schemas.common import (
     CourseStatus,
     CourseSubmissionKind,
     CourseSubmissionStatus,
+    EvidenceVerificationStatus,
     SkillEvidenceType,
 )
 from app.schemas.courses import (
@@ -31,6 +33,7 @@ from app.schemas.courses import (
     CourseDetailResponse,
     CourseLessonProgressUpdate,
     CourseLessonResponse,
+    CourseLevelRegenerateRequest,
     CourseLevelResponse,
     CoursePreviewLesson,
     CoursePreviewLevel,
@@ -50,10 +53,23 @@ from app.services.course_generator import (
     generate_level_content,
     pass_threshold_for_course_level,
 )
+from app.services.profile_service import ProfileService
+
+
+def _sanitize_exercises_for_client(exercises: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
+    sanitized: list[dict[str, Any]] = []
+    for item in exercises or []:
+        if not isinstance(item, dict):
+            continue
+        clean = {k: v for k, v in item.items() if k != "expected_answer"}
+        sanitized.append(clean)
+    return sanitized
 
 
 def _to_lesson_response(record: CourseLessonRecord) -> CourseLessonResponse:
-    return CourseLessonResponse.model_validate(record.model_dump())
+    data = record.model_dump()
+    data["exercises"] = _sanitize_exercises_for_client(data.get("exercises"))
+    return CourseLessonResponse.model_validate(data)
 
 
 def _to_resource_response(record: CourseResourceRecord) -> CourseResourceResponse:
@@ -61,7 +77,9 @@ def _to_resource_response(record: CourseResourceRecord) -> CourseResourceRespons
 
 
 def _to_submission_response(record: CourseSubmissionRecord) -> CourseSubmissionResponse:
-    return CourseSubmissionResponse.model_validate(record.model_dump())
+    data = record.model_dump()
+    data["static_analysis"] = data.get("static_analysis") or {}
+    return CourseSubmissionResponse.model_validate(data)
 
 
 class CourseService:
@@ -70,13 +88,28 @@ class CourseService:
         *,
         repo: SqlCourseRepository,
         skill_repo: SqlSkillRepository | None = None,
+        profile_service: ProfileService | None = None,
         settings: Settings | None = None,
     ) -> None:
         self._repo = repo
         self._skill_repo = skill_repo
+        self._profile_service = profile_service
         self._settings = settings
 
-    def preview_course(self, payload: CoursePreviewRequest) -> CoursePreviewResponse:
+    def _safe_user_ai_config(self, user_id: UUID | None) -> dict[str, Any] | None:
+        if user_id is None or self._profile_service is None:
+            return None
+        try:
+            return self._profile_service.get_ai_provider_config(user_id)
+        except Exception:
+            return None
+
+    def preview_course(
+        self,
+        payload: CoursePreviewRequest,
+        *,
+        user_id: UUID | None = None,
+    ) -> CoursePreviewResponse:
         blueprint = build_course_blueprint(
             subject=payload.subject,
             title=payload.title,
@@ -91,7 +124,12 @@ class CourseService:
             level_number=1,
             total_levels=payload.total_levels,
             settings=self._settings,
+            user_ai_config=self._safe_user_ai_config(user_id),
         )
+        sanitized_lessons = [
+            {**item, "exercises": _sanitize_exercises_for_client(item.get("exercises"))}
+            for item in level1["lessons"]
+        ]
         return CoursePreviewResponse(
             title=blueprint["title"],
             subject=blueprint["subject"],
@@ -103,7 +141,7 @@ class CourseService:
                 CoursePreviewLevel.model_validate(item) for item in blueprint["levels_roadmap"]
             ],
             first_level_lessons=[
-                CoursePreviewLesson.model_validate(item) for item in level1["lessons"]
+                CoursePreviewLesson.model_validate(item) for item in sanitized_lessons
             ],
             first_level_project_title=level1["project_title"],
             first_level_project_brief=level1["project_brief"],
@@ -120,6 +158,7 @@ class CourseService:
         course: CourseRecord,
         level: CourseLevelRecord,
         now: datetime,
+        focus_hint: str | None = None,
     ) -> CourseLevelRecord:
         generated = generate_level_content(
             subject=course.subject,
@@ -127,6 +166,8 @@ class CourseService:
             level_number=level.level_number,
             total_levels=course.total_levels,
             settings=self._settings,
+            user_ai_config=self._safe_user_ai_config(user_id),
+            focus_hint=focus_hint,
         )
         updated_level = self._repo.save_level(
             level.model_copy(
@@ -134,16 +175,31 @@ class CourseService:
                     "title": generated["title"][:160],
                     "summary": generated["summary"],
                     "objectives": generated["objectives"],
-                    "status": CourseLevelStatus.unlocked,
+                    "status": (
+                        CourseLevelStatus.in_progress
+                        if level.status == CourseLevelStatus.in_progress
+                        else CourseLevelStatus.unlocked
+                    ),
                     "content_generated": True,
                     "project_title": generated["project_title"][:180],
                     "project_brief": generated["project_brief"],
                     "project_deliverables": generated["project_deliverables"],
                     "project_rubric": generated["project_rubric"],
+                    "generation_source": generated["generation_source"],
                     "updated_at": now,
                 }
             )
         )
+        if level.level_number == 1 or generated.get("generation_source") in {"user_ai", "server_ai"}:
+            self._repo.save_course(
+                course.model_copy(
+                    update={
+                        "generation_source": generated["generation_source"],
+                        "generation_model": generated.get("generation_model"),
+                        "updated_at": now,
+                    }
+                )
+            )
 
         for item in generated["lessons"]:
             self._repo.save_lesson(
@@ -165,13 +221,15 @@ class CourseService:
                 )
             )
 
-        existing_urls = {
-            r.url for r in self._repo.list_resources(user_id, course_id=course.id)
+        existing_level_urls = {
+            r.url
+            for r in self._repo.list_resources(user_id, course_id=course.id)
+            if r.level_id == updated_level.id
         }
         for res in generated["resources"]:
-            if res["url"] in existing_urls:
+            if res["url"] in existing_level_urls:
                 continue
-            existing_urls.add(res["url"])
+            existing_level_urls.add(res["url"])
             self._repo.save_resource(
                 CourseResourceRecord(
                     id=uuid4(),
@@ -304,6 +362,8 @@ class CourseService:
             status=course.status,
             skill_id=course.skill_id,
             learning_path_id=course.learning_path_id,
+            generation_source=course.generation_source,
+            generation_model=course.generation_model,
             completed_lessons_count=completed_count,
             total_lessons_count=len(lessons),
             resources_count=len(resources),
@@ -358,13 +418,32 @@ class CourseService:
 
         level_responses: list[CourseLevelResponse] = []
         for lvl in levels:
+            lvl_lessons = lessons_by_level.get(lvl.id, [])
             lvl_subs = submissions_by_level.get(lvl.id, [])
             threshold = pass_threshold_for_course_level(lvl.level_number)
+            lessons_completed = bool(lvl_lessons) and all(
+                item.status == CourseLessonStatus.completed for item in lvl_lessons
+            )
+            passed_exercise_keys = {
+                (s.lesson_id, s.exercise_id or s.title)
+                for s in lvl_subs
+                if s.submission_kind == CourseSubmissionKind.exercise and s.passed is True
+            }
+            has_exercises = any(bool(item.exercises) for item in lvl_lessons)
+            exercises_passed_count = len(passed_exercise_keys)
+            exercise_passed = True if not has_exercises else exercises_passed_count >= 1
             project_passed = any(
                 s.submission_kind == CourseSubmissionKind.project
                 and s.passed is True
+                and not s.manual_review_required
                 and (s.score or 0) >= threshold
                 for s in lvl_subs
+            )
+            can_validate = (
+                lvl.status in {CourseLevelStatus.unlocked, CourseLevelStatus.in_progress}
+                and lessons_completed
+                and exercise_passed
+                and project_passed
             )
             level_responses.append(
                 CourseLevelResponse(
@@ -381,12 +460,19 @@ class CourseService:
                     project_brief=lvl.project_brief,
                     project_deliverables=list(lvl.project_deliverables),
                     project_rubric=lvl.project_rubric,
+                    generation_source=lvl.generation_source,
+                    revision=lvl.revision,
+                    previous_versions_count=len(lvl.previous_versions),
                     validated_at=lvl.validated_at,
-                    lessons=lessons_by_level.get(lvl.id, []),
+                    lessons=lvl_lessons,
                     resources=resources_by_level.get(lvl.id, []),
                     submissions=lvl_subs,
                     pass_threshold=threshold,
                     project_passed=project_passed,
+                    lessons_completed=lessons_completed,
+                    exercises_passed_count=exercises_passed_count,
+                    exercise_passed=exercise_passed,
+                    can_validate=can_validate,
                     created_at=lvl.created_at,
                     updated_at=lvl.updated_at,
                 )
@@ -501,6 +587,12 @@ class CourseService:
             lesson = self._repo.get_lesson(user_id, payload.lesson_id)
             if lesson is None or lesson.course_id != course.id:
                 raise AppError(404, "NOT_FOUND", "Chapitre cible introuvable.")
+            if payload.level_id is not None and lesson.level_id != payload.level_id:
+                raise AppError(
+                    422,
+                    "LEARNING_HIERARCHY_MISMATCH",
+                    "Le chapitre cible n'appartient pas au niveau indiqué.",
+                )
 
         now = datetime.now(timezone.utc)
         saved = self._repo.save_resource(
@@ -553,11 +645,16 @@ class CourseService:
         sub_title = payload.title or (
             level.project_title or f"Projet Niveau {level.level_number}"
         )
+        ex_type: str | None = None
+        expected_answer: str | None = None
+        choices: list[str] | None = None
+        starter_code: str | None = None
 
         if payload.lesson_id is not None:
             lesson = self._repo.get_lesson(user_id, payload.lesson_id)
             if lesson is None or lesson.level_id != level.id:
                 raise AppError(404, "NOT_FOUND", "Chapitre associé introuvable.")
+            matched_ex = None
             if payload.exercise_id:
                 matched_ex = next(
                     (
@@ -567,14 +664,31 @@ class CourseService:
                     ),
                     None,
                 )
-                if matched_ex is not None:
-                    sub_title = payload.title or str(matched_ex.get("title") or sub_title)
-                    expected_concepts = list(matched_ex.get("expected_concepts") or [])
+            elif lesson.exercises and payload.submission_kind == CourseSubmissionKind.exercise:
+                matched_ex = lesson.exercises[0]
+            if matched_ex is not None:
+                sub_title = payload.title or str(matched_ex.get("title") or sub_title)
+                expected_concepts = list(matched_ex.get("expected_concepts") or [])
+                ex_type = matched_ex.get("exercise_type")
+                expected_answer = matched_ex.get("expected_answer")
+                choices = list(matched_ex.get("choices") or [])
+                starter_code = matched_ex.get("starter_code")
             if not expected_concepts:
                 expected_concepts = [lesson.title]
 
         if payload.submission_kind == CourseSubmissionKind.project:
             expected_concepts.extend(level.objectives)
+
+        prior_subs = self._repo.list_submissions(user_id, course_id=course.id, level_id=level.id)
+        attempt_number = 1 + sum(
+            1
+            for s in prior_subs
+            if s.submission_kind == payload.submission_kind
+            and (
+                payload.submission_kind != CourseSubmissionKind.exercise
+                or (s.lesson_id == payload.lesson_id and s.exercise_id == payload.exercise_id)
+            )
+        )
 
         graded = evaluate_course_submission(
             subject=course.subject,
@@ -588,6 +702,12 @@ class CourseService:
             deliverables=level.project_deliverables
             if payload.submission_kind == CourseSubmissionKind.project
             else None,
+            exercise_type=ex_type,
+            expected_answer=expected_answer,
+            choices=choices,
+            starter_code=starter_code,
+            attempt_number=attempt_number,
+            settings=self._settings,
         )
 
         now = datetime.now(timezone.utc)
@@ -612,6 +732,10 @@ class CourseService:
                 strengths=graded["strengths"],
                 improvements=graded["improvements"],
                 next_step_hint=graded["next_step_hint"],
+                attempt_number=attempt_number,
+                evaluation_mode=graded["evaluation_mode"],
+                manual_review_required=graded["manual_review_required"],
+                static_analysis=graded["static_analysis"],
                 created_at=now,
                 updated_at=now,
             )
@@ -652,14 +776,46 @@ class CourseService:
                 "Ce niveau a déjà été validé.",
             )
 
+        level_lessons = [
+            l for l in self._repo.list_lessons(user_id, course_id=course.id) if l.level_id == level.id
+        ]
+        completed_count = sum(
+            1 for item in level_lessons if item.status == CourseLessonStatus.completed
+        )
+        if not level_lessons or completed_count < len(level_lessons):
+            raise AppError(
+                422,
+                "LESSONS_COMPLETION_REQUIRED",
+                f"Verrou pédagogique : terminez d'abord tous les chapitres du niveau {level.level_number} "
+                f"({completed_count}/{len(level_lessons)} terminé(s)).",
+            )
+
         threshold = pass_threshold_for_course_level(level.level_number)
         level_subs = self._repo.list_submissions(user_id, course_id=course.id, level_id=level.id)
+
+        has_exercises = any(bool(item.exercises) for item in level_lessons)
+        passing_exercise = next(
+            (
+                s
+                for s in level_subs
+                if s.submission_kind == CourseSubmissionKind.exercise and s.passed is True
+            ),
+            None,
+        )
+        if has_exercises and passing_exercise is None:
+            raise AppError(
+                422,
+                "EXERCISE_VALIDATION_REQUIRED",
+                f"Verrou pédagogique : réussissez au moins un exercice du niveau {level.level_number} avant sa validation.",
+            )
+
         passing_project = next(
             (
                 s
                 for s in level_subs
                 if s.submission_kind == CourseSubmissionKind.project
                 and s.passed is True
+                and not s.manual_review_required
                 and (s.score or 0) >= threshold
             ),
             None,
@@ -668,7 +824,7 @@ class CourseService:
             raise AppError(
                 422,
                 "PROJECT_VALIDATION_REQUIRED",
-                f"Verrou pédagogique : vous devez soumettre et réussir le projet du niveau {level.level_number} (score >= {threshold}/100) avant de débloquer la suite.",
+                f"Verrou pédagogique : vous devez soumettre et réussir le projet vérifiable du niveau {level.level_number} (score >= {threshold}/100 sans revue manuelle bloquante) avant de débloquer la suite.",
             )
 
         now = datetime.now(timezone.utc)
@@ -686,6 +842,11 @@ class CourseService:
         if course.skill_id is not None and self._skill_repo is not None:
             linked_skill = self._skill_repo.get_skill(user_id, course.skill_id)
             if linked_skill is not None:
+                verification = (
+                    EvidenceVerificationStatus.verified
+                    if passing_project.evaluation_mode in {"static_ast", "github_verified"}
+                    else EvidenceVerificationStatus.inspected
+                )
                 self._skill_repo.save_evidence(
                     SkillEvidenceRecord(
                         id=uuid4(),
@@ -697,7 +858,15 @@ class CourseService:
                             f"« {course.title} » validé ({passing_project.title})."
                         ),
                         reference_url=passing_project.reference_url,
-                        result=f"Score {passing_project.score}/100",
+                        result=f"Score {passing_project.score}/100 ({passing_project.evaluation_mode})",
+                        verification_status=verification,
+                        inspection_metadata={
+                            "evaluation_mode": passing_project.evaluation_mode,
+                            "score": passing_project.score,
+                            "course_id": str(course.id),
+                            "level_number": level.level_number,
+                        },
+                        inspected_at=now,
                         observed_at=now,
                         created_at=now,
                         updated_at=now,
@@ -741,4 +910,67 @@ class CourseService:
                 )
             )
 
+        return self.get_course_detail(user_id, course.id)
+
+    def regenerate_level(
+        self,
+        user_id: UUID,
+        course_id: UUID,
+        level_id: UUID,
+        payload: CourseLevelRegenerateRequest | None = None,
+    ) -> CourseDetailResponse:
+        course = self._repo.get_course(user_id, course_id)
+        if course is None:
+            raise AppError(404, "NOT_FOUND", "Cours introuvable.")
+        level = self._repo.get_level(user_id, level_id)
+        if level is None or level.course_id != course.id:
+            raise AppError(404, "NOT_FOUND", "Niveau introuvable.")
+        if level.status == CourseLevelStatus.locked:
+            raise AppError(
+                409,
+                "LEVEL_LOCKED",
+                "Impossible de régénérer un niveau encore verrouillé.",
+            )
+        if level.status == CourseLevelStatus.validated:
+            raise AppError(
+                409,
+                "LEVEL_ALREADY_VALIDATED",
+                "Un niveau déjà validé ne peut pas être régénéré afin de préserver vos preuves.",
+            )
+
+        now = datetime.now(timezone.utc)
+        current_lessons = [
+            l for l in self._repo.list_lessons(user_id, course_id=course.id) if l.level_id == level.id
+        ]
+        snapshot = {
+            "revision": level.revision,
+            "title": level.title,
+            "summary": level.summary,
+            "objectives": list(level.objectives),
+            "project_title": level.project_title,
+            "generation_source": level.generation_source,
+            "archived_at": now.isoformat(),
+            "lessons_titles": [l.title for l in current_lessons],
+        }
+        archived_versions = (list(level.previous_versions) + [snapshot])[-10:]
+
+        # Préserver l'historique des soumissions mais remplacer les chapitres du niveau
+        self._repo.delete_lessons_for_level(user_id, level.id)
+        bumped = self._repo.save_level(
+            level.model_copy(
+                update={
+                    "revision": level.revision + 1,
+                    "previous_versions": archived_versions,
+                    "updated_at": now,
+                }
+            )
+        )
+        focus_hint = payload.focus_hint if payload is not None else None
+        self._populate_level_artifacts(
+            user_id=user_id,
+            course=course,
+            level=bumped,
+            now=now,
+            focus_hint=focus_hint,
+        )
         return self.get_course_detail(user_id, course.id)

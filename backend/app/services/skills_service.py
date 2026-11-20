@@ -1,5 +1,7 @@
 from datetime import datetime, timezone
+from typing import Any
 from uuid import UUID, uuid4
+from app.core.config import Settings
 from app.core.errors import AppError
 from app.repositories.learning_sql import (
     SkillAssessmentRecord,
@@ -9,8 +11,10 @@ from app.repositories.learning_sql import (
     SqlSkillRepository,
 )
 from app.schemas.common import (
+    EvidenceVerificationStatus,
     SkillAssessmentStatus,
     SkillAssessmentType,
+    SkillEvaluationMode,
     SkillEvaluatorType,
 )
 from app.schemas.skills import (
@@ -27,12 +31,15 @@ from app.schemas.skills import (
     SkillUpdate,
 )
 from app.services.assessment_evaluator import (
+    EVALUATOR_VERSION,
     EXTERNAL_URL_DISCLAIMER,
+    RUBRIC_VERSION,
     build_assessment_exercise,
     evaluate_assessment_submission,
     pass_threshold_for_level,
     validate_evidence_quality,
 )
+from app.services.github_inspector import inspect_github_evidence
 
 
 def _to_evidence_response(record: SkillEvidenceRecord) -> SkillEvidenceResponse:
@@ -41,6 +48,7 @@ def _to_evidence_response(record: SkillEvidenceRecord) -> SkillEvidenceResponse:
         record.description,
         record.reference_url,
         record.result,
+        verification_status=record.verification_status,
     )
     return SkillEvidenceResponse(
         id=record.id,
@@ -51,6 +59,10 @@ def _to_evidence_response(record: SkillEvidenceRecord) -> SkillEvidenceResponse:
         reference_url=record.reference_url,
         result=record.result,
         observed_at=record.observed_at,
+        verification_status=record.verification_status,
+        inspection_metadata=dict(record.inspection_metadata or {}),
+        inspected_at=record.inspected_at,
+        is_locked=bool(record.is_locked),
         is_admissible=quality.admissible,
         external_reference_verified=quality.external_reference_verified,
         verification_note=quality.verification_note,
@@ -83,6 +95,13 @@ def _to_assessment_response(record: SkillAssessmentRecord) -> SkillAssessmentRes
         submission_reference_url=record.submission_reference_url,
         evidence_ids=[UUID(item) for item in record.evidence_ids],
         criteria=list(record.criteria),
+        rubric_version=record.rubric_version,
+        evaluator_version=record.evaluator_version,
+        evaluation_mode=record.evaluation_mode,
+        manual_review_required=bool(record.manual_review_required),
+        rubric_snapshot=list(record.rubric_snapshot or []),
+        evidence_snapshot=list(record.evidence_snapshot or []),
+        reviewed_by=record.reviewed_by,
         score=record.score,
         passed=record.passed,
         feedback=record.feedback,
@@ -100,6 +119,20 @@ def _to_assessment_response(record: SkillAssessmentRecord) -> SkillAssessmentRes
         created_at=record.created_at,
         updated_at=record.updated_at,
     )
+
+
+def _snapshot_evidence(records: list[SkillEvidenceRecord]) -> list[dict[str, Any]]:
+    return [
+        {
+            "id": str(ev.id),
+            "type": ev.type.value,
+            "description": ev.description,
+            "reference_url": ev.reference_url,
+            "result": ev.result,
+            "verification_status": ev.verification_status.value,
+        }
+        for ev in records
+    ]
 
 
 class SkillService:
@@ -235,12 +268,27 @@ class SkillService:
             description=payload.description,
             reference_url=payload.reference_url,
             result=payload.result,
+            verification_status=EvidenceVerificationStatus.declared,
+            inspection_metadata={},
+            inspected_at=None,
+            is_locked=False,
             observed_at=payload.observed_at or now,
             created_at=now,
             updated_at=now,
         )
         saved = self._repo.save_evidence(record)
         return _to_evidence_response(saved)
+
+    def _evidence_linked_statuses(
+        self, user_id: UUID, skill_id: UUID, evidence_id: UUID
+    ) -> set[SkillAssessmentStatus]:
+        ev_str = str(evidence_id)
+        assessments = self._repo.list_assessments(user_id, skill_id=skill_id)
+        return {
+            a.status
+            for a in assessments
+            if ev_str in {str(x) for x in (a.evidence_ids or [])}
+        }
 
     def update_evidence(
         self,
@@ -254,6 +302,22 @@ class SkillService:
         existing = self._repo.get_evidence(user_id, evidence_id)
         if existing is None or existing.skill_id != skill_id:
             raise AppError(404, "NOT_FOUND", "Preuve de compétence introuvable.")
+
+        linked_statuses = self._evidence_linked_statuses(user_id, skill_id, evidence_id)
+        if existing.is_locked or bool(
+            linked_statuses
+            & {
+                SkillAssessmentStatus.submitted,
+                SkillAssessmentStatus.evaluated,
+                SkillAssessmentStatus.needs_manual_review,
+                SkillAssessmentStatus.approved,
+            }
+        ):
+            raise AppError(
+                409,
+                "EVIDENCE_LOCKED",
+                "Cette preuve est rattachée à une évaluation soumise ou validée et ne peut plus être modifiée.",
+            )
 
         fields = payload.model_fields_set
         next_type = payload.type if ("type" in fields and payload.type is not None) else existing.type
@@ -280,6 +344,9 @@ class SkillService:
             updates["description"] = payload.description
         if "reference_url" in fields:
             updates["reference_url"] = payload.reference_url
+            updates["verification_status"] = EvidenceVerificationStatus.declared
+            updates["inspection_metadata"] = {}
+            updates["inspected_at"] = None
         if "result" in fields:
             updates["result"] = payload.result
         if "observed_at" in fields and payload.observed_at is not None:
@@ -294,7 +361,58 @@ class SkillService:
         existing = self._repo.get_evidence(user_id, evidence_id)
         if existing is None or existing.skill_id != skill_id:
             raise AppError(404, "NOT_FOUND", "Preuve de compétence introuvable.")
+        linked_statuses = self._evidence_linked_statuses(user_id, skill_id, evidence_id)
+        if existing.is_locked or SkillAssessmentStatus.approved in linked_statuses:
+            raise AppError(
+                409,
+                "EVIDENCE_LOCKED",
+                "Cette preuve a servi à valider un niveau de compétence et ne peut pas être supprimée.",
+            )
         self._repo.delete_evidence(user_id, evidence_id)
+
+    def inspect_evidence(
+        self,
+        user_id: UUID,
+        skill_id: UUID,
+        evidence_id: UUID,
+        *,
+        expected_files: list[str] | None = None,
+        settings: Settings | None = None,
+    ) -> SkillEvidenceResponse:
+        if self._repo.get_skill(user_id, skill_id) is None:
+            raise AppError(404, "NOT_FOUND", "Compétence introuvable.")
+        existing = self._repo.get_evidence(user_id, evidence_id)
+        if existing is None or existing.skill_id != skill_id:
+            raise AppError(404, "NOT_FOUND", "Preuve de compétence introuvable.")
+        if not existing.reference_url:
+            raise AppError(
+                422,
+                "VALIDATION_ERROR",
+                "Aucune URL externe associée à cette preuve pour inspection.",
+            )
+
+        result = inspect_github_evidence(
+            existing.reference_url,
+            expected_files=expected_files,
+            settings=settings,
+        )
+        now = datetime.now(timezone.utc)
+        next_status = (
+            EvidenceVerificationStatus.approved
+            if existing.is_locked and result.verified
+            else result.status
+        )
+        saved = self._repo.save_evidence(
+            existing.model_copy(
+                update={
+                    "verification_status": next_status,
+                    "inspection_metadata": result.metadata,
+                    "inspected_at": result.inspected_at,
+                    "updated_at": now,
+                }
+            )
+        )
+        return _to_evidence_response(saved)
 
     def _resolve_learning_links(
         self,
@@ -395,21 +513,31 @@ class SkillService:
         user_id: UUID,
         skill_id: UUID,
         payload: SkillAssessmentCreate,
+        *,
+        internal_prompt_title: str | None = None,
+        internal_prompt_instructions: str | None = None,
     ) -> SkillAssessmentResponse:
         skill = self._repo.get_skill(user_id, skill_id)
         if skill is None:
             raise AppError(404, "NOT_FOUND", "Compétence introuvable.")
 
+        max_allowed_target = min(5, skill.current_level + 1)
+        min_allowed_target = max(1, skill.current_level)
         target_level = (
             payload.target_level
             if payload.target_level is not None
-            else min(5, max(1, skill.current_level + 1))
+            else max_allowed_target
         )
-        if target_level < max(1, skill.current_level) or target_level > 5:
+        if (
+            target_level < min_allowed_target
+            or target_level > 5
+            or target_level > max_allowed_target
+        ):
             raise AppError(
                 422,
                 "INVALID_TARGET_LEVEL",
-                "Le niveau visé doit être au moins égal au niveau actuel vérifié (entre 1 et 5).",
+                f"Progression palier par palier obligatoire : depuis le niveau {skill.current_level}/5, "
+                f"le niveau visé doit être {max_allowed_target}/5.",
             )
 
         path_id, module_id, lesson_id, lesson_title = self._resolve_learning_links(
@@ -440,17 +568,8 @@ class SkillService:
             lesson_title=lesson_title,
         )
 
-        hints = (
-            [h.strip() for h in payload.hints if h and h.strip()][:5]
-            if payload.hints
-            else generated.hints
-        )
-        criteria = (
-            [c.model_dump() for c in payload.criteria]
-            if payload.criteria
-            else generated.criteria
-        )
-
+        # Les critères du référentiel sont figés et strictement contrôlés par le serveur
+        frozen_rubric = [dict(item) for item in generated.criteria]
         now = datetime.now(timezone.utc)
         record = SkillAssessmentRecord(
             id=uuid4(),
@@ -464,11 +583,17 @@ class SkillService:
             target_level=target_level,
             proposed_level=None,
             status=SkillAssessmentStatus.pending,
-            prompt_title=payload.prompt_title or generated.prompt_title,
-            prompt_instructions=payload.prompt_instructions or generated.prompt_instructions,
-            hints=hints,
+            prompt_title=(internal_prompt_title or generated.prompt_title)[:180],
+            prompt_instructions=(internal_prompt_instructions or generated.prompt_instructions)[:4000],
+            hints=generated.hints,
             hints_revealed_count=0,
-            criteria=criteria,
+            criteria=frozen_rubric,
+            rubric_version=generated.rubric_version,
+            evaluator_version=EVALUATOR_VERSION,
+            evaluation_mode=SkillEvaluationMode.automated,
+            manual_review_required=False,
+            rubric_snapshot=frozen_rubric,
+            evidence_snapshot=[],
             evaluator_type=SkillEvaluatorType.pedagogical_engine,
             created_at=now,
             updated_at=now,
@@ -510,9 +635,19 @@ class SkillService:
         user_id: UUID,
         skill_id: UUID,
         evidence_ids: list[UUID],
+        *,
+        exclude_assessment_id: UUID | None = None,
     ) -> tuple[list[SkillEvidenceRecord], bool]:
+        approved_consumed_ids: set[str] = set()
+        for existing_ass in self._repo.list_assessments(user_id, skill_id=skill_id):
+            if exclude_assessment_id is not None and existing_ass.id == exclude_assessment_id:
+                continue
+            if existing_ass.status == SkillAssessmentStatus.approved:
+                for raw_id in existing_ass.evidence_ids or []:
+                    approved_consumed_ids.add(str(raw_id))
+
         records: list[SkillEvidenceRecord] = []
-        has_url = False
+        has_unverified_url = False
         for ev_id in evidence_ids:
             ev = self._repo.get_evidence(user_id, ev_id)
             if ev is None:
@@ -527,8 +662,18 @@ class SkillService:
                     "EVIDENCE_SKILL_MISMATCH",
                     "Une preuve associée appartient à une autre compétence.",
                 )
+            if str(ev.id) in approved_consumed_ids:
+                raise AppError(
+                    422,
+                    "EVIDENCE_ALREADY_CONSUMED",
+                    "Cette preuve a déjà servi à valider un palier précédent. Produisez une nouvelle preuve pour ce niveau.",
+                )
             quality = validate_evidence_quality(
-                ev.type, ev.description, ev.reference_url, ev.result
+                ev.type,
+                ev.description,
+                ev.reference_url,
+                ev.result,
+                verification_status=ev.verification_status,
             )
             if not quality.admissible:
                 raise AppError(
@@ -536,10 +681,10 @@ class SkillService:
                     "EVIDENCE_QUALITY_INSUFFICIENT",
                     quality.reason or "Preuve liée non admissible pour l’évaluation.",
                 )
-            if ev.reference_url:
-                has_url = True
+            if ev.reference_url and not quality.external_reference_verified:
+                has_unverified_url = True
             records.append(ev)
-        return records, has_url
+        return records, has_unverified_url
 
     def submit_assessment(
         self,
@@ -567,18 +712,26 @@ class SkillService:
                 seen.add(item_id)
                 dedup_ids.append(item_id)
 
-        _, evidence_has_url = self._validate_owned_evidence_list(user_id, skill_id, dedup_ids)
+        attached_records, evidence_has_unverified_url = self._validate_owned_evidence_list(
+            user_id,
+            skill_id,
+            dedup_ids,
+            exclude_assessment_id=assessment.id,
+        )
 
         if payload.new_evidence is not None:
             created_ev = self.add_evidence(user_id, skill_id, payload.new_evidence)
             if created_ev.id not in seen:
                 dedup_ids.append(created_ev.id)
                 seen.add(created_ev.id)
-            if created_ev.reference_url:
-                evidence_has_url = True
+                saved_ev_rec = self._repo.get_evidence(user_id, created_ev.id)
+                if saved_ev_rec is not None:
+                    attached_records.append(saved_ev_rec)
+            if created_ev.reference_url and not created_ev.external_reference_verified:
+                evidence_has_unverified_url = True
 
         now = datetime.now(timezone.utc)
-        has_external_url = bool(payload.submission_reference_url) or evidence_has_url
+        has_external_url = bool(payload.submission_reference_url) or evidence_has_unverified_url
         saved = self._repo.save_assessment(
             assessment.model_copy(
                 update={
@@ -587,6 +740,7 @@ class SkillService:
                     "submission_code": payload.submission_code,
                     "submission_reference_url": payload.submission_reference_url,
                     "evidence_ids": [str(item) for item in dedup_ids],
+                    "evidence_snapshot": _snapshot_evidence(attached_records),
                     "external_verification_warning": (
                         EXTERNAL_URL_DISCLAIMER if has_external_url else None
                     ),
@@ -604,6 +758,7 @@ class SkillService:
         assessment_id: UUID,
         payload: SkillAssessmentEvaluate | None = None,
     ) -> SkillAssessmentResponse:
+        _ = payload
         skill = self._repo.get_skill(user_id, skill_id)
         if skill is None:
             raise AppError(404, "NOT_FOUND", "Compétence introuvable.")
@@ -631,36 +786,37 @@ class SkillService:
             if ev is not None and ev.skill_id == skill_id:
                 evidence_records.append(ev)
 
-        overrides = (
-            [item.model_dump() for item in payload.criteria_evaluations]
-            if payload and payload.criteria_evaluations
-            else None
-        )
-
+        rubric_base = assessment.rubric_snapshot or assessment.criteria
         evaluated = evaluate_assessment_submission(
             skill_name=skill.name,
             skill_domain=skill.domain,
-            starting_level=skill.current_level,
+            starting_level=assessment.starting_level,
             target_level=assessment.target_level,
             assessment_type=assessment.assessment_type,
             submission_text=assessment.submission_text or "",
             submission_code=assessment.submission_code,
             submission_reference_url=assessment.submission_reference_url,
             evidence_records=evidence_records,
-            base_criteria=assessment.criteria,
-            criteria_overrides=overrides,
-            explicit_feedback=payload.feedback if payload else None,
-            explicit_mastered=payload.mastered_points if payload else None,
-            explicit_gaps=payload.gaps_identified if payload else None,
-            explicit_remediation=payload.remediation_recommendation if payload else None,
+            base_criteria=rubric_base,
+            rubric_version=assessment.rubric_version or RUBRIC_VERSION,
         )
 
+        next_status = (
+            SkillAssessmentStatus.needs_manual_review
+            if evaluated.manual_review_required
+            else SkillAssessmentStatus.evaluated
+        )
         now = datetime.now(timezone.utc)
         saved = self._repo.save_assessment(
             assessment.model_copy(
                 update={
-                    "status": SkillAssessmentStatus.evaluated,
+                    "status": next_status,
                     "criteria": evaluated.criteria,
+                    "rubric_version": evaluated.rubric_version,
+                    "evaluator_version": evaluated.evaluator_version,
+                    "evaluation_mode": evaluated.evaluation_mode,
+                    "manual_review_required": evaluated.manual_review_required,
+                    "evidence_snapshot": _snapshot_evidence(evidence_records),
                     "score": evaluated.score,
                     "passed": evaluated.passed,
                     "proposed_level": evaluated.proposed_level,
@@ -669,12 +825,8 @@ class SkillService:
                     "gaps_identified": evaluated.gaps_identified,
                     "remediation_recommendation": evaluated.remediation_recommendation,
                     "external_verification_warning": evaluated.external_verification_warning,
-                    "evaluator_type": (
-                        payload.evaluator_type
-                        if payload
-                        else SkillEvaluatorType.pedagogical_engine
-                    ),
-                    "evaluator_name": payload.evaluator_name if payload else "Amireflow Grader",
+                    "evaluator_type": SkillEvaluatorType.pedagogical_engine,
+                    "evaluator_name": "Amireflow Grader (Server)",
                     "evaluated_at": now,
                     "updated_at": now,
                 }
@@ -713,6 +865,15 @@ class SkillService:
                 409,
                 "ASSESSMENT_CANCELLED",
                 "Une évaluation annulée ne peut plus être validée.",
+            )
+        if (
+            assessment.status == SkillAssessmentStatus.needs_manual_review
+            or assessment.manual_review_required
+        ):
+            raise AppError(
+                422,
+                "MANUAL_REVIEW_REQUIRED",
+                "Cette évaluation nécessite une revue manuelle ou une inspection vérifiée avant validation.",
             )
         if assessment.status != SkillAssessmentStatus.evaluated:
             raise AppError(
@@ -761,7 +922,10 @@ class SkillService:
                 ) from exc
 
         admissible_records, _ = self._validate_owned_evidence_list(
-            user_id, skill_id, evidence_uuids
+            user_id,
+            skill_id,
+            evidence_uuids,
+            exclude_assessment_id=assessment.id,
         )
         if not admissible_records:
             raise AppError(
@@ -770,11 +934,13 @@ class SkillService:
                 "Aucune preuve admissible n’est associée à cette évaluation.",
             )
 
+        max_allowed = min(5, skill.current_level + 1)
         if (
             assessment.proposed_level is None
             or assessment.proposed_level < 0
             or assessment.proposed_level > 5
             or assessment.proposed_level > assessment.target_level
+            or assessment.proposed_level > max_allowed
         ):
             raise AppError(
                 422,
@@ -807,7 +973,9 @@ class SkillService:
             }
         )
         saved_assessment, _ = self._repo.approve_assessment_and_update_skill(
-            updated_assessment, updated_skill
+            updated_assessment,
+            updated_skill,
+            consumed_evidence_ids=evidence_uuids,
         )
         return _to_assessment_response(saved_assessment)
 
@@ -827,6 +995,7 @@ class SkillService:
         if assessment.status not in (
             SkillAssessmentStatus.submitted,
             SkillAssessmentStatus.evaluated,
+            SkillAssessmentStatus.needs_manual_review,
         ):
             raise AppError(
                 409,
@@ -869,6 +1038,7 @@ class SkillService:
             SkillAssessmentStatus.pending,
             SkillAssessmentStatus.submitted,
             SkillAssessmentStatus.evaluated,
+            SkillAssessmentStatus.needs_manual_review,
         ):
             raise AppError(
                 409,

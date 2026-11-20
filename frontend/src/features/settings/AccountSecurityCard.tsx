@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Cancel01Icon,
@@ -6,9 +6,11 @@ import {
   Logout01Icon,
   ShieldCheckIcon,
 } from '@hugeicons/core-free-icons';
+import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
 import { FormField, Input } from '../../components/ui/FormFields';
 import { Icon } from '../../components/ui/Icon';
+import { fetchAccountInfoApi, type AuthAccountInfo } from '../../lib/studyApi';
 import { useAuth } from '../../state/AuthContext';
 
 /**
@@ -19,6 +21,7 @@ export function AccountSecurityCard() {
   const { session, changePassword, logoutAllSessions } = useAuth();
   const navigate = useNavigate();
 
+  const [accountInfo, setAccountInfo] = useState<AuthAccountInfo | null>(null);
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -27,12 +30,33 @@ export function AccountSecurityCard() {
   const [feedback, setFeedback] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
+  useEffect(() => {
+    if (session?.mode !== 'api' || !session.accessToken) {
+      setAccountInfo(null);
+      return;
+    }
+    let active = true;
+    fetchAccountInfoApi(session.accessToken)
+      .then((info) => {
+        if (active && info && typeof info === 'object' && typeof info.id === 'string') {
+          setAccountInfo(info);
+        }
+      })
+      .catch(() => {
+        // Ignore si l'endpoint n'est pas joignable (ex. tests mockés)
+      });
+    return () => {
+      active = false;
+    };
+  }, [session?.mode, session?.accessToken]);
+
   if (session?.mode !== 'api') {
     return null;
   }
 
-  const canChangeLocalPassword =
-    session.authProvider !== 'supabase' && session.authProvider !== 'local_dev';
+  const canChangeLocalPassword = accountInfo
+    ? accountInfo.canChangePassword
+    : session.authProvider !== 'supabase' && session.authProvider !== 'local_dev';
 
   const handlePasswordSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -89,6 +113,11 @@ export function AccountSecurityCard() {
           <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-50">
             Compte & Sécurité
           </h2>
+          {accountInfo && (
+            <Badge variant={accountInfo.emailVerified ? 'success' : 'neutral'}>
+              {accountInfo.emailVerified ? 'E-mail vérifié' : 'E-mail non vérifié'}
+            </Badge>
+          )}
         </div>
 
         <Button

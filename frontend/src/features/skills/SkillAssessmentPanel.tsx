@@ -269,7 +269,11 @@ export function SkillAssessmentPanel({
     setLocalFormError(null);
     setIsBusy(true);
     try {
-      if (activeAssessment.status === 'evaluated' || activeAssessment.status === 'submitted') {
+      if (
+        activeAssessment.status === 'evaluated' ||
+        activeAssessment.status === 'submitted' ||
+        activeAssessment.status === 'needs_manual_review'
+      ) {
         await onRejectAssessment(
           skill.id,
           activeAssessment.id,
@@ -722,16 +726,27 @@ export function SkillAssessmentPanel({
         </div>
       )}
 
-      {/* Étape EVALUATED : Résultat détaillé, critères & décision finale */}
-      {activeAssessment.status === 'evaluated' && (
+      {/* Étape EVALUATED / NEEDS_MANUAL_REVIEW : Résultat détaillé, critères & décision finale */}
+      {(activeAssessment.status === 'evaluated' ||
+        activeAssessment.status === 'needs_manual_review') && (
         <div className="space-y-3">
           <div className="rounded-xl bg-white p-3.5 text-xs dark:bg-zinc-900">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="flex flex-wrap items-center gap-2">
-                <Badge variant={activeAssessment.passed ? 'success' : 'danger'}>
-                  {activeAssessment.passed
-                    ? 'Niveau visé atteint'
-                    : 'Niveau non atteint — renforcement requis'}
+                <Badge
+                  variant={
+                    activeAssessment.status === 'needs_manual_review'
+                      ? 'warning'
+                      : activeAssessment.passed
+                        ? 'success'
+                        : 'danger'
+                  }
+                >
+                  {activeAssessment.status === 'needs_manual_review'
+                    ? 'Revue manuelle ou preuve vérifiée requise'
+                    : activeAssessment.passed
+                      ? 'Niveau visé atteint'
+                      : 'Niveau non atteint — renforcement requis'}
                 </Badge>
                 <span className="text-sm font-semibold tabular-nums text-zinc-900 dark:text-zinc-50">
                   Score : {activeAssessment.score ?? 0} / 100
@@ -817,7 +832,34 @@ export function SkillAssessmentPanel({
             </div>
           )}
 
-          {activeAssessment.passed ? (
+          {activeAssessment.status === 'needs_manual_review' ? (
+            <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-amber-50 p-3 dark:bg-amber-950/40">
+              <span className="text-xs font-medium text-amber-900 dark:text-amber-200">
+                Validation automatique verrouillée : une revue manuelle ou une preuve inspectée et
+                vérifiée est requise avant de valider cette évaluation.
+              </span>
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  isLoading={isBusy}
+                  onClick={() => void handleReject()}
+                >
+                  Clôturer comme non validée
+                </Button>
+                <Button
+                  type="button"
+                  variant="primary"
+                  size="sm"
+                  isLoading={isBusy}
+                  onClick={() => void handleStartRemediation()}
+                >
+                  Faire un exercice correctif
+                </Button>
+              </div>
+            </div>
+          ) : activeAssessment.passed ? (
             <div className="flex flex-wrap items-center justify-end gap-2">
               <Button
                 type="button"

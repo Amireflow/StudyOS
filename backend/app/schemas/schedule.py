@@ -25,6 +25,10 @@ class ScheduleEventCreate(BaseModel):
     teacher: str | None = None
     room: str | None = None
     group_name: str | None = None
+    goal_id: UUID | None = None
+    course_id: UUID | None = None
+    project_id: UUID | None = None
+    task_id: UUID | None = None
 
     @field_validator("title")
     @classmethod
@@ -66,6 +70,10 @@ class ScheduleEventUpdate(BaseModel):
     teacher: str | None = None
     room: str | None = None
     group_name: str | None = None
+    goal_id: UUID | None = None
+    course_id: UUID | None = None
+    project_id: UUID | None = None
+    task_id: UUID | None = None
 
     @field_validator("title")
     @classmethod
@@ -121,6 +129,10 @@ class ScheduleEventResponse(BaseModel):
     teacher: str | None = None
     room: str | None = None
     group_name: str | None = None
+    goal_id: UUID | None = None
+    course_id: UUID | None = None
+    project_id: UUID | None = None
+    task_id: UUID | None = None
     duration_minutes: int
     has_conflict: bool = False
     conflicting_event_ids: list[UUID] = Field(default_factory=list)
@@ -130,6 +142,7 @@ class ScheduleEventResponse(BaseModel):
 
 class DuplicateWeekRequest(BaseModel):
     source_week_start: date
+    target_week_start: date | None = None
 
 
 class DuplicateWeekResponse(BaseModel):
@@ -232,3 +245,17 @@ class TimetableImportConfirmResponse(BaseModel):
     created_count: int
     skipped_duplicates_count: int
     replaced_count: int
+
+
+class TimetableReplacePreviewResponse(BaseModel):
+    import_id: UUID
+    period_start: datetime
+    period_end: datetime
+    affected_count: int
+    affected_events: list[ScheduleEventResponse]
+
+
+class TimetableImportRestoreResponse(BaseModel):
+    import_id: UUID
+    removed_events_count: int
+    restored_events_count: int

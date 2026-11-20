@@ -19,6 +19,8 @@ PRIORITY_WEIGHT: dict[TaskPriority, int] = {
     TaskPriority.low: 1,
 }
 
+MAX_ACTIVE_CRITICAL_TASKS = 3
+
 
 def is_active_task_status(status: TaskStatus) -> bool:
     return status in (TaskStatus.todo, TaskStatus.in_progress)
@@ -49,11 +51,16 @@ def is_task_due_today(
     return task.due_at.astimezone(tz).date() == reference_now.date()
 
 
-def sort_tasks_by_urgency(tasks: list[TaskRecord]) -> list[TaskRecord]:
+def sort_tasks_by_urgency(
+    tasks: list[TaskRecord],
+    tz_name: str = "Africa/Dakar",
+    now_utc: datetime | None = None,
+) -> list[TaskRecord]:
     max_utc = datetime.max.replace(tzinfo=timezone.utc)
     return sorted(
         tasks,
         key=lambda task: (
+            not is_task_overdue(task, tz_name, now_utc),
             -PRIORITY_WEIGHT[task.priority],
             task.due_at is None,
             task.due_at or max_utc,
@@ -131,6 +138,25 @@ class TaskService:
         ):
             raise AppError(404, "NOT_FOUND", "Module associé introuvable.")
 
+    def _ensure_critical_slot_available(
+        self,
+        user_id: UUID,
+        exclude_id: UUID | None = None,
+    ) -> None:
+        active_critical_count = sum(
+            1
+            for t in self._task_repo.list_by_user(user_id)
+            if is_active_task_status(t.status)
+            and t.priority == TaskPriority.critical
+            and t.id != exclude_id
+        )
+        if active_critical_count >= MAX_ACTIVE_CRITICAL_TASKS:
+            raise AppError(
+                409,
+                "MAX_CRITICAL_TASKS_REACHED",
+                "Limite de 3 tâches critiques actives atteinte : terminez, mettez au parking ou rétrogradez une tâche critique avant d'en ajouter une autre.",
+            )
+
     def list_tasks(
         self,
         user_id: UUID,
@@ -162,10 +188,17 @@ class TaskService:
             if due and due != "all":
                 if due == "overdue" and not is_task_overdue(task, tz_name, now_utc):
                     continue
-                if due == "today" and not is_task_due_today(task, tz_name, now_utc):
+                if due == "today" and (
+                    not is_active_task_status(task.status)
+                    or not is_task_due_today(task, tz_name, now_utc)
+                ):
                     continue
                 if due == "upcoming":
-                    if task.due_at is None or task.due_at.astimezone(tz).date() <= today_local:
+                    if (
+                        not is_active_task_status(task.status)
+                        or task.due_at is None
+                        or task.due_at.astimezone(tz).date() <= today_local
+                    ):
                         continue
                 if due == "no_due" and task.due_at is not None:
                     continue
@@ -177,7 +210,7 @@ class TaskService:
 
             filtered.append(task)
 
-        ordered = sort_tasks_by_urgency(filtered)
+        ordered = sort_tasks_by_urgency(filtered, tz_name, now_utc)
         return [TaskResponse.model_validate(item.model_dump()) for item in ordered]
 
     def create_task(
@@ -189,6 +222,8 @@ class TaskService:
         proposal_id: UUID | None = None,
     ) -> TaskResponse:
         self._validate_links(user_id, payload.project_id, payload.module_id)
+        if is_active_task_status(payload.status) and payload.priority == TaskPriority.critical:
+            self._ensure_critical_slot_available(user_id)
         now = datetime.now(timezone.utc)
         record = TaskRecord(
             id=uuid4(),
@@ -239,6 +274,23 @@ class TaskService:
             self._validate_links(user_id, None, payload.module_id)
             updates["module_id"] = payload.module_id
 
+        next_status = (
+            payload.status if "status" in fields and payload.status is not None else existing.status
+        )
+        next_priority = (
+            payload.priority
+            if "priority" in fields and payload.priority is not None
+            else existing.priority
+        )
+        was_active_critical = (
+            is_active_task_status(existing.status) and existing.priority == TaskPriority.critical
+        )
+        is_now_active_critical = (
+            is_active_task_status(next_status) and next_priority == TaskPriority.critical
+        )
+        if is_now_active_critical and not was_active_critical:
+            self._ensure_critical_slot_available(user_id, exclude_id=task_id)
+
         if "status" in fields and payload.status is not None:
             updates["status"] = payload.status
             if payload.status == TaskStatus.done:
@@ -248,9 +300,20 @@ class TaskService:
 
         saved = self._task_repo.save(existing.model_copy(update=updates))
 
-        if "title" in fields and payload.title is not None:
-            profile = self._profile_repo.get(user_id)
-            if profile is not None and profile.active_priority_task_id == task_id:
+        profile = self._profile_repo.get(user_id)
+        if profile is not None and profile.active_priority_task_id == task_id:
+            if not is_active_task_status(saved.status):
+                profile_updates: dict[str, object] = {
+                    "active_priority_task_id": None,
+                    "updated_at": now,
+                }
+                if (
+                    profile.active_priority_project_id is None
+                    and profile.active_priority_title in (existing.title, saved.title)
+                ):
+                    profile_updates["active_priority_title"] = None
+                self._profile_repo.save(profile.model_copy(update=profile_updates))
+            elif "title" in fields and payload.title is not None:
                 self._profile_repo.save(
                     profile.model_copy(
                         update={"active_priority_title": saved.title, "updated_at": now}

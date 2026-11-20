@@ -1,7 +1,8 @@
 from uuid import UUID
 from fastapi import APIRouter, Depends, Query, Response, status
 from app.api.deps import get_skill_service
-from app.core.security import get_current_user_id
+from app.core.config import Settings
+from app.core.security import get_app_settings, get_current_user_id
 from app.schemas.common import SkillAssessmentStatus
 from app.schemas.skills import (
     SkillAssessmentCreate,
@@ -11,6 +12,7 @@ from app.schemas.skills import (
     SkillAssessmentSubmit,
     SkillCreate,
     SkillEvidenceCreate,
+    SkillEvidenceInspectRequest,
     SkillEvidenceResponse,
     SkillEvidenceUpdate,
     SkillResponse,
@@ -173,6 +175,28 @@ def delete_skill_evidence(
 ) -> Response:
     skill_service.delete_evidence(user_id, skill_id, evidence_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post(
+    "/{skill_id}/evidence/{evidence_id}/inspect",
+    response_model=SkillEvidenceResponse,
+    summary="Inspecter de manière contrôlée une preuve GitHub externe",
+)
+def inspect_skill_evidence(
+    skill_id: UUID,
+    evidence_id: UUID,
+    payload: SkillEvidenceInspectRequest | None = None,
+    user_id: UUID = Depends(get_current_user_id),
+    settings: Settings = Depends(get_app_settings),
+    skill_service: SkillService = Depends(get_skill_service),
+) -> SkillEvidenceResponse:
+    return skill_service.inspect_evidence(
+        user_id,
+        skill_id,
+        evidence_id,
+        expected_files=payload.expected_files if payload else None,
+        settings=settings,
+    )
 
 
 @router.get(

@@ -40,6 +40,7 @@ import {
   SCHEDULE_EVENT_TONE,
   SCHEDULE_EVENT_TYPE_META,
 } from './scheduleUtils';
+import { IntelligentPlanStudio } from './IntelligentPlanStudio';
 import { TimetableImportPanel } from './TimetableImportPanel';
 import { WeekTimeGrid } from './WeekTimeGrid';
 
@@ -79,6 +80,7 @@ export function PlanningPage() {
 
   const [isCreating, setIsCreating] = useState(false);
   const [isImportingTimetable, setIsImportingTimetable] = useState(false);
+  const [isIntelligentPlanOpen, setIsIntelligentPlanOpen] = useState(false);
   const [defaultFormDate, setDefaultFormDate] = useState<string>(() => toLocalDateKey(new Date()));
   const [editingEvent, setEditingEvent] = useState<ScheduleEvent | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
@@ -274,6 +276,20 @@ export function PlanningPage() {
             variant="secondary"
             size="sm"
             className="shrink-0"
+            onClick={() => {
+              setIsIntelligentPlanOpen((prev) => !prev);
+              setIsImportingTimetable(false);
+              setIsCreating(false);
+            }}
+          >
+            <Icon icon={Calendar03Icon} size={15} />
+            Programme intelligent
+          </Button>
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            className="shrink-0"
             disabled={weekEvents.length === 0}
             onClick={() => void handleDuplicateWeek()}
           >
@@ -286,6 +302,13 @@ export function PlanningPage() {
       {feedback && <SuccessBanner message={feedback} onDismiss={() => setFeedback(null)} />}
       {mutationError && (
         <ErrorState message={mutationError} onRetry={clearMutationError} retryLabel="Fermer" />
+      )}
+
+      {isIntelligentPlanOpen && (
+        <IntelligentPlanStudio
+          onClose={() => setIsIntelligentPlanOpen(false)}
+          onApplied={(msg) => setFeedback(msg)}
+        />
       )}
 
       {isImportingTimetable && (

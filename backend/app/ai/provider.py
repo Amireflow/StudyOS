@@ -9,6 +9,12 @@ from app.ai.context_builder import BoundedUserContext
 from app.ai.prompt_manager import PromptManager
 from app.core.config import Settings
 from app.core.errors import AppError
+from app.core.ssrf import (
+    MAX_AI_RESPONSE_BYTES,
+    safe_http_request,
+    validate_model_identifier,
+    validate_outbound_url,
+)
 from app.schemas.ai import RawProposalCandidate
 from app.schemas.common import AiActionType, CourseLanguage, StrategicDecision
 from app.services.assessment_evaluator import validate_evidence_quality
@@ -653,21 +659,43 @@ def _handle_conversational_strategic_planning(
                 f"Réajuster la régularité suite aux {missed_count} séance(s) précédente(s) non réalisée(s)."
             )
 
-    # Sélection des meilleurs créneaux réels répartis sur des jours distincts
+    # Sélection des meilleurs créneaux réels répartis sur plusieurs semaines (jusqu'à 3 semaines)
+    multi_week_pool = list(
+        (context.availability or {}).get("multi_week_candidate_slots") or weekly_slots
+    )
+    target_weeks = max(1, min(3, estimated_weeks))
     chosen_raw_slots: list[dict[str, Any]] = []
-    used_dates: set[str] = set()
-    for candidate in weekly_slots:
-        if len(chosen_raw_slots) >= max_slots:
-            break
-        if candidate["local_date"] not in used_dates:
-            chosen_raw_slots.append(candidate)
-            used_dates.add(candidate["local_date"])
-    if len(chosen_raw_slots) < max_slots:
-        for candidate in weekly_slots:
-            if len(chosen_raw_slots) >= max_slots:
+    week0_count = 0
+    for wk in range(target_weeks):
+        wk_candidates = [
+            c for c in multi_week_pool if int(c.get("week_index", 0)) == wk
+        ]
+        if not wk_candidates and wk == 0:
+            wk_candidates = list(weekly_slots)
+        wk_selected: list[dict[str, Any]] = []
+        used_dates: set[str] = set()
+        for candidate in wk_candidates:
+            if len(wk_selected) >= max_slots:
                 break
-            if candidate not in chosen_raw_slots:
-                chosen_raw_slots.append(candidate)
+            if candidate["local_date"] not in used_dates:
+                wk_selected.append(candidate)
+                used_dates.add(candidate["local_date"])
+        if len(wk_selected) < max_slots:
+            for candidate in wk_candidates:
+                if len(wk_selected) >= max_slots:
+                    break
+                if candidate not in wk_selected:
+                    wk_selected.append(candidate)
+        if wk == 0:
+            week0_count = len(wk_selected)
+        chosen_raw_slots.extend(wk_selected)
+
+    if not chosen_raw_slots:
+        for candidate in weekly_slots[:max_slots]:
+            chosen_raw_slots.append(candidate)
+        week0_count = len(chosen_raw_slots)
+
+    effective_freq = max(1, min(7, week0_count or max_slots))
 
     proposed_slots_payload: list[dict[str, Any]] = []
     for slot in chosen_raw_slots:
@@ -710,7 +738,7 @@ def _handle_conversational_strategic_planning(
     lines.append(slot_lines)
     lines.append(
         f"**Objectif mesurable** : {goal_text}\n"
-        f"- **Fréquence** : {len(proposed_slots_payload)} séance(s) / semaine · **Durée** : ~{estimated_weeks} semaine(s) · **Début** : {proposed_slots_payload[0]['local_date']}"
+        f"- **Fréquence** : {effective_freq} séance(s) / semaine · **Créneaux générés** : {len(proposed_slots_payload)} · **Durée** : ~{estimated_weeks} semaine(s) · **Début** : {proposed_slots_payload[0]['local_date']}"
     )
     if conditions:
         lines.append("**Conditions recommandées** :\n" + "\n".join(f"- {c}" for c in conditions))
@@ -724,10 +752,12 @@ def _handle_conversational_strategic_planning(
     )
 
     is_project = category == "project"
+    active_projects_list = [p for p in context.projects if p.get("status") == "active"]
+    can_create_project = is_project and len(active_projects_list) < 3
     proposals = [
         RawProposalCandidate(
             action_type=AiActionType.plan_strategic_activity.value,
-            title=f"Programmer « {activity_title} » ({len(proposed_slots_payload)} séance(s)/sem.)",
+            title=f"Programmer « {activity_title} » ({effective_freq} séance(s)/sem.)",
             explanation=(
                 "Proposition stratégique vérifiée contre ton emploi du temps universitaire et tes disponibilités réelles."
             ),
@@ -739,9 +769,9 @@ def _handle_conversational_strategic_planning(
                 "conditions": conditions,
                 "opportunity_cost_note": f"Charge hebdomadaire actuelle : {weekly_scheduled_minutes} min.",
                 "create_learning_path": not is_project,
-                "create_project": is_project,
+                "create_project": can_create_project,
                 "park_only": False,
-                "frequency_per_week": len(proposed_slots_payload),
+                "frequency_per_week": effective_freq,
                 "session_duration_minutes": proposed_slots_payload[0]["duration_minutes"],
                 "estimated_weeks": estimated_weeks,
                 "start_date": proposed_slots_payload[0]["local_date"],
@@ -749,6 +779,19 @@ def _handle_conversational_strategic_planning(
             },
         )
     ]
+    if is_project and len(active_projects_list) >= 3:
+        candidate_to_pause = active_projects_list[-1]
+        proposals.append(
+            RawProposalCandidate(
+                action_type=AiActionType.pause_project.value,
+                title=f"Mettre en pause le projet « {candidate_to_pause['name']} »",
+                explanation="Vous avez déjà 3 projets actifs (limite maximale). Mettez un projet en pause pour libérer un créneau actif.",
+                payload={
+                    "project_id": candidate_to_pause["id"],
+                    "reason": f"Libérer un slot de projet actif pour « {activity_title} ».",
+                },
+            )
+        )
     return ProviderResult(
         reply="\n\n".join(lines),
         proposals=proposals,
@@ -757,6 +800,1015 @@ def _handle_conversational_strategic_planning(
         provider_name="local",
         model_name=model_name,
     )
+
+
+_FR_NUMBER_WORDS: dict[str, int] = {
+    "un": 1,
+    "une": 1,
+    "deux": 2,
+    "trois": 3,
+    "quatre": 4,
+    "cinq": 5,
+    "six": 6,
+}
+
+
+def _extract_count_word(lowered: str, default: int = 2) -> int:
+    digit_m = re.search(r"\b(\d+)\s*(?:séances?|sessions?|créneaux?|blocs?)\b", lowered)
+    if digit_m:
+        return max(1, min(7, int(digit_m.group(1))))
+    for word, val in _FR_NUMBER_WORDS.items():
+        if re.search(rf"\b{word}\s+(?:séances?|sessions?|créneaux?|blocs?)\b", lowered):
+            return val
+    return default
+
+
+def _extract_clean_entity_name(message: str, prefixes: tuple[str, ...], fallback: str, max_len: int = 120) -> str:
+    quoted = re.search(r"[«\"']([^«»\"']{2,120})[»\"']", message)
+    if quoted:
+        return quoted.group(1).strip()[:max_len]
+    after_colon = re.search(r":\s*(.{2,140})$", message.strip())
+    if after_colon:
+        cand = after_colon.group(1).strip().rstrip(".")
+        if cand:
+            return cand[:max_len]
+    for pat in prefixes:
+        m = re.search(pat, message, re.IGNORECASE)
+        if m and m.group(1).strip():
+            cand = m.group(1).strip().rstrip(".")
+            cand = re.split(r"\s+(?:pour\s+mettre\s+en|dans\s+le\s+cadre|pendant\s+\d+)\b", cand, maxsplit=1, flags=re.IGNORECASE)[0].strip()
+            if len(cand) >= 2:
+                return cand[:max_len]
+    return fallback[:max_len]
+
+
+def _match_by_name_or_tokens(query: str, items: list[dict[str, Any]], key: str = "title") -> dict[str, Any] | None:
+    q_lower = query.lower()
+    q_tokens = _meaningful_tokens(query)
+    best: dict[str, Any] | None = None
+    best_score = 0
+    for item in items:
+        label = str(item.get(key) or item.get("name") or item.get("title") or "").strip()
+        if not label:
+            continue
+        l_lower = label.lower()
+        if l_lower in q_lower:
+            score = len(l_lower) + 100
+        else:
+            overlap = q_tokens & _meaningful_tokens(label + " " + str(item.get("goal") or ""))
+            score = len(overlap) * 10
+        if score > best_score:
+            best_score = score
+            best = item
+    return best if best_score > 0 else None
+
+
+def _handle_ai_first_intents(
+    *,
+    user_message: str,
+    context: BoundedUserContext,
+    model_name: str,
+) -> ProviderResult | None:
+    lowered = user_message.lower()
+    proposals: list[RawProposalCandidate] = []
+    lines: list[str] = []
+
+    learning_paths = list((context.learning or {}).get("paths") or [])
+    personal_goals = list(context.personal_goals or [])
+    projects = list(context.projects or [])
+    skills = list(context.skills or [])
+    active_tasks = list(context.tasks or [])
+    weekly_slots = list((context.availability or {}).get("weekly_candidate_slots") or [])
+    avail_prefs = dict((context.availability or {}).get("preferences") or {})
+    memory = dict(context.personal_memory or {})
+
+    # 0. Règles explicites d'indisponibilité / disponibilité confirmée / récupération
+    avail_rule_match = any(
+        p in lowered
+        for p in (
+            "indisponible",
+            "pas disponible",
+            "ne suis pas disponible",
+            "pas libre",
+            "disponibilité confirmée",
+            "disponibilite confirmee",
+            "jour de repos",
+            "temps de récupération",
+            "temps de recuperation",
+        )
+    )
+    if avail_rule_match:
+        matched_day_name: str | None = None
+        matched_day_idx: int | None = None
+        for tok, idx in DAY_INDEX_BY_TOKEN.items():
+            if re.search(rf"\b{tok}\b", lowered):
+                matched_day_name = tok
+                matched_day_idx = idx
+                break
+        if matched_day_idx is not None:
+            start_t = "14:00"
+            end_t = "18:00"
+            t_match = re.search(
+                r"(\d{1,2})\s*[hH:]\s*(\d{2})?\s*(?:à|au|-|et)\s*(\d{1,2})\s*[hH:]\s*(\d{2})?",
+                lowered,
+            )
+            if t_match:
+                sh = max(0, min(23, int(t_match.group(1))))
+                sm = int(t_match.group(2) or "0")
+                eh = max(0, min(23, int(t_match.group(3))))
+                em = int(t_match.group(4) or "0")
+                start_t = f"{sh:02d}:{sm:02d}"
+                end_t = f"{eh:02d}:{em:02d}"
+            elif "matin" in lowered:
+                start_t, end_t = "08:30", "12:30"
+            elif "après-midi" in lowered or "apres-midi" in lowered or "aprem" in lowered:
+                start_t, end_t = "14:00", "18:00"
+            elif "soir" in lowered:
+                start_t, end_t = "18:00", "22:00"
+            elif "toute la journée" in lowered or "toute la journee" in lowered or "jour de repos" in lowered:
+                start_t, end_t = "08:00", "22:00"
+
+            rule_type = "personal_unavailability"
+            label_prefix = "Indisponibilité"
+            if "disponibilité confirmée" in lowered or "disponibilite confirmee" in lowered:
+                rule_type = "confirmed_availability"
+                label_prefix = "Disponibilité confirmée"
+            elif "récupération" in lowered or "recuperation" in lowered or "jour de repos" in lowered:
+                rule_type = "recovery_time"
+                label_prefix = "Temps de récupération"
+
+            tz_name = str((context.profile or {}).get("timezone") or "Europe/Paris")
+            day_label = matched_day_name.capitalize() if matched_day_name else "Jour"
+            rule_label = f"{label_prefix} {day_label} ({start_t} à {end_t})"
+            proposals.append(
+                RawProposalCandidate(
+                    action_type=AiActionType.manage_availability_rule.value,
+                    title=f"Enregistrer : {rule_label}",
+                    explanation="Cette règle sera prise en compte par le moteur de disponibilité lors de chaque planification.",
+                    payload={
+                        "label": rule_label,
+                        "rule_type": rule_type,
+                        "day_of_week": matched_day_idx,
+                        "start_time": start_t,
+                        "end_time": end_t,
+                        "timezone": tz_name,
+                        "recurrence": "weekly",
+                    },
+                )
+            )
+            lines.append(
+                f"J'ai préparé l'enregistrement de votre règle **« {rule_label} »** afin que le moteur de planification respecte strictement ce créneau."
+            )
+            return ProviderResult(
+                reply="\n\n".join(lines),
+                proposals=proposals,
+                is_estimate=False,
+                missing_data=context.missing_data,
+                provider_name="local",
+                model_name=model_name,
+            )
+
+    # 1. Mise à jour des disponibilités / préférences en langage naturel
+    explicit_pref_intent = any(
+        p in lowered
+        for p in (
+            "je dispose de",
+            "j'ai maintenant",
+            "j’ai maintenant",
+            "modifie mes disponibilités",
+            "modifier mes disponibilités",
+            "mets à jour mes disponibilités",
+            "mettre à jour mes disponibilités",
+            "mes nouvelles disponibilités",
+            "mes disponibilités sont",
+            "préférences horaires",
+            "changer mes horaires",
+            "change mes horaires",
+        )
+    ) or (
+        ("disponible" in lowered or "disponibilités" in lowered)
+        and bool(
+            re.search(
+                r"(\d{1,3})\s*(?:h|heures?)\s*(?:par\s+semaine|/sem)|(\d{1,2})\s*[hH]\s*(?:à|-)\s*(\d{1,2})\s*[hH]",
+                lowered,
+            )
+        )
+        and "apprendre" not in lowered
+    )
+    if explicit_pref_intent:
+        pref_payload: dict[str, Any] = {}
+        wh_m = re.search(
+            r"(?:dispose\s+de|disposant\s+de|avec|à)\s+(\d{1,3})\s*(?:h|heures?)(?:\s+par\s+semaine)?|(\d{1,3})\s*(?:h|heures?)\s*(?:par\s+semaine|/sem|hebdo)",
+            lowered,
+        )
+        if wh_m:
+            hours_val = int(wh_m.group(1) or wh_m.group(2))
+            pref_payload["weekly_study_hours"] = max(1, min(100, hours_val))
+        range_m = re.search(r"(\d{1,2})\s*[hH:]\s*\d{0,2}\s*(?:à|au|-|et)\s*(\d{1,2})\s*[hH:]?", lowered)
+        if range_m:
+            s_h = max(5, min(20, int(range_m.group(1))))
+            e_h = max(s_h + 1, min(23, int(range_m.group(2))))
+            pref_payload["study_start_hour"] = s_h
+            pref_payload["study_end_hour"] = e_h
+        excluded_found: list[int] = []
+        for tok, day_idx in DAY_INDEX_BY_TOKEN.items():
+            if re.search(rf"(?:pas\s+le|hors|exclure\s+le|sans\s+le|jamais\s+le)\s+{tok}\b", lowered):
+                excluded_found.append(day_idx)
+        if excluded_found:
+            pref_payload["excluded_days"] = sorted(set(excluded_found))
+        dur_pref_m = re.search(r"séances?\s+de\s+(\d{2,3})\s*min", lowered)
+        if dur_pref_m:
+            pref_payload["preferred_session_minutes"] = max(30, min(180, int(dur_pref_m.group(1))))
+        if pref_payload:
+            proposals.append(
+                RawProposalCandidate(
+                    action_type=AiActionType.update_preferences.value,
+                    title="Mettre à jour vos préférences et disponibilités",
+                    explanation="Enregistre durablement vos contraintes horaires dans votre profil et votre mémoire IA.",
+                    payload=pref_payload,
+                )
+            )
+            lines.append(
+                "J'ai préparé la mise à jour de vos disponibilités et contraintes dans votre contexte personnel persistant."
+            )
+            return ProviderResult(
+                reply="\n\n".join(lines),
+                proposals=proposals,
+                is_estimate=False,
+                missing_data=context.missing_data,
+                provider_name="local",
+                model_name=model_name,
+            )
+
+    # 2. Suspendre / mettre en pause un apprentissage, un objectif ou un projet nommé
+    if any(w in lowered for w in ("suspendre", "mettre en pause", "suspend ")) or re.search(
+        r"\b(?:met(?:s|tre)|pass(?:e|er)|plac(?:e|er))\b.*\ben\s+pause\b", lowered
+    ):
+        matched_goal = _match_by_name_or_tokens(user_message, personal_goals, key="title")
+        matched_path = _match_by_name_or_tokens(user_message, learning_paths, key="title")
+        matched_proj = _match_by_name_or_tokens(user_message, projects, key="name")
+        if matched_goal or matched_path:
+            steps: list[dict[str, Any]] = []
+            target_label = (matched_goal or matched_path or {}).get("title", "cet objectif")
+            if matched_goal and matched_goal.get("status") != "paused":
+                steps.append(
+                    {
+                        "action_type": AiActionType.update_personal_goal.value,
+                        "payload": {"goal_id": matched_goal["id"], "status": "paused"},
+                    }
+                )
+            if matched_path and matched_path.get("status") != "paused":
+                steps.append(
+                    {
+                        "action_type": AiActionType.update_learning_path.value,
+                        "payload": {"path_id": matched_path["id"], "status": "paused"},
+                    }
+                )
+            if len(steps) == 1:
+                proposals.append(
+                    RawProposalCandidate(
+                        action_type=steps[0]["action_type"],
+                        title=f"Suspendre « {target_label} »",
+                        explanation="Passe l'élément en pause sans supprimer sa progression.",
+                        payload=steps[0]["payload"],
+                    )
+                )
+            elif len(steps) > 1:
+                proposals.append(
+                    RawProposalCandidate(
+                        action_type=AiActionType.batch_actions.value,
+                        title=f"Suspendre l'apprentissage de « {target_label} »",
+                        explanation="Met en pause l'objectif et le parcours associés de manière coordonnée.",
+                        payload={"summary": f"Mise en pause de {target_label}", "steps": steps, "compensate_on_failure": True},
+                    )
+                )
+            if proposals:
+                lines.append(
+                    f"J'ai préparé la mise en pause de **{target_label}** tout en conservant votre progression."
+                )
+                return ProviderResult(
+                    reply="\n\n".join(lines),
+                    proposals=proposals,
+                    is_estimate=context.is_partial_data,
+                    missing_data=context.missing_data,
+                    provider_name="local",
+                    model_name=model_name,
+                )
+        if matched_proj and matched_proj.get("status") not in ("paused", "completed", "archived"):
+            proposals.append(
+                RawProposalCandidate(
+                    action_type=AiActionType.pause_project.value,
+                    title=f"Mettre en pause le projet « {matched_proj['name']} »",
+                    explanation="Suspend le projet sans perte de données.",
+                    payload={"project_id": matched_proj["id"], "reason": "Suspension demandée en conversation."},
+                )
+            )
+            lines.append(f"Je propose de mettre le projet **{matched_proj['name']}** en pause.")
+            return ProviderResult(
+                reply="\n\n".join(lines),
+                proposals=proposals,
+                is_estimate=context.is_partial_data,
+                missing_data=context.missing_data,
+                provider_name="local",
+                model_name=model_name,
+            )
+
+    # 2b. Ajustement du temps hebdomadaire consacré à un objectif existant
+    if any(
+        w in lowered
+        for w in (
+            "augmente le temps",
+            "augmenter le temps",
+            "plus de temps",
+            "réduis le temps",
+            "reduis le temps",
+            "moins de temps",
+        )
+    ):
+        matched_goal = _match_by_name_or_tokens(user_message, personal_goals, key="title")
+        if matched_goal is not None:
+            current_mins = int(matched_goal.get("weekly_target_minutes") or 120)
+            explicit_h = re.search(r"(\d+(?:[.,]\d+)?)\s*(?:h|heures?)", lowered)
+            if explicit_h:
+                next_mins = max(30, min(1200, int(round(float(explicit_h.group(1).replace(",", ".")) * 60))))
+            elif any(w in lowered for w in ("réduis", "reduis", "moins de temps")):
+                next_mins = max(30, current_mins - 60)
+            else:
+                next_mins = min(1200, current_mins + 60)
+            proposals.append(
+                RawProposalCandidate(
+                    action_type=AiActionType.update_personal_goal.value,
+                    title=f"Ajuster le volume hebdo de « {matched_goal['title']} » ({next_mins} min/sem.)",
+                    explanation="Met à jour l'objectif existant sans créer de doublon.",
+                    payload={
+                        "goal_id": matched_goal["id"],
+                        "weekly_target_minutes": next_mins,
+                    },
+                )
+            )
+            lines.append(
+                f"J'ai retrouvé votre objectif **{matched_goal['title']}** et préparé l'ajustement à **{next_mins} min/semaine**."
+            )
+            return ProviderResult(
+                reply="\n\n".join(lines),
+                proposals=proposals,
+                is_estimate=context.is_partial_data,
+                missing_data=context.missing_data,
+                provider_name="local",
+                model_name=model_name,
+            )
+
+    # 3. Continuer un parcours existant (tout en apprenant éventuellement un nouveau sujet) sans doublon
+    if any(w in lowered for w in ("continuer", "continuant", "reprendre", "poursuivre")) and "suivi" not in lowered:
+        matched_path = _match_by_name_or_tokens(user_message, learning_paths, key="title")
+        matched_goal = _match_by_name_or_tokens(user_message, personal_goals, key="title")
+        learn_m = re.search(
+            r"(?:apprendre|débuter|maîtriser)\s+(?:le\s+|la\s+|l['’])?([A-Za-zÀ-ÿ0-9_+#.-]{2,40})",
+            user_message,
+            re.IGNORECASE,
+        )
+        new_topic = learn_m.group(1).strip(" .,?!") if learn_m else None
+        existing_label = (
+            (matched_path or {}).get("title") or (matched_goal or {}).get("title") or ""
+        )
+        already_same = bool(new_topic and existing_label and new_topic.lower() in existing_label.lower())
+        if matched_path or matched_goal:
+            steps: list[dict[str, Any]] = []
+            if matched_path:
+                steps.append(
+                    {
+                        "action_type": AiActionType.update_learning_path.value,
+                        "payload": {
+                            "path_id": matched_path["id"],
+                            "status": "active",
+                            "goal": matched_path.get("goal") or f"Poursuivre et approfondir {matched_path['title']}",
+                        },
+                    }
+                )
+            elif matched_goal:
+                steps.append(
+                    {
+                        "action_type": AiActionType.update_personal_goal.value,
+                        "payload": {
+                            "goal_id": matched_goal["id"],
+                            "status": "active",
+                        },
+                    }
+                )
+            if new_topic and not already_same:
+                existing_goal_new = next(
+                    (g for g in personal_goals if new_topic.lower() in g["title"].lower()),
+                    None,
+                )
+                if existing_goal_new is None:
+                    steps.append(
+                        {
+                            "action_type": AiActionType.create_personal_goal.value,
+                            "payload": {
+                                "title": new_topic,
+                                "category": "learning_goal",
+                                "goal": f"Apprendre et pratiquer {new_topic}",
+                                "current_level": 0,
+                                "target_level": 3,
+                                "priority": "high",
+                                "weekly_target_minutes": 180,
+                                "next_action": f"Démarrer les fondamentaux de {new_topic}",
+                                "create_linked_entities": True,
+                            },
+                        }
+                    )
+            if len(steps) == 1:
+                only_step = steps[0]
+                proposals.append(
+                    RawProposalCandidate(
+                        action_type=only_step["action_type"],
+                        title=f"Poursuivre « {existing_label} » sans doublon",
+                        explanation="Réutilise et maintient actif votre parcours existant.",
+                        payload=only_step["payload"],
+                    )
+                )
+                lines.append(
+                    f"J'ai retrouvé votre suivi existant **{existing_label}** : je propose de le mettre à jour sans créer de doublon."
+                )
+            elif len(steps) > 1:
+                proposals.append(
+                    RawProposalCandidate(
+                        action_type=AiActionType.batch_actions.value,
+                        title=f"Apprendre « {new_topic} » tout en continuant « {existing_label} »",
+                        explanation="Met à jour votre parcours existant sans doublon et crée le nouvel objectif demandé.",
+                        payload={
+                            "summary": f"Continuer {existing_label} et lancer {new_topic}",
+                            "steps": steps,
+                            "compensate_on_failure": True,
+                        },
+                    )
+                )
+                lines.append(
+                    f"J'ai retrouvé votre parcours existant **{existing_label}** (mis à jour sans doublon) "
+                    f"et préparé l'ajout de votre nouvel objectif **{new_topic}**."
+                )
+            if proposals:
+                return ProviderResult(
+                    reply="\n\n".join(lines),
+                    proposals=proposals,
+                    is_estimate=context.is_partial_data,
+                    missing_data=context.missing_data,
+                    provider_name="local",
+                    model_name=model_name,
+                )
+
+    # 4. Création d'une compétence (rattachée au bon objectif / parcours)
+    if any(
+        w in lowered
+        for w in (
+            "ajoute une compétence",
+            "ajouter une compétence",
+            "nouvelle compétence",
+            "crée une compétence",
+            "créer une compétence",
+        )
+    ):
+        skill_name = _extract_clean_entity_name(
+            user_message,
+            (
+                r"compétence\s+(?:liée\s+(?:à\s+(?:la\s+maîtrise\s+(?:de\s+|des\s+|d['’])?)?|aux?\s+)|sur\s+|en\s+|pour\s+)([^\n\.]{2,100})",
+                r"compétence\s+([^\n\.]{2,100})",
+            ),
+            "Nouvelle compétence",
+            max_len=120,
+        )
+        matched_goal = _match_by_name_or_tokens(user_message + " " + skill_name, personal_goals, key="title")
+        matched_path = _match_by_name_or_tokens(user_message + " " + skill_name, learning_paths, key="title")
+        skill_payload: dict[str, Any] = {
+            "name": skill_name,
+            "domain": (matched_goal or {}).get("title") or "Développement",
+            "description": f"Compétence ajoutée depuis la conversation : {skill_name}.",
+            "target_level": 3,
+        }
+        if matched_goal:
+            skill_payload["goal_id"] = matched_goal["id"]
+        if matched_path:
+            skill_payload["learning_path_id"] = matched_path["id"]
+        proposals.append(
+            RawProposalCandidate(
+                action_type=AiActionType.create_skill.value,
+                title=f"Ajouter la compétence « {skill_name} »",
+                explanation="Crée la compétence au niveau initial 0 et la rattache à votre objectif existant.",
+                payload=skill_payload,
+            )
+        )
+        link_note = f" rattachée à **{matched_goal['title']}**" if matched_goal else ""
+        lines.append(
+            f"J'ai préparé l'ajout de la compétence **{skill_name}** (niveau initial 0 verrouillé){link_note}."
+        )
+        return ProviderResult(
+            reply="\n\n".join(lines),
+            proposals=proposals,
+            is_estimate=context.is_partial_data,
+            missing_data=context.missing_data,
+            provider_name="local",
+            model_name=model_name,
+        )
+
+    # 5. Création directe d'un projet concret avec objectif et prochaine action
+    if any(
+        w in lowered
+        for w in (
+            "crée un projet",
+            "créer un projet",
+            "crée-moi un projet",
+            "cree-moi un projet",
+            "crée moi un projet",
+            "fais-moi un projet",
+            "nouveau projet",
+            "ajoute un projet",
+            "ajouter un projet",
+        )
+    ):
+        matched_goal = _match_by_name_or_tokens(user_message, personal_goals, key="title")
+        fallback_proj_name = (
+            f"Projet pratique : {matched_goal['title']}"
+            if matched_goal
+            else "Projet d'application pratique"
+        )
+        proj_name = _extract_clean_entity_name(
+            user_message,
+            (
+                r"projet\s+(?:pour\s+(?:pratiquer|mettre\s+en\s+pratique)\s+|pour\s+|sur\s+|de\s+|intitulé\s+|nommé\s+)([^\n\.]{2,110})",
+            ),
+            fallback_proj_name,
+            max_len=140,
+        )
+        if proj_name.lower().startswith("mettre en pratique"):
+            proj_name = (
+                f"Application pratique : {matched_goal['title']}"
+                if matched_goal
+                else "Projet de mise en pratique"
+            )
+        elif matched_goal and proj_name.strip().lower() == matched_goal["title"].strip().lower():
+            proj_name = f"Projet pratique : {matched_goal['title']}"
+        active_projs_cnt = sum(1 for p in projects if p.get("status") == "active")
+        proj_status = "planned" if active_projs_cnt >= 3 else "active"
+        proj_payload: dict[str, Any] = {
+            "name": proj_name,
+            "category": "project",
+            "goal": f"Mettre en pratique concrètement {matched_goal['title'] if matched_goal else proj_name}",
+            "status": proj_status,
+            "priority": "normal",
+            "weekly_target_minutes": 180,
+            "next_action": f"Initialiser le dépôt et la structure minimale pour {proj_name}",
+        }
+        if matched_goal:
+            proj_payload["goal_id"] = matched_goal["id"]
+        proposals.append(
+            RawProposalCandidate(
+                action_type=AiActionType.create_project.value,
+                title=f"Créer le projet « {proj_name} »",
+                explanation="Crée le projet avec son objectif et sa prochaine action concrète.",
+                payload=proj_payload,
+            )
+        )
+        lines.append(
+            f"J'ai préparé la création du projet **{proj_name}** avec son objectif et sa prochaine action concrète."
+        )
+        return ProviderResult(
+            reply="\n\n".join(lines),
+            proposals=proposals,
+            is_estimate=context.is_partial_data,
+            missing_data=context.missing_data,
+            provider_name="local",
+            model_name=model_name,
+        )
+
+    # 5b. Modification / changement de priorité d'une tâche existante
+    if any(
+        w in lowered
+        for w in (
+            "passe la tâche",
+            "passer la tâche",
+            "modifie la tâche",
+            "modifier la tâche",
+            "mets la tâche",
+            "mettre la tâche",
+            "change la priorité",
+            "changer la priorité",
+            "priorité de la tâche",
+        )
+    ) and active_tasks:
+        matched_task = _match_by_name_or_tokens(user_message, active_tasks, key="title") or active_tasks[0]
+        upd_payload: dict[str, Any] = {"task_id": matched_task["id"]}
+        if "critique" in lowered or "critical" in lowered:
+            upd_payload["priority"] = "critical"
+        elif any(k in lowered for k in ("haute", "haut", "urgent", "prioritaire")):
+            upd_payload["priority"] = "high"
+        elif "normale" in lowered:
+            upd_payload["priority"] = "normal"
+        elif any(k in lowered for k in ("basse", "faible")):
+            upd_payload["priority"] = "low"
+        if any(k in lowered for k in ("termine", "terminée", "fini")):
+            upd_payload["status"] = "done"
+        elif "en cours" in lowered:
+            upd_payload["status"] = "in_progress"
+        elif "parking" in lowered:
+            upd_payload["status"] = "parked"
+        if len(upd_payload) > 1:
+            proposals.append(
+                RawProposalCandidate(
+                    action_type=AiActionType.update_task.value,
+                    title=f"Mettre à jour « {matched_task['title']} »",
+                    explanation="Met à jour la tâche existante sans créer de doublon.",
+                    payload=upd_payload,
+                )
+            )
+            lines.append(
+                f"J'ai préparé la mise à jour de votre tâche **{matched_task['title']}**."
+            )
+            return ProviderResult(
+                reply="\n\n".join(lines),
+                proposals=proposals,
+                is_estimate=context.is_partial_data,
+                missing_data=context.missing_data,
+                provider_name="local",
+                model_name=model_name,
+            )
+
+    # 6. Réorganisation des tâches non terminées / journée en retard
+    if any(
+        w in lowered
+        for w in (
+            "pas terminé mes tâches",
+            "pas fini mes tâches",
+            "réorganise ma journée",
+            "réorganiser ma journée",
+            "réorganise mon planning",
+        )
+    ):
+        steps = []
+        target_tasks = [t for t in active_tasks if t.get("is_overdue")] or active_tasks[:2]
+        today_windows = ((context.availability or {}).get("today") or {}).get("recommended_study_windows") or []
+        chosen_slot = today_windows[0] if today_windows else (weekly_slots[0] if weekly_slots else None)
+        ref_due = chosen_slot["ends_at"] if chosen_slot else (datetime.now(timezone.utc) + timedelta(hours=8)).isoformat()
+        for t in target_tasks[:2]:
+            steps.append(
+                {
+                    "action_type": AiActionType.update_task.value,
+                    "payload": {
+                        "task_id": t["id"],
+                        "due_at": ref_due,
+                        "priority": "high",
+                    },
+                }
+            )
+        if chosen_slot:
+            steps.append(
+                {
+                    "action_type": AiActionType.create_schedule_event.value,
+                    "payload": {
+                        "title": f"Rattrapage : {target_tasks[0]['title']}" if target_tasks else "Session de réorganisation du jour",
+                        "type": "learning",
+                        "starts_at": chosen_slot["starts_at"],
+                        "ends_at": chosen_slot["ends_at"],
+                        "notes": "Réorganisation proposée par le Copilote IA en dehors des cours.",
+                    },
+                }
+            )
+        if steps:
+            proposals.append(
+                RawProposalCandidate(
+                    action_type=AiActionType.batch_actions.value,
+                    title="Réorganiser la journée et reporter les tâches restantes",
+                    explanation="Met à jour vos échéances et bloque un créneau libre hors cours universitaires.",
+                    payload={"summary": "Réorganisation de journée", "steps": steps, "compensate_on_failure": True},
+                )
+            )
+            lines.append(
+                f"J'ai préparé la réorganisation de votre journée ({len(target_tasks[:2])} tâche(s) replacée(s) et créneau libre vérifié)."
+            )
+            return ProviderResult(
+                reply="\n\n".join(lines),
+                proposals=proposals,
+                is_estimate=context.is_partial_data,
+                missing_data=context.missing_data,
+                provider_name="local",
+                model_name=model_name,
+            )
+
+    # 6b. Déplacement / report d'une séance existante dans l'agenda
+    if any(
+        w in lowered
+        for w in (
+            "déplace ma séance",
+            "deplace ma seance",
+            "déplacer ma séance",
+            "décale ma séance",
+            "decale ma seance",
+            "déplace le créneau",
+            "décale le créneau",
+            "reprogramme ma séance",
+        )
+    ):
+        sched_events = list(context.schedule_events or [])
+        movable = [ev for ev in sched_events if not ev.get("is_university_course")]
+        candidates = (
+            [ev for ev in movable if ev.get("is_tomorrow")]
+            if "demain" in lowered
+            else []
+        ) or [ev for ev in movable if not ev.get("is_past")] or movable
+        if candidates:
+            target_ev = candidates[0]
+            try:
+                old_s = datetime.fromisoformat(str(target_ev["starts_at"]).replace("Z", "+00:00"))
+                old_e = datetime.fromisoformat(str(target_ev["ends_at"]).replace("Z", "+00:00"))
+            except ValueError:
+                old_s = datetime.now(timezone.utc) + timedelta(days=1)
+                old_e = old_s + timedelta(hours=1)
+            dur_td = max(timedelta(minutes=30), old_e - old_s)
+
+            # Choisir un autre créneau disponible sans chevauchement
+            new_s: datetime | None = None
+            new_e: datetime | None = None
+            for slot in weekly_slots:
+                try:
+                    slot_s = datetime.fromisoformat(str(slot["starts_at"]).replace("Z", "+00:00"))
+                    slot_e = datetime.fromisoformat(str(slot["ends_at"]).replace("Z", "+00:00"))
+                except ValueError:
+                    continue
+                if abs((slot_s - old_s).total_seconds()) < 1800:
+                    continue
+                if slot_e - slot_s >= dur_td:
+                    new_s = slot_s
+                    new_e = slot_s + dur_td
+                    break
+            if new_s is None or new_e is None:
+                new_s = old_s + timedelta(hours=2)
+                new_e = new_s + dur_td
+
+            proposals.append(
+                RawProposalCandidate(
+                    action_type=AiActionType.update_schedule_event.value,
+                    title=f"Déplacer « {target_ev['title']} »",
+                    explanation="Déplace la séance sur un autre créneau libre tout en préservant vos cours universitaires.",
+                    payload={
+                        "event_id": target_ev["id"],
+                        "starts_at": new_s.isoformat(),
+                        "ends_at": new_e.isoformat(),
+                        "reason": "Déplacement demandé en conversation.",
+                    },
+                )
+            )
+            lines.append(
+                f"J'ai préparé le déplacement de votre séance **{target_ev['title']}** vers un nouveau créneau sans conflit."
+            )
+            return ProviderResult(
+                reply="\n\n".join(lines),
+                proposals=proposals,
+                is_estimate=context.is_partial_data,
+                missing_data=context.missing_data,
+                provider_name="local",
+                model_name=model_name,
+            )
+
+    # 7. Planification de N séances cette semaine (respectant disponibilités + cours + volume hebdo)
+    multi_session_m = re.search(
+        r"(?:programme|planifie|organise|prévois|ajoute)\s+(?:[2-7]|deux|trois|quatre|cinq|six|plusieurs|des)\s+(?:séances|sessions|créneaux)\b",
+        lowered,
+    )
+    if multi_session_m or re.search(
+        r"\b(?:deux|trois|quatre|cinq|six|[2-7])\s+(?:séances|sessions|créneaux)\s+(?:cette\s+semaine|sur\s+la\s+semaine)\b",
+        lowered,
+    ):
+        count = _extract_count_word(lowered, default=3)
+        weekly_budget_min = avail_prefs.get("max_weekly_study_minutes")
+        existing_personal_min = int((context.strategic_analysis or {}).get("weekly_personal_minutes", 0))
+        # Sélectionner des créneaux distincts par jour en priorité dans weekly_candidate_slots
+        selected_slots: list[dict[str, Any]] = []
+        used_dates: set[str] = set()
+        accumulated_min = existing_personal_min
+        for slot in weekly_slots:
+            if len(selected_slots) >= count:
+                break
+            if slot["local_date"] in used_dates:
+                continue
+            if weekly_budget_min is not None and (accumulated_min + int(slot["duration_minutes"])) > int(weekly_budget_min):
+                continue
+            selected_slots.append(slot)
+            used_dates.add(slot["local_date"])
+            accumulated_min += int(slot["duration_minutes"])
+        for slot in weekly_slots:
+            if len(selected_slots) >= count:
+                break
+            if slot in selected_slots:
+                continue
+            if weekly_budget_min is not None and (accumulated_min + int(slot["duration_minutes"])) > int(weekly_budget_min):
+                continue
+            selected_slots.append(slot)
+            accumulated_min += int(slot["duration_minutes"])
+
+        if selected_slots:
+            primary_focus = (
+                (personal_goals[0]["title"] if personal_goals else None)
+                or context.profile.get("active_priority_title")
+                or (projects[0]["name"] if projects else "Travail personnel")
+            )
+            steps = [
+                {
+                    "action_type": AiActionType.create_schedule_event.value,
+                    "payload": {
+                        "title": f"Séance {idx + 1} : {primary_focus}",
+                        "type": "learning",
+                        "starts_at": slot["starts_at"],
+                        "ends_at": slot["ends_at"],
+                        "notes": f"Planifié selon vos disponibilités ({slot['day_label']} {slot['local_start_time']} à {slot['local_end_time']}).",
+                    },
+                }
+                for idx, slot in enumerate(selected_slots)
+            ]
+            if len(steps) == 1:
+                proposals.append(
+                    RawProposalCandidate(
+                        action_type=AiActionType.create_schedule_event.value,
+                        title=f"Planifier 1 séance ({primary_focus})",
+                        explanation="Créneau sans conflit conforme à vos disponibilités.",
+                        payload=steps[0]["payload"],
+                    )
+                )
+            else:
+                proposals.append(
+                    RawProposalCandidate(
+                        action_type=AiActionType.batch_actions.value,
+                        title=f"Programmer {len(steps)} séances cette semaine ({primary_focus})",
+                        explanation="Respecte vos cours universitaires, jours exclus et contraintes mémorisées.",
+                        payload={
+                            "summary": f"{len(steps)} séances hebdomadaires pour {primary_focus}",
+                            "steps": steps,
+                            "compensate_on_failure": True,
+                        },
+                    )
+                )
+            slot_desc = ", ".join(
+                f"{s['day_label']} {s['local_start_time']} à {s['local_end_time']}" for s in selected_slots
+            )
+            budget_note = (
+                f" (budget hebdo {avail_prefs.get('weekly_study_hours')}h respecté)"
+                if avail_prefs.get("weekly_study_hours") is not None
+                else ""
+            )
+            course_entries: list[str] = []
+            for c in (context.university_courses or [])[:3]:
+                title_str = str(c.get("title", "")).strip()
+                if not title_str:
+                    continue
+                st = str(c.get("local_start_time") or "").strip()
+                et = str(c.get("local_end_time") or "").strip()
+                course_entries.append(f"{title_str} ({st} à {et})" if st and et else title_str)
+            course_note = (
+                f" (cours respectés : {', '.join(course_entries)})" if course_entries else ""
+            )
+            lines.append(
+                f"J'ai sélectionné **{len(selected_slots)} séance(s)** disponibles{budget_note} sans chevaucher vos cours{course_note} : {slot_desc}."
+            )
+            return ProviderResult(
+                reply="\n\n".join(lines),
+                proposals=proposals,
+                is_estimate=context.is_partial_data,
+                missing_data=context.missing_data,
+                provider_name="local",
+                model_name=model_name,
+            )
+
+    # 7b. Génération ou recalcul du programme d'apprentissage intelligent multi-sources
+    if any(
+        p in lowered
+        for p in (
+            "programme d'apprentissage",
+            "programme d’apprentissage",
+            "programme d apprentissage",
+            "emploi du temps d'apprentissage",
+            "emploi du temps d’apprentissage",
+            "génère mon programme",
+            "genere mon programme",
+            "crée-moi un programme",
+            "cree-moi un programme",
+            "programme mes séances",
+            "planifie mes séances",
+            "organise mes séances",
+            "prépare mes révisions",
+            "prepare mes revisions",
+            "préparer mes révisions",
+            "révisions pour l'examen",
+            "révisions pour l’examen",
+            "organise mes révisions",
+            "organise mes revisions",
+            "recalcule mon programme",
+            "allège mon programme",
+            "allege mon programme",
+        )
+    ):
+        plan_payload: dict[str, Any] = {
+            "horizon_days": 7,
+            "include_potential_slots": True,
+            "apply_immediately": True,
+            "replace_future_planned": True,
+        }
+        if any(k in lowered for k in ("recalcule", "allège", "allege")):
+            plan_payload["instruction"] = user_message.strip()[:450]
+
+        exam_m = re.search(
+            r"(?:examen|partiel|contrôle)\s+(?:de|d['’]|en|sur)?\s*([A-Za-zÀ-ÿ0-9_+#.-]{2,40})",
+            user_message,
+            re.IGNORECASE,
+        )
+        if exam_m:
+            ex_subj = exam_m.group(1).strip()
+            days_ahead = 7 if "semaine prochaine" in lowered else 3
+            exam_dt = (datetime.now(timezone.utc) + timedelta(days=days_ahead)).replace(
+                hour=9, minute=0, second=0, microsecond=0
+            )
+            plan_payload["exam_title"] = f"Examen {ex_subj}"
+            plan_payload["exam_at"] = exam_dt.isoformat()
+            plan_payload["focus_subject"] = ex_subj
+        else:
+            focus_m = re.search(
+                r"(?:priorité\s+(?:sur|à)|focus\s+sur|centré\s+sur)\s+([A-Za-zÀ-ÿ0-9_+#.-]{2,40})",
+                user_message,
+                re.IGNORECASE,
+            )
+            if focus_m:
+                plan_payload["focus_subject"] = focus_m.group(1).strip()
+
+        wh_m = re.search(r"(\d+(?:[.,]\d+)?)\s*(?:h|heures?)\s*(?:par\s+semaine|/sem|hebdo)", lowered)
+        if wh_m:
+            plan_payload["weekly_hours_override"] = max(
+                1.0, min(60.0, float(wh_m.group(1).replace(",", ".")))
+            )
+
+        proposals.append(
+            RawProposalCandidate(
+                action_type=AiActionType.generate_learning_plan.value,
+                title="Générer et appliquer votre programme d'apprentissage personnalisé",
+                explanation=(
+                    "Croise vos cours fixes, indisponibilités personnelles, objectifs, parcours, "
+                    "tâches en retard et historique pour planifier sans conflit ni surcharge."
+                ),
+                payload=plan_payload,
+            )
+        )
+        lines.append(
+            "J'ai préparé votre **programme d'apprentissage intelligent** en croisant votre emploi du temps fixe, "
+            "vos règles de disponibilité, vos objectifs actifs, vos tâches et votre historique de travail. "
+            "Validez ci-dessous pour l'appliquer au calendrier."
+        )
+        return ProviderResult(
+            reply="\n\n".join(lines),
+            proposals=proposals,
+            is_estimate=context.is_partial_data,
+            missing_data=context.missing_data,
+            provider_name="local",
+            model_name=model_name,
+        )
+
+    # 8. Consultation / vérification des éléments existants (même créés manuellement)
+    if any(
+        w in lowered
+        for w in (
+            "quels sont mes",
+            "quelles sont mes",
+            "retrouve",
+            "liste mes",
+            "résume ma mémoire",
+            "ce que tu sais sur moi",
+            "tu vois",
+            "vois-tu",
+            "trouves-tu",
+        )
+    ):
+        parts: list[str] = ["### Éléments actuels dans votre espace StudyOS"]
+        if personal_goals:
+            parts.append("- **Objectifs** : " + ", ".join(f"{g['title']} ({g['status']})" for g in personal_goals[:6]))
+        if projects:
+            parts.append("- **Projets** : " + ", ".join(f"{p['name']} ({p['status']})" for p in projects[:6]))
+        if active_tasks:
+            parts.append("- **Tâches actives** : " + ", ".join(f"{t['title']} ({t['priority']})" for t in active_tasks[:8]))
+        if skills:
+            parts.append("- **Compétences** : " + ", ".join(f"{s['name']} ({s['current_level']}/5)" for s in skills[:8]))
+        if learning_paths:
+            parts.append("- **Parcours** : " + ", ".join(f"{lp['title']} ({lp['status']})" for lp in learning_paths[:6]))
+        if context.courses:
+            parts.append("- **Cours** : " + ", ".join(f"{c['title']} ({c['status']})" for c in context.courses[:5]))
+        if memory.get("weekly_study_hours") is not None:
+            parts.append(f"- **Mémoire personnelle** : {memory['weekly_study_hours']}h/semaine disponibles.")
+        if len(parts) == 1:
+            parts.append("Aucun élément enregistré pour le moment dans ces rubriques.")
+        return ProviderResult(
+            reply="\n".join(parts),
+            proposals=[],
+            is_estimate=context.is_partial_data,
+            missing_data=context.missing_data,
+            provider_name="local",
+            model_name=model_name,
+        )
+
+    return None
 
 
 class LocalRuleBasedAIProvider:
@@ -774,6 +1826,14 @@ class LocalRuleBasedAIProvider:
         prompt_manager: PromptManager,
     ) -> ProviderResult:
         _ = prompt_manager
+        ai_first_result = _handle_ai_first_intents(
+            user_message=user_message,
+            context=context,
+            model_name=self._model_name,
+        )
+        if ai_first_result is not None:
+            return ai_first_result
+
         strategic_result = _handle_conversational_strategic_planning(
             user_message=user_message,
             history=history,
@@ -896,6 +1956,36 @@ class LocalRuleBasedAIProvider:
                     "Vous n’avez aucune tâche active à placer au parking pour le moment."
                 )
 
+        # 1b. Intention : mettre un projet en pause (pause_project)
+        if any(
+            w in lowered
+            for w in (
+                "pause le projet",
+                "mettre en pause",
+                "suspendre le projet",
+                "projet en pause",
+            )
+        ):
+            active_projs = [p for p in projects if p.get("status") == "active"]
+            if active_projs:
+                target_proj = active_projs[-1]
+                proposals.append(
+                    RawProposalCandidate(
+                        action_type=AiActionType.pause_project.value,
+                        title=f"Mettre en pause le projet « {target_proj['name']} »",
+                        explanation="Libère un emplacement de projet actif (maximum 3 projets actifs simultanés).",
+                        payload={
+                            "project_id": target_proj["id"],
+                            "reason": "Réduction de la dispersion sur les projets actifs.",
+                        },
+                    )
+                )
+                lines.append(
+                    f"Je vous propose de mettre le projet **« {target_proj['name']} »** en pause après votre validation."
+                )
+            else:
+                lines.append("Vous n’avez aucun projet actif à mettre en pause.")
+
         # 2. Intention : proposer la création d'une tâche
         if any(
             w in lowered
@@ -907,21 +1997,60 @@ class LocalRuleBasedAIProvider:
                 else "Session d’exercices pratiques"
             )
             extracted_title = _extract_quoted_or_after_colon(user_message, default_title)
+            if extracted_title == default_title:
+                t_m = re.search(
+                    r"tâche\s+(?:liée\s+au\s+projet\s+[^:,\.]+(?:\s*[:\-]\s*|\s+pour\s+)|pour\s+)(.+)$",
+                    user_message,
+                    re.IGNORECASE,
+                )
+                if t_m and len(t_m.group(1).strip()) >= 2:
+                    extracted_title = t_m.group(1).strip().rstrip(".")[:140]
             high_prio = "high" if any(w in lowered for w in ("urgent", "haute", "prioritaire")) else "normal"
+            matched_proj = _match_by_name_or_tokens(user_message, projects, key="name")
+            if (
+                matched_proj is None
+                and projects
+                and any(
+                    w in lowered
+                    for w in (
+                        "ce projet",
+                        "du projet",
+                        "au projet",
+                        "à mon projet",
+                        "a mon projet",
+                        "sur mon projet",
+                        "mon projet",
+                        "lié au projet",
+                        "liée à ce projet",
+                    )
+                )
+            ):
+                active_projs = [p for p in projects if p.get("status") == "active"]
+                matched_proj = active_projs[0] if active_projs else projects[0]
+            if matched_proj is not None and extracted_title == default_title:
+                extracted_title = f"Prochaine étape : {matched_proj['name']}"[:140]
+            task_payload: dict[str, Any] = {
+                "title": extracted_title,
+                "description": "Proposée par le Copilote IA à partir de votre demande.",
+                "priority": high_prio,
+            }
+            if matched_proj is not None:
+                task_payload["project_id"] = matched_proj["id"]
             proposals.append(
                 RawProposalCandidate(
                     action_type=AiActionType.create_task.value,
                     title=f"Créer la tâche « {extracted_title} »",
                     explanation="Tâche structurée prête à être ajoutée après votre validation.",
-                    payload={
-                        "title": extracted_title,
-                        "description": "Proposée par le Copilote IA à partir de votre demande.",
-                        "priority": high_prio,
-                    },
+                    payload=task_payload,
                 )
             )
+            proj_note = (
+                f" et rattachée au projet **{matched_proj['name']}**"
+                if matched_proj is not None
+                else ""
+            )
             lines.append(
-                f"J’ai préparé une proposition de tâche **« {extracted_title} »** (priorité `{high_prio}`). "
+                f"J’ai préparé une proposition de tâche **« {extracted_title} »** (priorité `{high_prio}`){proj_note}. "
                 "Vous pouvez ajuster ses paramètres ou la valider ci-dessous."
             )
 
@@ -999,12 +2128,9 @@ class LocalRuleBasedAIProvider:
 
             slot_title = _extract_quoted_or_after_colon(user_message, default_title)
 
+            chosen_win: dict[str, Any] | None = None
             if rec_windows:
                 chosen_win = rec_windows[0]
-                slot_start_iso = chosen_win["starts_at"]
-                slot_end_iso = chosen_win["ends_at"]
-                local_range = f"{chosen_win['local_start_time']} à {chosen_win['local_end_time']}"
-
                 win_labels = [
                     f"`{w['local_start_time']} à {w['local_end_time']}` ({w['duration_minutes']} min)"
                     for w in rec_windows
@@ -1014,18 +2140,25 @@ class LocalRuleBasedAIProvider:
                     + ", ".join(win_labels)
                 )
             else:
-                # Fallback hors plage si aucune fenêtre standard n'est disponible
-                now_utc = datetime.now(timezone.utc)
-                next_hour = (now_utc + timedelta(hours=2)).replace(minute=0, second=0, microsecond=0)
-                end_hour = next_hour + timedelta(hours=1)
-                slot_start_iso = next_hour.isoformat()
-                slot_end_iso = end_hour.isoformat()
-                local_range = "1h"
+                weekly_fallback = (context.availability or {}).get("weekly_candidate_slots") or []
+                if weekly_fallback:
+                    chosen_win = weekly_fallback[0]
+                    lines.append(
+                        f"- **Aucun créneau libre sur {day_label}** : report proposé sur le prochain créneau disponible "
+                        f"**{chosen_win['day_label']} ({chosen_win['local_date']}) de {chosen_win['local_start_time']} à {chosen_win['local_end_time']}**."
+                    )
+                else:
+                    lines.append(
+                        "- **Aucune disponibilité libre détectée** sur la période sans conflit avec vos cours ou événements existants."
+                    )
 
-            if any(
+            if chosen_win is not None and any(
                 w in lowered
                 for w in ("créneau", "planifie", "planifier", "programme", "demain", "lendemain", "organise", "révision", "réviser")
             ):
+                slot_start_iso = chosen_win["starts_at"]
+                slot_end_iso = chosen_win["ends_at"]
+                local_range = f"{chosen_win['local_start_time']} à {chosen_win['local_end_time']}"
                 proposals.append(
                     RawProposalCandidate(
                         action_type=AiActionType.create_schedule_event.value,
@@ -1372,28 +2505,17 @@ def normalize_provider_base_url(provider: str, base_url: str | None = None) -> s
     return cleaned.rstrip("/")
 
 
-def _validate_outbound_base_url(url: str) -> str:
-    parsed = urlparse(url)
-    if parsed.username or parsed.password:
-        raise AppError(
-            400,
-            "VALIDATION_ERROR",
-            "L’URL du fournisseur IA ne doit pas contenir d’identifiants intégrés.",
-        )
-    scheme = (parsed.scheme or "").lower()
-    hostname = (parsed.hostname or "").lower()
-    if not hostname:
-        raise AppError(
-            400,
-            "VALIDATION_ERROR",
-            "L’URL du fournisseur IA doit contenir un nom d’hôte valide.",
-        )
-    if scheme == "https" or (scheme == "http" and hostname in ("localhost", "127.0.0.1")):
-        return url.rstrip("/")
-    raise AppError(
-        400,
-        "VALIDATION_ERROR",
-        "L’URL du fournisseur IA doit utiliser HTTPS (ou http://localhost en local).",
+def _validate_outbound_base_url(
+    url: str,
+    *,
+    settings: Settings | None = None,
+    verify_dns: bool = True,
+) -> str:
+    return validate_outbound_url(
+        url,
+        settings=settings,
+        allow_http_local=True,
+        verify_dns=verify_dns,
     )
 
 
@@ -1433,12 +2555,18 @@ class OpenAICompatibleAIProvider:
         base_url: str = OPENAI_DEFAULT_BASE_URL,
         timeout_seconds: float = 20.0,
         provider_name: str = "openai_compatible",
+        settings: Settings | None = None,
     ) -> None:
         self._api_key = api_key.strip()
         self._provider_name = canonicalize_provider_name(provider_name)
-        self._model_name = (model_name or "gpt-4o-mini").strip() or "gpt-4o-mini"
+        self._model_name = validate_model_identifier(
+            (model_name or "gpt-4o-mini").strip() or "gpt-4o-mini"
+        )
         normalized_url = normalize_provider_base_url(self._provider_name, base_url)
-        self._base_url = _validate_outbound_base_url(normalized_url)
+        self._settings = settings
+        self._base_url = _validate_outbound_base_url(
+            normalized_url, settings=settings, verify_dns=False
+        )
         self._timeout = timeout_seconds
 
     def generate_response(
@@ -1452,30 +2580,40 @@ class OpenAICompatibleAIProvider:
         system_prompt = prompt_manager.build_system_prompt(context)
         messages = [
             {"role": "system", "content": system_prompt},
-            *history[-6:],
+            *history[-12:],
             {"role": "user", "content": user_message},
         ]
         try:
-            with httpx.Client(timeout=self._timeout) as client:
-                response = client.post(
-                    f"{self._base_url}/chat/completions",
-                    headers={
-                        "Authorization": f"Bearer {self._api_key}",
-                        "Content-Type": "application/json",
-                    },
-                    json={
-                        "model": self._model_name,
-                        "messages": messages,
-                        "temperature": 0.2,
-                    },
+            response = safe_http_request(
+                "POST",
+                f"{self._base_url}/chat/completions",
+                settings=self._settings,
+                headers={
+                    "Authorization": f"Bearer {self._api_key}",
+                    "Content-Type": "application/json",
+                },
+                json_body={
+                    "model": self._model_name,
+                    "messages": messages,
+                    "temperature": 0.2,
+                },
+                timeout_seconds=self._timeout,
+                max_bytes=MAX_AI_RESPONSE_BYTES,
+            )
+            response.raise_for_status()
+            data = response.json()
+            choices = data.get("choices") if isinstance(data, dict) else None
+            if not isinstance(choices, list) or not choices:
+                raise AppError(
+                    502,
+                    "AI_PROVIDER_EMPTY_RESPONSE",
+                    "Le fournisseur IA a retourné une réponse vide.",
                 )
-                response.raise_for_status()
-                data = response.json()
-                raw_content = data["choices"][0]["message"]["content"]
-                content = _extract_openai_message_text(raw_content)
-                return _parse_llm_json_output(
-                    content, context, self._provider_name, self._model_name
-                )
+            raw_content = (choices[0].get("message") or {}).get("content")
+            content = _extract_openai_message_text(raw_content)
+            return _parse_llm_json_output(
+                content, context, self._provider_name, self._model_name
+            )
         except httpx.HTTPStatusError as exc:
             status_code = exc.response.status_code if exc.response is not None else 502
             if status_code in (401, 403):
@@ -1515,6 +2653,7 @@ class RiverAIProvider(OpenAICompatibleAIProvider):
         model_name: str = "gpt-4o-mini",
         base_url: str = RIVER_DEFAULT_BASE_URL,
         timeout_seconds: float = 20.0,
+        settings: Settings | None = None,
     ) -> None:
         super().__init__(
             api_key=api_key,
@@ -1522,6 +2661,7 @@ class RiverAIProvider(OpenAICompatibleAIProvider):
             base_url=normalize_provider_base_url("river", base_url),
             timeout_seconds=timeout_seconds,
             provider_name="river",
+            settings=settings,
         )
 
 
@@ -1533,10 +2673,19 @@ class GeminiAIProvider:
         *,
         api_key: str,
         model_name: str,
+        base_url: str = GEMINI_DEFAULT_BASE_URL,
         timeout_seconds: float = 20.0,
+        settings: Settings | None = None,
     ) -> None:
         self._api_key = api_key
-        self._model_name = model_name or "gemini-2.5-flash"
+        self._model_name = validate_model_identifier(
+            (model_name or "gemini-2.5-flash").strip() or "gemini-2.5-flash"
+        )
+        normalized_url = normalize_provider_base_url("gemini", base_url)
+        self._settings = settings
+        self._base_url = _validate_outbound_base_url(
+            normalized_url, settings=settings, verify_dns=False
+        )
         self._timeout = timeout_seconds
 
     def generate_response(
@@ -1547,33 +2696,78 @@ class GeminiAIProvider:
         context: BoundedUserContext,
         prompt_manager: PromptManager,
     ) -> ProviderResult:
-        _ = history
         system_prompt = prompt_manager.build_system_prompt(context)
         url = (
-            f"{GEMINI_DEFAULT_BASE_URL}/models/"
+            f"{self._base_url}/models/"
             f"{self._model_name}:generateContent"
         )
+        contents: list[dict[str, Any]] = []
+        for msg in history[-12:]:
+            msg_text = str(msg.get("content") or "").strip()
+            if not msg_text:
+                continue
+            raw_role = str(msg.get("role") or "user").strip().lower()
+            gemini_role = "model" if raw_role in ("assistant", "model") else "user"
+            contents.append({"role": gemini_role, "parts": [{"text": msg_text}]})
+        contents.append({"role": "user", "parts": [{"text": user_message}]})
+
         try:
-            with httpx.Client(timeout=self._timeout) as client:
-                response = client.post(
-                    url,
-                    headers={
-                        "x-goog-api-key": self._api_key,
-                        "Content-Type": "application/json",
+            response = safe_http_request(
+                "POST",
+                url,
+                settings=self._settings,
+                headers={
+                    "x-goog-api-key": self._api_key,
+                    "Content-Type": "application/json",
+                },
+                json_body={
+                    "systemInstruction": {"parts": [{"text": system_prompt}]},
+                    "contents": contents,
+                    "generationConfig": {
+                        "temperature": 0.2,
+                        "responseMimeType": "application/json",
                     },
-                    json={
-                        "systemInstruction": {"parts": [{"text": system_prompt}]},
-                        "contents": [{"role": "user", "parts": [{"text": user_message}]}],
-                        "generationConfig": {
-                            "temperature": 0.2,
-                            "responseMimeType": "application/json",
-                        },
-                    },
+                },
+                timeout_seconds=self._timeout,
+                max_bytes=MAX_AI_RESPONSE_BYTES,
+            )
+            response.raise_for_status()
+            data = response.json()
+            candidates = data.get("candidates") if isinstance(data, dict) else None
+            if not isinstance(candidates, list) or not candidates:
+                block_reason = (
+                    (data.get("promptFeedback") or {}).get("blockReason")
+                    if isinstance(data, dict)
+                    else None
                 )
-                response.raise_for_status()
-                data = response.json()
-                content = data["candidates"][0]["content"]["parts"][0]["text"]
-                return _parse_llm_json_output(content, context, "gemini", self._model_name)
+                if block_reason:
+                    raise AppError(
+                        502,
+                        "AI_PROVIDER_SAFETY_BLOCKED",
+                        f"La requête a été filtrée par les règles de sécurité Gemini ({block_reason}).",
+                    )
+                raise AppError(
+                    502,
+                    "AI_PROVIDER_EMPTY_RESPONSE",
+                    "Le fournisseur Gemini n'a retourné aucun candidat de réponse.",
+                )
+            first_cand = candidates[0] if isinstance(candidates[0], dict) else {}
+            parts = ((first_cand.get("content") or {}).get("parts")) or []
+            content = str(parts[0].get("text") or "").strip() if parts and isinstance(parts[0], dict) else ""
+            if not content:
+                finish_reason = first_cand.get("finishReason")
+                if finish_reason == "SAFETY":
+                    raise AppError(
+                        502,
+                        "AI_PROVIDER_SAFETY_BLOCKED",
+                        "La réponse Gemini a été bloquée par un filtre de sécurité.",
+                    )
+                raise AppError(
+                    502,
+                    "AI_PROVIDER_EMPTY_RESPONSE",
+                    "Le fournisseur Gemini a retourné un contenu vide.",
+                )
+            return _parse_llm_json_output(content, context, "gemini", self._model_name)
         except httpx.HTTPStatusError as exc:
             status_code = exc.response.status_code if exc.response is not None else 502
             if status_code in (401, 403):
@@ -1593,6 +2787,8 @@ class GeminiAIProvider:
                 "AI_PROVIDER_ERROR",
                 "Le fournisseur Gemini est temporairement indisponible.",
             ) from exc
+        except AppError:
+            raise
         except Exception as exc:
             raise AppError(
                 502,
@@ -1607,6 +2803,7 @@ def fetch_provider_models(
     api_key: str,
     base_url: str | None = None,
     timeout_seconds: float = 15.0,
+    settings: Settings | None = None,
 ) -> tuple[str, list[dict[str, Any]]]:
     """Interroge le fournisseur IA configuré pour récupérer la liste des modèles disponibles."""
     provider_key = canonicalize_provider_name(provider)
@@ -1632,28 +2829,34 @@ def fetch_provider_models(
             "Veuillez saisir une clé API pour récupérer les modèles disponibles.",
         )
 
-    resolved_url = _validate_outbound_base_url(normalize_provider_base_url(provider_key, base_url))
+    resolved_url = _validate_outbound_base_url(
+        normalize_provider_base_url(provider_key, base_url),
+        settings=settings,
+        verify_dns=True,
+    )
 
     try:
-        with httpx.Client(timeout=timeout_seconds) as client:
-            if provider_key == "gemini":
-                response = client.get(
-                    f"{resolved_url}/models",
-                    headers={
-                        "x-goog-api-key": cleaned_key,
-                        "Accept": "application/json",
-                    },
-                )
-            else:
-                response = client.get(
-                    f"{resolved_url}/models",
-                    headers={
-                        "Authorization": f"Bearer {cleaned_key}",
-                        "Accept": "application/json",
-                    },
-                )
-            response.raise_for_status()
-            payload = response.json()
+        headers = (
+            {
+                "x-goog-api-key": cleaned_key,
+                "Accept": "application/json",
+            }
+            if provider_key == "gemini"
+            else {
+                "Authorization": f"Bearer {cleaned_key}",
+                "Accept": "application/json",
+            }
+        )
+        response = safe_http_request(
+            "GET",
+            f"{resolved_url}/models",
+            settings=settings,
+            headers=headers,
+            timeout_seconds=timeout_seconds,
+            max_bytes=MAX_AI_RESPONSE_BYTES,
+        )
+        response.raise_for_status()
+        payload = response.json()
     except httpx.HTTPStatusError as exc:
         status_code = exc.response.status_code if exc.response is not None else 502
         if status_code in (401, 403):
@@ -1672,7 +2875,7 @@ def fetch_provider_models(
         raise AppError(
             502,
             "AI_PROVIDER_ERROR",
-            f"Erreur HTTP {status_code} lors de la récupération des modèles.",
+            "Le fournisseur IA n'a pas retourné une liste de modèles exploitable.",
         ) from exc
     except AppError:
         raise
@@ -1765,6 +2968,7 @@ def build_ai_provider_from_config(
     model_name: str | None = None,
     base_url: str | None = None,
     timeout_seconds: float = 20.0,
+    settings: Settings | None = None,
 ) -> AIProvider:
     provider_key = canonicalize_provider_name(provider)
     cleaned_key = (api_key or "").strip()
@@ -1775,6 +2979,7 @@ def build_ai_provider_from_config(
             model_name=(model_name or "").strip() or "gpt-4o-mini",
             base_url=normalize_provider_base_url("river", base_url),
             timeout_seconds=timeout_seconds,
+            settings=settings,
         )
     if provider_key == "openai_compatible" and cleaned_key:
         return OpenAICompatibleAIProvider(
@@ -1783,12 +2988,15 @@ def build_ai_provider_from_config(
             base_url=normalize_provider_base_url("openai_compatible", base_url),
             timeout_seconds=timeout_seconds,
             provider_name="openai_compatible",
+            settings=settings,
         )
     if provider_key == "gemini" and cleaned_key:
         return GeminiAIProvider(
             api_key=cleaned_key,
             model_name=(model_name or "").strip() or "gemini-2.5-flash",
+            base_url=normalize_provider_base_url("gemini", base_url),
             timeout_seconds=timeout_seconds,
+            settings=settings,
         )
     return LocalRuleBasedAIProvider(model_name=(model_name or "").strip() or "local-coach-v1")
 
@@ -1800,4 +3008,5 @@ def build_ai_provider(settings: Settings) -> AIProvider:
         model_name=settings.ai_model,
         base_url=settings.ai_base_url,
         timeout_seconds=settings.ai_timeout_seconds,
+        settings=settings,
     )

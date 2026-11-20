@@ -31,15 +31,23 @@ describe('Scénarios d’acceptation E2E (CdC §11.3 — Lot 8)', () => {
     window.localStorage.clear();
   });
 
-  it('E2E-04 & E2E-01 : redirige vers /login sans session, connecte en mode local, crée une tâche prioritaire visible sur le dashboard et la termine', async () => {
-    const user = userEvent.setup();
+  it('E2E-04 : redirige vers /login sans session et ne propose aucun mode démo local', () => {
     renderAppAt('/', null);
 
     expect(
       screen.getByRole('heading', { name: 'Connexion' }),
     ).toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: /Continuer en mode local/i }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Se connecter' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Créer un compte' })).toBeInTheDocument();
+  });
 
-    await user.click(screen.getByRole('button', { name: /Continuer en mode local/i }));
+  it('E2E-01 : crée une tâche prioritaire visible sur le dashboard et la termine', async () => {
+    const user = userEvent.setup();
+    renderAppAt('/', DEMO_SESSION);
+
     expect(screen.getByRole('heading', { name: 'Tableau de bord' })).toBeInTheDocument();
 
     const sidebar = screen.getByRole('navigation', { name: 'Navigation principale' });

@@ -5,6 +5,7 @@ import { cn } from '../../lib/cn';
 import { useAuth } from '../../state/AuthContext';
 import { Button } from '../ui/Button';
 import { Icon } from '../ui/Icon';
+import { ScrollArea } from '../ui/ScrollArea';
 import { ThemeToggleButton } from '../ui/ThemeToggle';
 import { NAVIGATION_ITEMS, type NavigationItem } from './navigation';
 
@@ -147,9 +148,11 @@ export function AppShell() {
           <ThemeToggleButton className="h-8 w-8" />
         </div>
 
-        <nav
+        <ScrollArea
+          as="nav"
           aria-label="Navigation principale"
-          className="flex flex-1 flex-col justify-between overflow-y-auto px-3 py-3"
+          className="flex-1"
+          viewportClassName="flex flex-col justify-between px-3 py-3"
         >
           <NavigationList items={principalItems} />
 
@@ -157,7 +160,7 @@ export function AppShell() {
             <NavigationList items={footerItems} />
             <SessionFooter />
           </div>
-        </nav>
+        </ScrollArea>
       </aside>
 
       {/* En-tête mobile sticky */}
@@ -205,9 +208,11 @@ export function AppShell() {
               </button>
             </div>
 
-            <nav
+            <ScrollArea
+              as="nav"
               aria-label="Navigation mobile"
-              className="flex flex-1 flex-col justify-between overflow-y-auto px-3 py-3"
+              className="flex-1"
+              viewportClassName="flex flex-col justify-between px-3 py-3"
             >
               <NavigationList
                 items={principalItems}
@@ -220,7 +225,7 @@ export function AppShell() {
                 />
                 <SessionFooter />
               </div>
-            </nav>
+            </ScrollArea>
           </div>
         </div>
       )}

@@ -5,6 +5,7 @@ from datetime import date, datetime, time, timedelta, timezone
 import hashlib
 import io
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -20,7 +21,14 @@ from PIL import Image
 from pypdf import PdfReader
 import xlrd
 
+from app.core.config import Settings
 from app.core.errors import AppError
+from app.core.ssrf import (
+    MAX_AI_RESPONSE_BYTES,
+    safe_http_request,
+    validate_model_identifier,
+    validate_outbound_url,
+)
 from app.repositories.memory import ScheduleEventRecord
 from app.schemas.common import (
     CourseSessionSubtype,
@@ -797,6 +805,73 @@ def parse_schedule_text(raw_text: str, *, starting_row_index: int = 1) -> list[E
     return results
 
 
+_IGNORED_IMAGE_INFO_KEYS = {
+    "dpi",
+    "gamma",
+    "chromaticity",
+    "srgb",
+    "transparency",
+    "interlace",
+    "aspect",
+    "jfif",
+    "jfif_version",
+    "jfif_unit",
+    "jfif_density",
+    "compression",
+    "software",
+    "icc_profile",
+    "exif",
+    "xmp",
+    "loop",
+    "duration",
+}
+
+
+def _run_tesseract_ocr_on_image(img: Image.Image) -> str:
+    """Exécute Tesseract OCR sur une image via un fichier temporaire compatible Windows."""
+    if not shutil.which("tesseract"):
+        return ""
+    tmp_path: str | None = None
+    try:
+        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp_in:
+            tmp_path = tmp_in.name
+        rgb_img = img.convert("RGB") if img.mode not in ("RGB", "L") else img
+        rgb_img.save(tmp_path, format="PNG")
+        proc = subprocess.run(
+            ["tesseract", tmp_path, "stdout", "-l", "fra+eng"],
+            capture_output=True,
+            text=True,
+            timeout=15,
+            check=False,
+        )
+        if proc.returncode == 0 and proc.stdout.strip():
+            return proc.stdout.strip()
+    except Exception:
+        return ""
+    finally:
+        if tmp_path:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+    return ""
+
+
+def _format_excel_scalar(val: Any) -> str:
+    if isinstance(val, datetime):
+        return val.strftime("%H:%M") if val.year == 1900 else val.strftime("%Y-%m-%d")
+    if isinstance(val, time):
+        return val.strftime("%H:%M")
+    if isinstance(val, float) and 0 < val < 1:
+        total_minutes = round(val * 24 * 60)
+        hours, minutes = divmod(total_minutes, 60)
+        if 0 <= hours < 24:
+            return f"{hours:02d}:{minutes:02d}"
+    if val is None:
+        return ""
+    return str(val).strip()
+
+
 def _extract_from_pdf(content: bytes) -> tuple[str, list[ExtractedCourseRowSchema], list[str]]:
     warnings: list[str] = []
     try:
@@ -818,11 +893,49 @@ def _extract_from_pdf(content: bytes) -> tuple[str, list[ExtractedCourseRowSchem
             continue
 
     full_text = "\n".join(page_texts).strip()
-    courses = parse_schedule_text(full_text)
+    scanned_ocr_used = False
+    if not full_text and shutil.which("tesseract"):
+        ocr_pages: list[str] = []
+        processed_images = 0
+        for page in reader.pages[:10]:
+            if processed_images >= 5:
+                break
+            try:
+                embedded_images = list(getattr(page, "images", []) or [])
+            except Exception:
+                embedded_images = []
+            for img_file in embedded_images:
+                if processed_images >= 5:
+                    break
+                processed_images += 1
+                try:
+                    raw_img = getattr(img_file, "data", None)
+                    if not raw_img:
+                        continue
+                    with Image.open(io.BytesIO(raw_img)) as pdf_img:
+                        ocr_out = _run_tesseract_ocr_on_image(pdf_img)
+                        if ocr_out:
+                            ocr_pages.append(ocr_out)
+                except Exception:
+                    continue
+        if ocr_pages:
+            full_text = "\n".join(ocr_pages).strip()
+            scanned_ocr_used = True
+
+    courses = parse_schedule_text(full_text) if full_text else []
 
     if not full_text:
+        if shutil.which("tesseract"):
+            warnings.append(
+                "Ce PDF semble être un document scanné sans couche texte ni image OCR exploitable. Vérifiez ou complétez les créneaux manuellement."
+            )
+        else:
+            warnings.append(
+                "Ce PDF semble être un document scanné sans couche texte et le moteur OCR local (tesseract) n'est pas installé. Complétez les créneaux manuellement."
+            )
+    elif scanned_ocr_used and not courses:
         warnings.append(
-            "Ce PDF semble être un document scanné sans couche texte sélectionnable. Vérifiez ou complétez les créneaux manuellement."
+            "Le texte OCR extrait des images de ce PDF scanné reste ambigu. Vérifiez ou complétez les créneaux dans le tableau."
         )
     elif not courses:
         warnings.append(
@@ -905,15 +1018,7 @@ def _extract_from_excel(
             for r in range(1, max_r + 1):
                 row_vals: list[str] = []
                 for c in range(1, max_c + 1):
-                    val = sheet.cell(row=r, column=c).value
-                    if isinstance(val, datetime):
-                        row_vals.append(val.strftime("%H:%M") if val.year == 1900 else val.strftime("%Y-%m-%d"))
-                    elif isinstance(val, time):
-                        row_vals.append(val.strftime("%H:%M"))
-                    elif val is None:
-                        row_vals.append("")
-                    else:
-                        row_vals.append(str(val).strip())
+                    row_vals.append(_format_excel_scalar(sheet.cell(row=r, column=c).value))
                 grid.append(row_vals)
 
             # Résolution des cellules fusionnées (propagation de la valeur en haut à gauche)
@@ -925,8 +1030,8 @@ def _extract_from_excel(
                     for c in range(merged_range.min_col, min(merged_range.max_col, max_c) + 1):
                         if r == merged_range.min_row and c == merged_range.min_col:
                             continue
-                        # Propager uniquement sur la colonne Jour (col 1) ou l'en-tête (ligne 1)
-                        if c == 1 or r == 1:
+                        # Propager sur les en-têtes (lignes 1..3) et colonnes Jour/Horaire (colonnes 1..2)
+                        if (c <= 2 or r <= 3) and not grid[r - 1][c - 1]:
                             grid[r - 1][c - 1] = top_val
 
             for row_vals in grid:
@@ -940,12 +1045,48 @@ def _extract_from_excel(
         # Format .xls (BIFF via xlrd ou export tabulaire universitaire)
         if content.startswith(b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"):
             try:
-                book = xlrd.open_workbook(file_contents=content)
+                try:
+                    book = xlrd.open_workbook(file_contents=content, formatting_info=True)
+                except Exception:
+                    book = xlrd.open_workbook(file_contents=content)
                 for sheet in book.sheets():
+                    max_r = min(sheet.nrows, 200)
+                    max_c = min(sheet.ncols, 30)
+                    if max_r == 0 or max_c == 0:
+                        continue
                     grid = []
-                    for r in range(min(sheet.nrows, 200)):
-                        row_vals = [str(sheet.cell_value(r, c)).strip() for c in range(min(sheet.ncols, 30))]
+                    for r in range(max_r):
+                        row_vals = []
+                        for c in range(max_c):
+                            ctype = sheet.cell_type(r, c)
+                            val = sheet.cell_value(r, c)
+                            if ctype == xlrd.XL_CELL_DATE:
+                                try:
+                                    dt_tuple = xlrd.xldate_as_tuple(float(val), book.datemode)
+                                    if dt_tuple[:3] == (0, 0, 0):
+                                        row_vals.append(f"{dt_tuple[3]:02d}:{dt_tuple[4]:02d}")
+                                    else:
+                                        row_vals.append(
+                                            f"{dt_tuple[0]:04d}-{dt_tuple[1]:02d}-{dt_tuple[2]:02d}"
+                                        )
+                                except Exception:
+                                    row_vals.append(_format_excel_scalar(val))
+                            else:
+                                row_vals.append(_format_excel_scalar(val))
                         grid.append(row_vals)
+                    for rlo, rhi, clo, chi in getattr(sheet, "merged_cells", []):
+                        if rlo >= max_r or clo >= max_c:
+                            continue
+                        top_val = grid[rlo][clo]
+                        if not top_val:
+                            continue
+                        for r in range(rlo, min(rhi, max_r)):
+                            for c in range(clo, min(chi, max_c)):
+                                if (r == rlo and c == clo) or grid[r][c]:
+                                    continue
+                                if c < 2 or r < 3:
+                                    grid[r][c] = top_val
+                    for row_vals in grid:
                         if any(row_vals):
                             preview_lines.append(" | ".join(v for v in row_vals if v))
                     sheet_courses = parse_schedule_table_matrix(grid, starting_row_index=next_idx)
@@ -987,7 +1128,9 @@ def _extract_from_image(content: bytes) -> tuple[str, list[ExtractedCourseRowSch
 
     # 1. Métadonnées textuelles embarquées (PNG tEXt/iTXt, Description, Comment, EXIF ImageDescription)
     for key, val in (img.info or {}).items():
-        if isinstance(val, str) and val.strip() and key.lower() not in ("icc_profile", "exif", "xmp"):
+        if str(key).lower() in _IGNORED_IMAGE_INFO_KEYS:
+            continue
+        if isinstance(val, str) and val.strip():
             extracted_chunks.append(val.strip())
         elif isinstance(val, bytes):
             try:
@@ -1011,31 +1154,29 @@ def _extract_from_image(content: bytes) -> tuple[str, list[ExtractedCourseRowSch
     except Exception:
         pass
 
-    # 2. OCR local via Tesseract si présent sur la machine
-    if not extracted_chunks and shutil.which("tesseract"):
-        try:
-            with tempfile.NamedTemporaryFile(suffix=".png", delete=True) as tmp_in:
-                img.save(tmp_in.name, format="PNG")
-                proc = subprocess.run(
-                    ["tesseract", tmp_in.name, "stdout", "-l", "fra+eng"],
-                    capture_output=True,
-                    text=True,
-                    timeout=10,
-                    check=False,
-                )
-                if proc.returncode == 0 and proc.stdout.strip():
-                    extracted_chunks.append(proc.stdout.strip())
-        except Exception:
-            pass
+    metadata_text = "\n".join(extracted_chunks).strip()
+    metadata_courses = parse_schedule_text(metadata_text) if metadata_text else []
+
+    # 2. OCR local via Tesseract : toujours exécuté si aucun créneau structuré n'est extrait des métadonnées utiles
+    has_tesseract = bool(shutil.which("tesseract"))
+    if not metadata_courses and has_tesseract:
+        ocr_out = _run_tesseract_ocr_on_image(img)
+        if ocr_out:
+            extracted_chunks.append(ocr_out)
 
     ocr_text = "\n".join(extracted_chunks).strip()
     courses = parse_schedule_text(ocr_text) if ocr_text else []
 
     if not ocr_text:
-        warnings.append(
-            f"Image ({img.width}×{img.height}px) reçue : aucun texte OCR lisible n’a pu être extrait avec certitude. "
-            "Conformément à la règle de fiabilité, aucun cours n’a été inventé — complétez ou corrigez le tableau ci-dessous."
-        )
+        if has_tesseract:
+            warnings.append(
+                f"Image ({img.width}×{img.height}px) reçue : aucun texte OCR lisible n’a pu être extrait avec certitude. "
+                "Conformément à la règle de fiabilité, aucun cours n’a été inventé — complétez ou corrigez le tableau ci-dessous."
+            )
+        else:
+            warnings.append(
+                f"Image ({img.width}×{img.height}px) reçue : le moteur OCR local (tesseract) n'est pas installé dans cet environnement et aucune donnée exploitable n'a été extraite. Complétez manuellement."
+            )
     elif not courses:
         warnings.append(
             "Le texte extrait de l’image est partiellement ambigu. Vérifiez les créneaux détectés avant d’enregistrer."
@@ -1113,11 +1254,17 @@ def _try_extract_courses_with_ai(
     if provider == "local" or not api_key:
         return [], None, None
 
-    model = str(ai_config.get("model") or "").strip() or (
-        "gemini-2.5-flash" if provider == "gemini" else "gpt-4o-mini"
+    model = validate_model_identifier(
+        str(ai_config.get("model") or "").strip()
+        or ("gemini-2.5-flash" if provider == "gemini" else "gpt-4o-mini")
     )
-    base_url = _validate_outbound_base_url(
-        normalize_provider_base_url(provider, ai_config.get("base_url"))
+    settings_obj = ai_config.get("settings")
+    resolved_settings = settings_obj if isinstance(settings_obj, Settings) else None
+    base_url = validate_outbound_url(
+        normalize_provider_base_url(provider, ai_config.get("base_url")),
+        settings=resolved_settings,
+        allow_http_local=True,
+        verify_dns=False,
     )
     timeout = float(ai_config.get("timeout_seconds") or 18.0)
 
@@ -1149,69 +1296,76 @@ def _try_extract_courses_with_ai(
 
     raw_reply = ""
     try:
-        with httpx.Client(timeout=timeout) as client:
-            if provider == "gemini":
-                parts: list[dict[str, Any]] = [{"text": instruction}]
-                if file_format == TimetableFileFormat.image:
-                    parts.append(
-                        {
-                            "inlineData": {
-                                "mimeType": mime_type if mime_type.startswith("image/") else "image/png",
-                                "data": base64.b64encode(content).decode("ascii"),
-                            }
+        if provider == "gemini":
+            parts: list[dict[str, Any]] = [{"text": instruction}]
+            if file_format == TimetableFileFormat.image:
+                parts.append(
+                    {
+                        "inlineData": {
+                            "mimeType": mime_type if mime_type.startswith("image/") else "image/png",
+                            "data": base64.b64encode(content).decode("ascii"),
                         }
-                    )
-                if preview_text and not preview_text.startswith("[Aperçu image"):
-                    parts.append({"text": f"\nContenu textuel extrait :\n{preview_text[:12000]}"})
-                res = client.post(
-                    f"{base_url}/models/{model}:generateContent",
-                    headers={"x-goog-api-key": api_key, "Content-Type": "application/json"},
-                    json={
-                        "contents": [{"role": "user", "parts": parts}],
-                        "generationConfig": {
-                            "temperature": 0.1,
-                            "responseMimeType": "application/json",
-                        },
-                    },
+                    }
                 )
-                res.raise_for_status()
-                raw_reply = res.json()["candidates"][0]["content"]["parts"][0]["text"]
-            else:
-                if file_format == TimetableFileFormat.image:
-                    img_mime = mime_type if mime_type.startswith("image/") else "image/png"
-                    b64_str = base64.b64encode(content).decode("ascii")
-                    user_content: Any = [
-                        {"type": "text", "text": instruction},
-                        {
-                            "type": "image_url",
-                            "image_url": {"url": f"data:{img_mime};base64,{b64_str}"},
-                        },
-                    ]
-                    if preview_text and not preview_text.startswith("[Aperçu image"):
-                        user_content.append(
-                            {"type": "text", "text": f"Texte OCR auxiliaire :\n{preview_text[:8000]}"}
-                        )
-                else:
-                    if not preview_text.strip():
-                        return [], None, None
-                    user_content = f"{instruction}\n\nDocument extrait :\n{preview_text[:12000]}"
-
-                res = client.post(
-                    f"{base_url}/chat/completions",
-                    headers={
-                        "Authorization": f"Bearer {api_key}",
-                        "Content-Type": "application/json",
-                    },
-                    json={
-                        "model": model,
-                        "messages": [{"role": "user", "content": user_content}],
+            if preview_text and not preview_text.startswith("[Aperçu image"):
+                parts.append({"text": f"\nContenu textuel extrait :\n{preview_text[:12000]}"})
+            res = safe_http_request(
+                "POST",
+                f"{base_url}/models/{model}:generateContent",
+                settings=resolved_settings,
+                headers={"x-goog-api-key": api_key, "Content-Type": "application/json"},
+                json_body={
+                    "contents": [{"role": "user", "parts": parts}],
+                    "generationConfig": {
                         "temperature": 0.1,
+                        "responseMimeType": "application/json",
                     },
-                )
-                res.raise_for_status()
-                raw_reply = _extract_openai_message_text(
-                    res.json()["choices"][0]["message"]["content"]
-                )
+                },
+                timeout_seconds=timeout,
+                max_bytes=MAX_AI_RESPONSE_BYTES,
+            )
+            res.raise_for_status()
+            raw_reply = res.json()["candidates"][0]["content"]["parts"][0]["text"]
+        else:
+            if file_format == TimetableFileFormat.image:
+                img_mime = mime_type if mime_type.startswith("image/") else "image/png"
+                b64_str = base64.b64encode(content).decode("ascii")
+                user_content: Any = [
+                    {"type": "text", "text": instruction},
+                    {
+                        "type": "image_url",
+                        "image_url": {"url": f"data:{img_mime};base64,{b64_str}"},
+                    },
+                ]
+                if preview_text and not preview_text.startswith("[Aperçu image"):
+                    user_content.append(
+                        {"type": "text", "text": f"Texte OCR auxiliaire :\n{preview_text[:8000]}"}
+                    )
+            else:
+                if not preview_text.strip():
+                    return [], None, None
+                user_content = f"{instruction}\n\nDocument extrait :\n{preview_text[:12000]}"
+
+            res = safe_http_request(
+                "POST",
+                f"{base_url}/chat/completions",
+                settings=resolved_settings,
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                },
+                json_body={
+                    "model": model,
+                    "messages": [{"role": "user", "content": user_content}],
+                    "temperature": 0.1,
+                },
+                timeout_seconds=timeout,
+                max_bytes=MAX_AI_RESPONSE_BYTES,
+            )
+            res.raise_for_status()
+            raw_reply = _extract_openai_message_text(
+                res.json()["choices"][0]["message"]["content"]
+            )
     except Exception:
         return [], None, None
 

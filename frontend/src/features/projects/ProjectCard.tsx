@@ -113,10 +113,33 @@ export function ProjectCard({
           >
             <option value="planned">Planifié</option>
             <option value="active">Actif</option>
+            <option value="paused">En pause</option>
             <option value="blocked">Bloqué</option>
             <option value="completed">Terminé</option>
             <option value="archived">Archivé</option>
           </Select>
+
+          {project.status === 'active' && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => void onStatusChange(project, 'paused')}
+            >
+              Mettre en attente
+            </Button>
+          )}
+
+          {project.status === 'paused' && (
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={() => void onStatusChange(project, 'active')}
+            >
+              Reprendre
+            </Button>
+          )}
 
           {!isFocusProject && (
             <Button

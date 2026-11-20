@@ -143,9 +143,26 @@ class SkillAssessmentStatus(StrEnum):
     pending = "pending"
     submitted = "submitted"
     evaluated = "evaluated"
+    needs_manual_review = "needs_manual_review"
     approved = "approved"
     rejected = "rejected"
     cancelled = "cancelled"
+
+
+class EvidenceVerificationStatus(StrEnum):
+    declared = "declared"
+    uploaded = "uploaded"
+    inspected = "inspected"
+    verified = "verified"
+    approved = "approved"
+    unreachable = "unreachable"
+    rejected = "rejected"
+
+
+class SkillEvaluationMode(StrEnum):
+    automated = "automated"
+    ai_assisted = "ai_assisted"
+    manual_review = "manual_review"
 
 
 class SkillAssessmentType(StrEnum):
@@ -167,6 +184,29 @@ class SkillEvaluatorType(StrEnum):
 class ProjectStatus(StrEnum):
     planned = "planned"
     active = "active"
+    paused = "paused"
+    blocked = "blocked"
+    completed = "completed"
+    archived = "archived"
+
+
+class ObjectiveCategory(StrEnum):
+    learning_goal = "learning_goal"
+    language = "language"
+    framework = "framework"
+    technology = "technology"
+    spoken_language = "spoken_language"
+    skill = "skill"
+    project = "project"
+    personal_project = "personal_project"
+    professional_project = "professional_project"
+    other = "other"
+
+
+class ObjectiveStatus(StrEnum):
+    planned = "planned"
+    active = "active"
+    paused = "paused"
     blocked = "blocked"
     completed = "completed"
     archived = "archived"
@@ -189,13 +229,29 @@ class ProposalStatus(StrEnum):
 
 class AiActionType(StrEnum):
     create_task = "create_task"
+    update_task = "update_task"
     park_task = "park_task"
+    create_project = "create_project"
+    update_project = "update_project"
+    pause_project = "pause_project"
     create_schedule_event = "create_schedule_event"
+    update_schedule_event = "update_schedule_event"
+    archive_schedule_event = "archive_schedule_event"
+    create_study_session = "create_study_session"
+    create_skill = "create_skill"
     add_skill_evidence = "add_skill_evidence"
     propose_skill_assessment = "propose_skill_assessment"
     recommend_skill_progression = "recommend_skill_progression"
+    create_learning_path = "create_learning_path"
+    update_learning_path = "update_learning_path"
+    create_personal_goal = "create_personal_goal"
+    update_personal_goal = "update_personal_goal"
     plan_strategic_activity = "plan_strategic_activity"
     create_course = "create_course"
+    update_preferences = "update_preferences"
+    manage_availability_rule = "manage_availability_rule"
+    generate_learning_plan = "generate_learning_plan"
+    batch_actions = "batch_actions"
 
 
 class CourseLanguage(StrEnum):
@@ -261,6 +317,8 @@ class AiContextScope(StrEnum):
     learning = "learning"
     skills = "skills"
     projects = "projects"
+    goals = "goals"
+    memory = "memory"
     weekly = "weekly"
 
 

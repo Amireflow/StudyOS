@@ -28,19 +28,32 @@ export class ApiError extends Error {
 export interface ApiRequestOptions extends Omit<RequestInit, 'body'> {
   body?: unknown;
   accessToken?: string;
+  skipAuthRefresh?: boolean;
+}
+
+export interface ApiAuthHandlers {
+  refreshAccessToken?: () => Promise<string | null>;
+  onSessionExpired?: (reason?: string) => void;
+}
+
+let authHandlers: ApiAuthHandlers = {};
+let inflightRefresh: Promise<string | null> | null = null;
+
+export function configureApiAuthHandlers(handlers: ApiAuthHandlers): void {
+  authHandlers = handlers;
 }
 
 /**
- * Client HTTP de base préparé pour le Lot 5 (connexion backend FastAPI).
- * Aucun appel réseau actif n'est déclenché au Lot 1.
+ * Client HTTP de base (connexion backend FastAPI avec cookies HttpOnly & refresh single-flight).
  */
 export async function apiRequest<T>(path: string, options: ApiRequestOptions = {}): Promise<T> {
-  const { body, accessToken, headers, ...rest } = options;
+  const { body, accessToken, headers, skipAuthRefresh = false, ...rest } = options;
   const normalizedPath = path.startsWith('/') ? path : `/${path}`;
   const url = `${env.VITE_API_BASE_URL}${normalizedPath}`;
 
   const response = await fetch(url, {
     ...rest,
+    credentials: rest.credentials ?? 'include',
     headers: {
       'Content-Type': 'application/json',
       ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
@@ -48,6 +61,29 @@ export async function apiRequest<T>(path: string, options: ApiRequestOptions = {
     },
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
+
+  if (
+    response.status === 401 &&
+    !skipAuthRefresh &&
+    accessToken &&
+    !normalizedPath.startsWith('/auth/') &&
+    authHandlers.refreshAccessToken
+  ) {
+    if (!inflightRefresh) {
+      inflightRefresh = authHandlers.refreshAccessToken().finally(() => {
+        inflightRefresh = null;
+      });
+    }
+    const nextToken = await inflightRefresh;
+    if (nextToken) {
+      return apiRequest<T>(path, {
+        ...options,
+        accessToken: nextToken,
+        skipAuthRefresh: true,
+      });
+    }
+    authHandlers.onSessionExpired?.('Votre session a expiré. Reconnectez-vous.');
+  }
 
   if (!response.ok) {
     let payload: ApiErrorPayload | null = null;

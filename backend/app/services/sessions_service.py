@@ -2,8 +2,9 @@ from datetime import datetime, timezone
 from typing import Any
 from uuid import UUID, uuid4
 from app.core.errors import AppError
+from app.repositories.learning_sql import SkillEvidenceRecord
 from app.repositories.memory import SessionRecord, SessionRepository, TaskRepository
-from app.schemas.common import SessionStatus
+from app.schemas.common import EvidenceVerificationStatus, SessionStatus, SkillEvidenceType
 from app.schemas.sessions import (
     SessionCreate,
     SessionFinish,
@@ -64,12 +65,14 @@ class SessionService:
         project_repo: Any | None = None,
         learning_repo: Any | None = None,
         skill_repo: Any | None = None,
+        goal_repo: Any | None = None,
     ) -> None:
         self._session_repo = session_repo
         self._task_repo = task_repo
         self._project_repo = project_repo
         self._learning_repo = learning_repo
         self._skill_repo = skill_repo
+        self._goal_repo = goal_repo
 
     def _validate_task_ownership(self, user_id: UUID, task_id: UUID | None) -> None:
         if task_id is not None and self._task_repo.get(user_id, task_id) is None:
@@ -80,6 +83,7 @@ class SessionService:
         user_id: UUID,
         *,
         project_id: UUID | None = None,
+        goal_id: UUID | None = None,
         module_id: UUID | None = None,
         lesson_id: UUID | None = None,
         skill_id: UUID | None = None,
@@ -91,17 +95,28 @@ class SessionService:
         ):
             raise AppError(404, "NOT_FOUND", "Projet associé introuvable.")
         if (
+            goal_id is not None
+            and self._goal_repo is not None
+            and self._goal_repo.get(user_id, goal_id) is None
+        ):
+            raise AppError(404, "NOT_FOUND", "Objectif personnel associé introuvable.")
+        if (
             module_id is not None
             and self._learning_repo is not None
             and self._learning_repo.get_module(user_id, module_id) is None
         ):
             raise AppError(404, "NOT_FOUND", "Module associé introuvable.")
-        if (
-            lesson_id is not None
-            and self._learning_repo is not None
-            and self._learning_repo.get_lesson(user_id, lesson_id) is None
-        ):
-            raise AppError(404, "NOT_FOUND", "Leçon associée introuvable.")
+        lesson_rec = None
+        if lesson_id is not None and self._learning_repo is not None:
+            lesson_rec = self._learning_repo.get_lesson(user_id, lesson_id)
+            if lesson_rec is None:
+                raise AppError(404, "NOT_FOUND", "Leçon associée introuvable.")
+        if module_id is not None and lesson_rec is not None and lesson_rec.module_id != module_id:
+            raise AppError(
+                422,
+                "LESSON_MODULE_MISMATCH",
+                "La leçon sélectionnée n'appartient pas au module associé.",
+            )
         if (
             skill_id is not None
             and self._skill_repo is not None
@@ -121,11 +136,103 @@ class SessionService:
         records.sort(key=lambda item: item.started_at, reverse=True)
         return [to_session_response(item) for item in records]
 
+    def _record_session_completion_feedback(
+        self,
+        user_id: UUID,
+        record: SessionRecord,
+    ) -> None:
+        """Enregistre le retour d'exécution (durée réelle, difficultés, livrable/preuve) sur l'objectif ou projet lié."""
+        if record.status != SessionStatus.completed or record.ended_at is None:
+            return
+
+        duration_min = compute_session_duration_minutes(record)
+        now = record.updated_at
+        history_entry: dict[str, Any] = {
+            "timestamp": now.isoformat(),
+            "event": "session_completed",
+            "session_id": str(record.id),
+            "planned_activity": record.planned_activity or record.title,
+            "actual_activity": record.actual_activity or record.title,
+            "result": record.result,
+            "duration_minutes": duration_min,
+            "outcome_status": record.outcome_status or "completed",
+            "difficulties": record.blockers,
+            "deliverable_summary": record.deliverable_summary,
+            "next_step": record.next_step,
+        }
+
+        effective_skill_id = record.skill_id
+
+        # 1. Mise à jour de l'objectif personnel lié (par goal_id ou par skill_id)
+        if self._goal_repo is not None:
+            target_goal = (
+                self._goal_repo.get(user_id, record.goal_id)
+                if record.goal_id is not None
+                else None
+            )
+            if target_goal is None and record.skill_id is not None:
+                all_goals = self._goal_repo.list_goals(user_id)
+                target_goal = next(
+                    (g for g in all_goals if g.skill_id == record.skill_id),
+                    None,
+                )
+            if target_goal is not None:
+                if effective_skill_id is None and target_goal.skill_id is not None:
+                    effective_skill_id = target_goal.skill_id
+                next_history = [*list(target_goal.progress_history or []), history_entry]
+                goal_updates: dict[str, Any] = {
+                    "progress_history": next_history,
+                    "updated_at": now,
+                }
+                if record.next_step and len(record.next_step.strip()) >= 2:
+                    goal_updates["next_action"] = record.next_step.strip()[:240]
+                self._goal_repo.save(target_goal.model_copy(update=goal_updates))
+
+        # 2. Mise à jour du projet lié
+        if record.project_id is not None and self._project_repo is not None:
+            project = self._project_repo.get(user_id, record.project_id)
+            if project is not None:
+                proj_history = [*list(project.progress_history or []), history_entry]
+                proj_updates: dict[str, Any] = {
+                    "progress_history": proj_history,
+                    "updated_at": now,
+                }
+                if record.next_step and len(record.next_step.strip()) >= 2:
+                    proj_updates["next_action"] = record.next_step.strip()[:240]
+                self._project_repo.save(project.model_copy(update=proj_updates))
+
+        # 3. Enregistrement automatique d'une preuve/livrable sur la compétence liée si fourni
+        if (
+            effective_skill_id is not None
+            and self._skill_repo is not None
+            and record.deliverable_summary
+            and len(record.deliverable_summary.strip()) >= 5
+        ):
+            self._skill_repo.save_evidence(
+                SkillEvidenceRecord(
+                    id=uuid4(),
+                    user_id=user_id,
+                    skill_id=effective_skill_id,
+                    type=SkillEvidenceType.deliverable,
+                    description=record.deliverable_summary.strip()[:1000],
+                    reference_url=None,
+                    result=(record.result or "Séance terminée")[:200],
+                    verification_status=EvidenceVerificationStatus.declared,
+                    inspection_metadata={"source": "study_session", "session_id": str(record.id)},
+                    inspected_at=now,
+                    is_locked=False,
+                    observed_at=now,
+                    created_at=now,
+                    updated_at=now,
+                )
+            )
+
     def create_session(self, user_id: UUID, payload: SessionCreate) -> SessionResponse:
         self._validate_task_ownership(user_id, payload.task_id)
         self._validate_palier2_links(
             user_id,
             project_id=payload.project_id,
+            goal_id=payload.goal_id,
             module_id=payload.module_id,
             lesson_id=payload.lesson_id,
             skill_id=payload.skill_id,
@@ -143,8 +250,15 @@ class SessionService:
             started_at=started_at,
             ended_at=payload.ended_at,
             result=payload.result,
+            planned_activity=payload.planned_activity or payload.title,
+            actual_activity=payload.actual_activity or (payload.title if is_completed else None),
+            outcome_status=payload.outcome_status or ("completed" if is_completed else None),
+            deliverable_summary=payload.deliverable_summary,
+            blockers=payload.blockers,
+            next_step=payload.next_step,
             task_id=payload.task_id,
             project_id=payload.project_id,
+            goal_id=payload.goal_id,
             module_id=payload.module_id,
             lesson_id=payload.lesson_id,
             skill_id=payload.skill_id,
@@ -152,6 +266,8 @@ class SessionService:
             updated_at=now,
         )
         saved = self._session_repo.save(record)
+        if is_completed:
+            self._record_session_completion_feedback(user_id, saved)
         return to_session_response(saved)
 
     def finish_session(
@@ -181,10 +297,21 @@ class SessionService:
                 "status": SessionStatus.completed,
                 "ended_at": ended_at,
                 "result": payload.result,
+                "planned_activity": payload.planned_activity or existing.planned_activity or existing.title,
+                "actual_activity": payload.actual_activity or existing.actual_activity or existing.title,
+                "outcome_status": payload.outcome_status or existing.outcome_status or "completed",
+                "deliverable_summary": (
+                    payload.deliverable_summary
+                    if payload.deliverable_summary is not None
+                    else existing.deliverable_summary
+                ),
+                "blockers": payload.blockers if payload.blockers is not None else existing.blockers,
+                "next_step": payload.next_step if payload.next_step is not None else existing.next_step,
                 "updated_at": now,
             }
         )
         saved = self._session_repo.save(updated)
+        self._record_session_completion_feedback(user_id, saved)
         return to_session_response(saved)
 
     def update_session(
@@ -206,11 +333,20 @@ class SessionService:
         if "project_id" in fields:
             self._validate_palier2_links(user_id, project_id=payload.project_id)
             updates["project_id"] = payload.project_id
-        if "module_id" in fields:
-            self._validate_palier2_links(user_id, module_id=payload.module_id)
+        if "goal_id" in fields:
+            self._validate_palier2_links(user_id, goal_id=payload.goal_id)
+            updates["goal_id"] = payload.goal_id
+        next_module_id = payload.module_id if "module_id" in fields else existing.module_id
+        next_lesson_id = payload.lesson_id if "lesson_id" in fields else existing.lesson_id
+        if "module_id" in fields and "lesson_id" not in fields:
+            self._validate_palier2_links(user_id, module_id=payload.module_id, lesson_id=next_lesson_id)
             updates["module_id"] = payload.module_id
-        if "lesson_id" in fields:
-            self._validate_palier2_links(user_id, lesson_id=payload.lesson_id)
+        elif "module_id" in fields and "lesson_id" in fields:
+            self._validate_palier2_links(user_id, module_id=payload.module_id, lesson_id=payload.lesson_id)
+            updates["module_id"] = payload.module_id
+            updates["lesson_id"] = payload.lesson_id
+        elif "lesson_id" in fields:
+            self._validate_palier2_links(user_id, module_id=next_module_id, lesson_id=payload.lesson_id)
             updates["lesson_id"] = payload.lesson_id
         if "skill_id" in fields:
             self._validate_palier2_links(user_id, skill_id=payload.skill_id)
@@ -222,11 +358,43 @@ class SessionService:
             updates["category"] = payload.category
         if "result" in fields:
             updates["result"] = payload.result
+        if "planned_activity" in fields:
+            updates["planned_activity"] = payload.planned_activity
+        if "actual_activity" in fields:
+            updates["actual_activity"] = payload.actual_activity
+        if "outcome_status" in fields:
+            updates["outcome_status"] = payload.outcome_status
+        if "deliverable_summary" in fields:
+            updates["deliverable_summary"] = payload.deliverable_summary
+        if "blockers" in fields:
+            updates["blockers"] = payload.blockers
+        if "next_step" in fields:
+            updates["next_step"] = payload.next_step
 
+        next_status = existing.status
         if "status" in fields and payload.status is not None:
+            if (
+                existing.status == SessionStatus.completed
+                and payload.status == SessionStatus.in_progress
+            ):
+                raise AppError(
+                    409,
+                    "SESSION_ALREADY_COMPLETED",
+                    "Une séance déjà terminée ne peut pas être repassée en cours.",
+                )
+            if (
+                existing.status == SessionStatus.cancelled
+                and payload.status == SessionStatus.completed
+            ):
+                raise AppError(
+                    409,
+                    "CONFLICT",
+                    "Une séance annulée ne peut pas passer directement au statut terminée.",
+                )
             if payload.status == SessionStatus.cancelled:
                 updates["status"] = SessionStatus.cancelled
                 updates["ended_at"] = None
+                next_status = SessionStatus.cancelled
             elif payload.status == SessionStatus.completed and existing.ended_at is None:
                 raise AppError(
                     422,
@@ -235,8 +403,30 @@ class SessionService:
                 )
             else:
                 updates["status"] = payload.status
+                next_status = payload.status
+
+        if next_status == SessionStatus.completed and "result" in fields:
+            if payload.result is None or len(payload.result.strip()) < 3:
+                raise AppError(
+                    422,
+                    "VALIDATION_ERROR",
+                    "Le résultat d'une séance terminée doit contenir au moins 3 caractères.",
+                )
 
         saved = self._session_repo.save(existing.model_copy(update=updates))
+        feedback_fields = {
+            "result",
+            "actual_activity",
+            "outcome_status",
+            "deliverable_summary",
+            "blockers",
+            "next_step",
+            "goal_id",
+            "project_id",
+            "skill_id",
+        }
+        if saved.status == SessionStatus.completed and bool(fields & feedback_fields):
+            self._record_session_completion_feedback(user_id, saved)
         return to_session_response(saved)
 
     def delete_session(self, user_id: UUID, session_id: UUID) -> None:

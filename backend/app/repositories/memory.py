@@ -59,6 +59,10 @@ class ScheduleEventRecord(BaseModel):
     teacher: str | None = None
     room: str | None = None
     group_name: str | None = None
+    goal_id: UUID | None = None
+    course_id: UUID | None = None
+    project_id: UUID | None = None
+    task_id: UUID | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -82,6 +86,7 @@ class TimetableImportRecord(BaseModel):
     created_events_count: int = 0
     skipped_duplicates_count: int = 0
     replaced_events_count: int = 0
+    replaced_snapshot: list[dict[str, Any]] | None = None
     created_at: datetime
     updated_at: datetime
     validated_at: datetime | None = None
@@ -96,8 +101,15 @@ class SessionRecord(BaseModel):
     started_at: datetime
     ended_at: datetime | None = None
     result: str | None = None
+    planned_activity: str | None = None
+    actual_activity: str | None = None
+    outcome_status: str | None = None
+    deliverable_summary: str | None = None
+    blockers: str | None = None
+    next_step: str | None = None
     task_id: UUID | None = None
     project_id: UUID | None = None
+    goal_id: UUID | None = None
     module_id: UUID | None = None
     lesson_id: UUID | None = None
     skill_id: UUID | None = None
@@ -112,6 +124,10 @@ class InMemoryStore:
         self.lock = RLock()
         self.users: dict[UUID, Any] = {}
         self.profiles: dict[UUID, ProfileRecord] = {}
+        self.ai_provider_configs: dict[UUID, Any] = {}
+        self.auth_refresh_sessions: dict[UUID, Any] = {}
+        self.auth_login_attempts: list[Any] = []
+        self.auth_token_revocations: dict[UUID, datetime] = {}
         self.tasks: dict[UUID, TaskRecord] = {}
         self.schedule_events: dict[UUID, ScheduleEventRecord] = {}
         self.timetable_imports: dict[UUID, TimetableImportRecord] = {}

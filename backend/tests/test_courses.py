@@ -101,7 +101,15 @@ def test_course_pedagogical_lock_grading_and_level_unlock(
     lvl2 = course["levels"][1]
     lvl3 = course["levels"][2]
 
-    # 1. Terminer toutes les leçons du Niveau 1 ne débloque PAS le niveau suivant
+    # 0. Valider avant de terminer les leçons -> 422 LESSONS_COMPLETION_REQUIRED
+    no_lessons_validate = client.post(
+        f"/api/v1/courses/{course_id}/levels/{lvl1['id']}/validate",
+        headers=user_a_headers,
+    )
+    assert no_lessons_validate.status_code == 422
+    assert no_lessons_validate.json()["error"]["code"] == "LESSONS_COMPLETION_REQUIRED"
+
+    # 1. Terminer toutes les leçons du Niveau 1 ne débloque PAS encore (il faut aussi exercice + projet)
     for lesson in lvl1["lessons"]:
         res = client.patch(
             f"/api/v1/courses/{course_id}/lessons/{lesson['id']}",
@@ -110,6 +118,41 @@ def test_course_pedagogical_lock_grading_and_level_unlock(
         )
         assert res.status_code == 200
         assert res.json()["status"] == "completed"
+
+    no_ex_validate = client.post(
+        f"/api/v1/courses/{course_id}/levels/{lvl1['id']}/validate",
+        headers=user_a_headers,
+    )
+    assert no_ex_validate.status_code == 422
+    assert no_ex_validate.json()["error"]["code"] == "EXERCISE_VALIDATION_REQUIRED"
+
+    # 1b. Réussir au moins un exercice du niveau 1 -> toujours bloqué tant que le projet n'est pas réussi
+    first_lesson = lvl1["lessons"][0]
+    first_ex = first_lesson["exercises"][0]
+    ex_sub = client.post(
+        f"/api/v1/courses/{course_id}/levels/{lvl1['id']}/submissions",
+        json={
+            "submission_kind": "exercise",
+            "lesson_id": first_lesson["id"],
+            "exercise_id": first_ex["id"],
+            "answer_text": (
+                "J'ai implémenté la fonction avec contrôle de bornes et tests assert parce que "
+                "les cas limites (entrée négative ou vide) doivent lever une erreur explicite."
+            ),
+            "submitted_code": (
+                "def classify_score(score: int) -> str:\n"
+                "    if score < 0 or score > 100:\n"
+                "        raise ValueError('score invalide')\n"
+                "    if score >= 85:\n"
+                "        return 'Acquis'\n"
+                "    return 'En cours'\n\n"
+                "assert classify_score(90) == 'Acquis'\n"
+            ),
+        },
+        headers=user_a_headers,
+    )
+    assert ex_sub.status_code == 201
+    assert ex_sub.json()["passed"] is True
 
     premature_validate = client.post(
         f"/api/v1/courses/{course_id}/levels/{lvl1['id']}/validate",
@@ -190,6 +233,7 @@ def test_course_pedagogical_lock_grading_and_level_unlock(
     assert detail["levels"][1]["status"] == "unlocked"
     assert detail["levels"][1]["content_generated"] is True
     assert len(detail["levels"][1]["lessons"]) == 4
+    assert len(detail["levels"][1]["resources"]) >= 1
     assert detail["levels"][1]["project_title"]
 
     # 6. La compétence liée a reçu une preuve concrète MAIS son current_level reste à 0 (verrou de compétence préservé)
@@ -279,3 +323,49 @@ def test_ai_copilot_create_course_proposal_workflow(
     assert len(courses) == 1
     assert courses[0]["subject"] == "Python"
     assert courses[0]["current_level"] == 1
+
+
+def test_submission_rejects_extra_score_and_scores_offtopic_low(
+    client: TestClient,
+    user_a_headers: dict[str, str],
+) -> None:
+    course = client.post(
+        "/api/v1/courses",
+        json={"subject": "Python", "language": "fr", "total_levels": 3},
+        headers=user_a_headers,
+    ).json()
+    lvl1 = course["levels"][0]
+    les1 = lvl1["lessons"][0]
+    ex1 = next((ex for ex in les1["exercises"] if ex.get("exercise_type") == "code"), les1["exercises"][0])
+
+    # Tentative d'injection de score/passed -> rejet 422 strict (extra="forbid")
+    tamper = client.post(
+        f"/api/v1/courses/{course['id']}/levels/{lvl1['id']}/submissions",
+        json={
+            "submission_kind": "exercise",
+            "lesson_id": les1["id"],
+            "exercise_id": ex1["id"],
+            "title": ex1["title"],
+            "answer_text": "Tentative de triche",
+            "score": 100,
+            "passed": True,
+        },
+        headers=user_a_headers,
+    )
+    assert tamper.status_code == 422
+
+    # Réponse hors sujet -> score faible (<= 20) et non validée
+    offtopic = client.post(
+        f"/api/v1/courses/{course['id']}/levels/{lvl1['id']}/submissions",
+        json={
+            "submission_kind": "exercise",
+            "lesson_id": les1["id"],
+            "exercise_id": ex1["id"],
+            "title": ex1["title"],
+            "answer_text": "La recette des crêpes contient de la farine, des oeufs, du lait et du beurre fondu.",
+        },
+        headers=user_a_headers,
+    )
+    assert offtopic.status_code == 201
+    assert offtopic.json()["passed"] is False
+    assert offtopic.json()["score"] <= 20

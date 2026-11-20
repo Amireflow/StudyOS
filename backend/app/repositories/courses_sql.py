@@ -36,6 +36,8 @@ class CourseRecord(BaseModel):
     status: CourseStatus = CourseStatus.active
     skill_id: UUID | None = None
     learning_path_id: UUID | None = None
+    generation_source: str = "curated_local"
+    generation_model: str | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -54,6 +56,9 @@ class CourseLevelRecord(BaseModel):
     project_brief: str | None = None
     project_deliverables: list[str] = []
     project_rubric: list[dict[str, Any]] = []
+    previous_versions: list[dict[str, Any]] = []
+    revision: int = 1
+    generation_source: str = "curated_local"
     validated_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
@@ -114,6 +119,10 @@ class CourseSubmissionRecord(BaseModel):
     strengths: list[str] = []
     improvements: list[str] = []
     next_step_hint: str | None = None
+    attempt_number: int = 1
+    evaluation_mode: str = "deterministic"
+    manual_review_required: bool = False
+    static_analysis: dict[str, Any] | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -132,6 +141,8 @@ def _to_course_record(row: CourseTable) -> CourseRecord:
         status=CourseStatus(row.status),
         skill_id=row.skill_id,
         learning_path_id=row.learning_path_id,
+        generation_source=getattr(row, "generation_source", "curated_local") or "curated_local",
+        generation_model=getattr(row, "generation_model", None),
         created_at=row.created_at,
         updated_at=row.updated_at,
     )
@@ -152,6 +163,9 @@ def _to_level_record(row: CourseLevelTable) -> CourseLevelRecord:
         project_brief=row.project_brief,
         project_deliverables=list(row.project_deliverables or []),
         project_rubric=[dict(item) for item in (row.project_rubric or [])],
+        previous_versions=[dict(item) for item in (getattr(row, "previous_versions", None) or [])],
+        revision=int(getattr(row, "revision", 1) or 1),
+        generation_source=getattr(row, "generation_source", "curated_local") or "curated_local",
         validated_at=row.validated_at,
         created_at=row.created_at,
         updated_at=row.updated_at,
@@ -218,6 +232,10 @@ def _to_submission_record(row: CourseSubmissionTable) -> CourseSubmissionRecord:
         strengths=list(row.strengths or []),
         improvements=list(row.improvements or []),
         next_step_hint=row.next_step_hint,
+        attempt_number=int(getattr(row, "attempt_number", 1) or 1),
+        evaluation_mode=getattr(row, "evaluation_mode", "deterministic") or "deterministic",
+        manual_review_required=bool(getattr(row, "manual_review_required", False)),
+        static_analysis=getattr(row, "static_analysis", None),
         created_at=row.created_at,
         updated_at=row.updated_at,
     )
@@ -258,6 +276,8 @@ class SqlCourseRepository:
                 "status": record.status.value,
                 "skill_id": record.skill_id,
                 "learning_path_id": record.learning_path_id,
+                "generation_source": record.generation_source,
+                "generation_model": record.generation_model,
                 "created_at": record.created_at,
                 "updated_at": record.updated_at,
             },
@@ -298,6 +318,9 @@ class SqlCourseRepository:
                 "project_brief": record.project_brief,
                 "project_deliverables": record.project_deliverables,
                 "project_rubric": record.project_rubric,
+                "previous_versions": record.previous_versions,
+                "revision": record.revision,
+                "generation_source": record.generation_source,
                 "validated_at": record.validated_at,
                 "created_at": record.created_at,
                 "updated_at": record.updated_at,
@@ -438,8 +461,24 @@ class SqlCourseRepository:
                 "strengths": record.strengths,
                 "improvements": record.improvements,
                 "next_step_hint": record.next_step_hint,
+                "attempt_number": record.attempt_number,
+                "evaluation_mode": record.evaluation_mode,
+                "manual_review_required": record.manual_review_required,
+                "static_analysis": record.static_analysis,
                 "created_at": record.created_at,
                 "updated_at": record.updated_at,
             },
         )
         return _to_submission_record(saved)
+
+    def delete_lessons_for_level(self, user_id: UUID, level_id: UUID) -> int:
+        from sqlalchemy import delete as sa_delete
+
+        res = self._db.execute(
+            sa_delete(CourseLessonTable).where(
+                CourseLessonTable.user_id == user_id,
+                CourseLessonTable.level_id == level_id,
+            )
+        )
+        self._db.commit()
+        return int(res.rowcount or 0)

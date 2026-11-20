@@ -32,12 +32,17 @@ def test_jwks_rs256_token_verification_and_claims_enforcement(tmp_path: Path) ->
     settings = Settings(
         app_env="production",
         allow_local_dev_auth=False,
+        app_secret_key="prod-jwt-test-secret-key-at-least-32-chars",
         database_url=f"sqlite:///{(tmp_path / 'jwks.db').as_posix()}",
         auth_jwks_url="https://example.supabase.co/auth/v1/.well-known/jwks.json",
         auth_issuer=issuer,
         auth_audience=audience,
     )
-    app = create_app(settings=settings, jwks_client=FakeJwksClient(public_key))
+    app = create_app(
+        settings=settings,
+        jwks_client=FakeJwksClient(public_key),
+        auto_create_tables=True,
+    )
 
     now = datetime.now(timezone.utc)
 

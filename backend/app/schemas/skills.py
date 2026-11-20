@@ -1,9 +1,12 @@
 from datetime import datetime
+from typing import Any
 from uuid import UUID
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from app.schemas.common import (
+    EvidenceVerificationStatus,
     SkillAssessmentStatus,
     SkillAssessmentType,
+    SkillEvaluationMode,
     SkillEvaluatorType,
     SkillEvidenceType,
     UtcDatetime,
@@ -187,6 +190,12 @@ class SkillEvidenceUpdate(BaseModel):
         return value
 
 
+class SkillEvidenceInspectRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    expected_files: list[str] = Field(default_factory=list, max_length=10)
+
+
 class SkillEvidenceResponse(BaseModel):
     id: UUID
     user_id: UUID
@@ -196,6 +205,10 @@ class SkillEvidenceResponse(BaseModel):
     reference_url: str | None = None
     result: str | None = None
     observed_at: datetime
+    verification_status: EvidenceVerificationStatus = EvidenceVerificationStatus.declared
+    inspection_metadata: dict[str, Any] = Field(default_factory=dict)
+    inspected_at: datetime | None = None
+    is_locked: bool = False
     is_admissible: bool = True
     external_reference_verified: bool = False
     verification_note: str | None = None
@@ -214,23 +227,16 @@ class AssessmentCriterionSchema(BaseModel):
     feedback: str = ""
 
 
-class CriterionEvaluationInput(BaseModel):
-    key: str
-    passed: bool
-    score: int = Field(ge=0, le=100)
-    feedback: str | None = None
-
-
 class SkillAssessmentCreate(BaseModel):
+    """Demande d'ouverture d'évaluation : consignes, indices et critères sont strictement contrôlés côté serveur."""
+
+    model_config = ConfigDict(extra="forbid")
+
     target_level: int | None = None
     assessment_type: SkillAssessmentType = SkillAssessmentType.practical_exercise
     path_id: UUID | None = None
     module_id: UUID | None = None
     lesson_id: UUID | None = None
-    prompt_title: str | None = None
-    prompt_instructions: str | None = None
-    hints: list[str] | None = None
-    criteria: list[AssessmentCriterionSchema] | None = None
 
     @field_validator("target_level")
     @classmethod
@@ -241,18 +247,10 @@ class SkillAssessmentCreate(BaseModel):
             raise ValueError("Le niveau visé pour une évaluation doit être compris entre 1 et 5.")
         return value
 
-    @field_validator("prompt_title")
-    @classmethod
-    def validate_prompt_title(cls, value: str | None) -> str | None:
-        return normalize_optional_text(value, 180)
-
-    @field_validator("prompt_instructions")
-    @classmethod
-    def validate_prompt_instructions(cls, value: str | None) -> str | None:
-        return normalize_optional_text(value, 4000)
-
 
 class SkillAssessmentSubmit(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     submission_text: str
     submission_code: str | None = None
     submission_reference_url: str | None = None
@@ -288,28 +286,11 @@ class SkillAssessmentSubmit(BaseModel):
 
 
 class SkillAssessmentEvaluate(BaseModel):
-    criteria_evaluations: list[CriterionEvaluationInput] | None = None
-    evaluator_type: SkillEvaluatorType = SkillEvaluatorType.pedagogical_engine
-    evaluator_name: str | None = None
-    feedback: str | None = None
-    mastered_points: list[str] | None = None
-    gaps_identified: list[str] | None = None
-    remediation_recommendation: str | None = None
+    """Déclenche l'évaluation côté serveur. Toute tentative d'injection de score/critères est interdite."""
 
-    @field_validator("evaluator_name")
-    @classmethod
-    def validate_evaluator_name(cls, value: str | None) -> str | None:
-        return normalize_optional_text(value, 80)
+    model_config = ConfigDict(extra="forbid")
 
-    @field_validator("feedback")
-    @classmethod
-    def validate_feedback(cls, value: str | None) -> str | None:
-        return normalize_optional_text(value, 4000)
-
-    @field_validator("remediation_recommendation")
-    @classmethod
-    def validate_remediation(cls, value: str | None) -> str | None:
-        return normalize_optional_text(value, 1000)
+    request_ai_review: bool = False
 
 
 class SkillAssessmentDecision(BaseModel):
@@ -343,6 +324,13 @@ class SkillAssessmentResponse(BaseModel):
     submission_reference_url: str | None = None
     evidence_ids: list[UUID] = Field(default_factory=list)
     criteria: list[AssessmentCriterionSchema] = Field(default_factory=list)
+    rubric_version: str = "rubric-v2"
+    evaluator_version: str = "eval-v2"
+    evaluation_mode: SkillEvaluationMode = SkillEvaluationMode.automated
+    manual_review_required: bool = False
+    rubric_snapshot: list[dict[str, Any]] = Field(default_factory=list)
+    evidence_snapshot: list[dict[str, Any]] = Field(default_factory=list)
+    reviewed_by: str | None = None
     score: int | None = None
     passed: bool | None = None
     feedback: str | None = None

@@ -28,13 +28,29 @@ import { TASK_PRIORITY_META } from '../tasks/taskUtils';
 
 const ACTION_META: Record<string, { label: string; icon: IconSvgElement }> = {
   create_task: { label: 'Nouvelle tâche', icon: CheckmarkSquare02Icon },
+  update_task: { label: 'Mise à jour de tâche', icon: CheckmarkSquare02Icon },
   park_task: { label: 'Mise au parking', icon: Timer02Icon },
+  create_project: { label: 'Nouveau projet', icon: CheckmarkSquare02Icon },
+  update_project: { label: 'Mise à jour de projet', icon: CheckmarkSquare02Icon },
+  pause_project: { label: 'Mise en pause de projet', icon: Timer02Icon },
   create_schedule_event: { label: 'Créneau planning', icon: Calendar03Icon },
+  update_schedule_event: { label: 'Reprogrammation créneau', icon: Calendar03Icon },
+  archive_schedule_event: { label: 'Annulation créneau', icon: Calendar03Icon },
+  create_study_session: { label: 'Nouvelle séance d’étude', icon: Timer02Icon },
+  create_skill: { label: 'Nouvelle compétence', icon: Award02Icon },
   add_skill_evidence: { label: 'Preuve de compétence', icon: Award02Icon },
   propose_skill_assessment: { label: 'Évaluation de compétence', icon: Award02Icon },
   recommend_skill_progression: { label: 'Validation de progression', icon: Award02Icon },
+  create_learning_path: { label: 'Nouveau parcours', icon: Mortarboard02Icon },
+  update_learning_path: { label: 'Mise à jour de parcours', icon: Mortarboard02Icon },
+  create_personal_goal: { label: 'Nouvel objectif personnel', icon: Award02Icon },
+  update_personal_goal: { label: 'Mise à jour d’objectif', icon: Award02Icon },
   plan_strategic_activity: { label: 'Planification stratégique', icon: Calendar03Icon },
   create_course: { label: 'Nouveau cours complet', icon: Mortarboard02Icon },
+  update_preferences: { label: 'Mise à jour disponibilités', icon: Timer02Icon },
+  manage_availability_rule: { label: 'Règle de disponibilité', icon: Calendar03Icon },
+  generate_learning_plan: { label: 'Programme intelligent', icon: Calendar03Icon },
+  batch_actions: { label: 'Plan multi-actions coordonné', icon: CheckmarkSquare02Icon },
 };
 
 const STRATEGIC_DECISION_META: Record<
@@ -365,25 +381,89 @@ export function ProposalCard({ proposal, onAccept, onReject, onUpdate }: Proposa
         </div>
       )}
 
-      {proposal.status === 'executed' && (executionConfirmation || executedCourseId) && (
-        <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl bg-emerald-50 px-3 py-2 text-xs text-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-200">
-          <span>
-            {executionConfirmation ?? 'Cours créé avec le Niveau 1 débloqué.'}
-          </span>
-          {executedCourseId && (
-            <Link
-              to={`/courses/${executedCourseId}`}
-              className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-2.5 py-1 text-[11px] font-medium text-white transition-colors hover:bg-emerald-700 dark:bg-emerald-500 dark:text-zinc-950 dark:hover:bg-emerald-400"
-            >
-              Ouvrir le cours
-            </Link>
-          )}
-        </div>
-      )}
+      {proposal.actionType === 'batch_actions' &&
+        Array.isArray(payload.steps) &&
+        payload.steps.length > 0 && (
+          <div className="mt-3 rounded-xl bg-white/90 p-3 text-xs dark:bg-zinc-900/90">
+            <p className="font-semibold text-zinc-800 dark:text-zinc-200">
+              Actions coordonnées ({payload.steps.length} étapes) :
+            </p>
+            <ul className="mt-1.5 list-inside list-disc space-y-1 text-zinc-600 dark:text-zinc-300">
+              {payload.steps.map((step, sIdx) => {
+                const sObj =
+                  step && typeof step === 'object' ? (step as Record<string, unknown>) : {};
+                const sType = String(sObj.action_type ?? '');
+                const sMeta = ACTION_META[sType]?.label ?? sType;
+                const sPayload =
+                  sObj.payload && typeof sObj.payload === 'object'
+                    ? (sObj.payload as Record<string, unknown>)
+                    : {};
+                const sLabel = String(sPayload.title ?? sPayload.name ?? sPayload.goal ?? '');
+                return (
+                  <li key={sIdx}>
+                    {sMeta}
+                    {sLabel ? ` : ${sLabel}` : ''}
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        )}
+
+      {proposal.status === 'executed' &&
+        (() => {
+          const entity =
+            proposal.executionResult && typeof proposal.executionResult.entity === 'string'
+              ? proposal.executionResult.entity
+              : null;
+          const navTarget: { to: string; label: string } | null = executedCourseId
+            ? { to: `/courses/${executedCourseId}`, label: 'Ouvrir le cours' }
+            : entity === 'task' || entity === 'parked_idea'
+              ? { to: '/tasks', label: 'Voir dans Tâches' }
+              : entity === 'project'
+                ? { to: '/projects', label: 'Voir dans Projets' }
+                : entity === 'personal_goal'
+                  ? { to: '/objectives', label: 'Voir dans Objectifs' }
+                  : entity === 'skill' || entity === 'skill_evidence' || entity === 'skill_assessment' || entity === 'skill_progression'
+                    ? { to: '/skills', label: 'Voir dans Compétences' }
+                    : entity === 'schedule_event' || entity === 'schedule_event_archived'
+                      ? { to: '/planning', label: 'Voir dans Planning' }
+                      : entity === 'study_session'
+                        ? { to: '/sessions', label: 'Voir dans Séances' }
+                        : entity === 'learning_path' || entity === 'strategic_activity'
+                          ? { to: '/learning', label: 'Voir dans Apprentissage' }
+                          : entity === 'preferences'
+                            ? { to: '/settings', label: 'Voir dans Paramètres' }
+                            : null;
+          const summaryText =
+            executionConfirmation ??
+            (executedCourseId
+              ? 'Cours créé avec le Niveau 1 débloqué.'
+              : 'Opération enregistrée dans votre espace StudyOS.');
+          if (!summaryText && !navTarget) return null;
+          return (
+            <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl bg-emerald-50 px-3 py-2 text-xs text-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-200">
+              <span>{summaryText}</span>
+              {navTarget && (
+                <Link
+                  to={navTarget.to}
+                  className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-2.5 py-1 text-[11px] font-medium text-white transition-colors hover:bg-emerald-700 dark:bg-emerald-500 dark:text-zinc-950 dark:hover:bg-emerald-400"
+                >
+                  {navTarget.label}
+                </Link>
+              )}
+            </div>
+          );
+        })()}
 
       {proposal.status === 'failed' && proposal.errorMessage && (
-        <div className="mt-3 rounded-xl bg-rose-50 px-3 py-2 text-xs text-rose-800 dark:bg-rose-950/40 dark:text-rose-200">
-          {proposal.errorMessage}
+        <div className="mt-3 space-y-1 rounded-xl bg-rose-50 px-3 py-2 text-xs text-rose-800 dark:bg-rose-950/40 dark:text-rose-200">
+          <p>{proposal.errorMessage}</p>
+          {Boolean(proposal.executionResult?.rolled_back) && (
+            <p className="font-medium">
+              Compensation automatique appliquée : aucune création partielle conservée.
+            </p>
+          )}
         </div>
       )}
 

@@ -89,13 +89,13 @@ const CURATED_RESOURCES: Record<string, ResourceSeed[]> = {
       notes: 'Catalogue complet des modules natifs (pathlib, json, csv, dataclasses, unittest).',
     },
     {
-      title: 'Python pour débutants — Tutoriel complet (vidéo FR)',
-      url: 'https://www.youtube.com/watch?v=LamjAFnybo0',
-      resourceType: 'video',
-      language: 'fr',
-      isOfficial: false,
-      sourceName: 'Graven / YouTube',
-      notes: 'Cours vidéo francophone progressif couvrant variables, boucles, fonctions et fichiers.',
+      title: 'Documentation officielle Pytest',
+      url: 'https://docs.pytest.org/en/stable/getting-started.html',
+      resourceType: 'documentation',
+      language: 'en',
+      isOfficial: true,
+      sourceName: 'Pytest',
+      notes: 'Guide officiel des tests unitaires, fixtures et vérifications paramétrées en Python.',
     },
     {
       title: 'CS50P — Introduction à la programmation avec Python',
@@ -105,6 +105,35 @@ const CURATED_RESOURCES: Record<string, ResourceSeed[]> = {
       isOfficial: false,
       sourceName: 'Harvard CS50',
       notes: 'Cours vidéo universitaire et exercices progressifs guidés.',
+    },
+  ],
+  javascript: [
+    {
+      title: 'MDN Web Docs — Guide JavaScript officiel (FR)',
+      url: 'https://developer.mozilla.org/fr/docs/Web/JavaScript/Guide',
+      resourceType: 'documentation',
+      language: 'fr',
+      isOfficial: true,
+      sourceName: 'MDN Web Docs',
+      notes: 'Référence officielle complète : closures, prototypes, promesses et modules ES.',
+    },
+    {
+      title: 'MDN Web Docs — Référence JavaScript & fetch/async',
+      url: 'https://developer.mozilla.org/fr/docs/Web/JavaScript/Reference',
+      resourceType: 'documentation',
+      language: 'fr',
+      isOfficial: true,
+      sourceName: 'MDN Web Docs',
+      notes: 'Spécifications des objets natifs, tableaux, itérateurs et asynchrone.',
+    },
+    {
+      title: 'Node.js Documentation officielle',
+      url: 'https://nodejs.org/en/learn/getting-started/introduction-to-nodejs',
+      resourceType: 'documentation',
+      language: 'en',
+      isOfficial: true,
+      sourceName: 'OpenJS Foundation',
+      notes: 'Runtime JavaScript côté serveur, événements et ES Modules.',
     },
   ],
   typescript: [
@@ -125,15 +154,6 @@ const CURATED_RESOURCES: Record<string, ResourceSeed[]> = {
       isOfficial: true,
       sourceName: 'TypeScript',
       notes: 'Environnement interactif dans le navigateur pour tester les inférences de types.',
-    },
-    {
-      title: 'Apprendre TypeScript — Formation vidéo (FR)',
-      url: 'https://www.youtube.com/watch?v=JR3x5e2qJ9g',
-      resourceType: 'video',
-      language: 'fr',
-      isOfficial: false,
-      sourceName: 'Grafikart / YouTube',
-      notes: 'Série vidéo francophone claire pour maîtriser types, interfaces et narrowing.',
     },
     {
       title: 'Total TypeScript — TypeScript Beginners Tutorial',
@@ -164,15 +184,6 @@ const CURATED_RESOURCES: Record<string, ResourceSeed[]> = {
       sourceName: 'React Docs',
       notes: 'Contrats précis de useState, useEffect, useMemo, useCallback et hooks personnalisés.',
     },
-    {
-      title: 'Formation React complète (vidéo FR)',
-      url: 'https://www.youtube.com/watch?v=f0X1Tl8aHtA',
-      resourceType: 'video',
-      language: 'fr',
-      isOfficial: false,
-      sourceName: 'Grafikart / YouTube',
-      notes: 'Comprendre JSX, état, formulaires contrôlés et hooks sur des cas concrets.',
-    },
   ],
   sql: [
     {
@@ -192,15 +203,6 @@ const CURATED_RESOURCES: Record<string, ResourceSeed[]> = {
       isOfficial: false,
       sourceName: 'SQLBolt',
       notes: 'Exercices interactifs dans le navigateur sur SELECT, JOIN et GROUP BY.',
-    },
-    {
-      title: 'SQL & Bases de données relationnelles (vidéo FR)',
-      url: 'https://www.youtube.com/watch?v=o6P4gH48h3M',
-      resourceType: 'video',
-      language: 'fr',
-      isOfficial: false,
-      sourceName: 'YouTube FR',
-      notes: 'Modélisation relationnelle, clés étrangères et requêtes analytiques expliquées pas à pas.',
     },
   ],
   rust: [
@@ -222,15 +224,6 @@ const CURATED_RESOURCES: Record<string, ResourceSeed[]> = {
       sourceName: 'Rust Docs',
       notes: 'Exemples exécutables chapitre par chapitre.',
     },
-    {
-      title: 'Découvrir Rust en français (vidéo)',
-      url: 'https://www.youtube.com/watch?v=Br6P_9n9g4M',
-      resourceType: 'video',
-      language: 'fr',
-      isOfficial: false,
-      sourceName: 'YouTube FR',
-      notes: 'Introduction claire à Cargo, ownership et Result/Option.',
-    },
   ],
   java: [
     {
@@ -243,13 +236,13 @@ const CURATED_RESOURCES: Record<string, ResourceSeed[]> = {
       notes: 'Tutoriels officiels sur POO, collections, streams et records.',
     },
     {
-      title: 'Apprendre Java — Cours complet (vidéo FR)',
-      url: 'https://www.youtube.com/watch?v=UmnCZ7-9yDY',
-      resourceType: 'video',
-      language: 'fr',
-      isOfficial: false,
-      sourceName: 'Graven / YouTube',
-      notes: 'Fondamentaux Java, classes, interfaces et gestion d’exceptions.',
+      title: 'JUnit 5 User Guide officiel',
+      url: 'https://junit.org/junit5/docs/current/user-guide/',
+      resourceType: 'documentation',
+      language: 'en',
+      isOfficial: true,
+      sourceName: 'JUnit Team',
+      notes: 'Guide officiel des tests unitaires et tests paramétrés en Java.',
     },
   ],
   go: [
@@ -280,6 +273,7 @@ function detectSubjectKey(subject: string): string {
     return 'python';
   }
   if (lowered.includes('typescript') || lowered === 'ts') return 'typescript';
+  if (lowered.includes('javascript') || lowered === 'js') return 'javascript';
   if (lowered.includes('react') || lowered.includes('next')) return 'react';
   if (lowered.includes('sql') || lowered.includes('postgres') || lowered.includes('mysql')) {
     return 'sql';
@@ -296,7 +290,7 @@ function inferDomain(subject: string, explicitDomain?: string): string {
   if (key === 'python' || key === 'java' || key === 'go' || key === 'rust') {
     return 'Développement Backend & Systèmes';
   }
-  if (key === 'typescript' || key === 'react') {
+  if (key === 'typescript' || key === 'javascript' || key === 'react') {
     return 'Développement Frontend & Web';
   }
   if (key === 'sql') {
@@ -320,27 +314,18 @@ function buildGenericResources(subject: string): ResourceSeed[] {
     {
       title: `freeCodeCamp — Cours et guides sur ${subject}`,
       url: `https://www.freecodecamp.org/news/search/?query=${encoded}`,
-      resourceType: 'video',
+      resourceType: 'interactive',
       language: 'en',
       isOfficial: false,
       sourceName: 'freeCodeCamp',
-      notes: 'Tutoriels vidéo longs et articles pas à pas orientés projets.',
-    },
-    {
-      title: `YouTube — Playlist d’apprentissage ${subject}`,
-      url: `https://www.youtube.com/results?search_query=cours+complet+${encoded}`,
-      resourceType: 'video',
-      language: 'fr',
-      isOfficial: false,
-      sourceName: 'YouTube',
-      notes: 'Conférences et ateliers pratiques pour compléter chaque chapitre.',
+      notes: 'Tutoriels et articles pas à pas orientés projets.',
     },
   ];
 }
 
 function selectResourcesForLevel(
   subject: string,
-  levelNumber: number,
+  _levelNumber: number,
   language: CourseLanguage,
 ): ResourceSeed[] {
   const key = detectSubjectKey(subject);
@@ -353,7 +338,7 @@ function selectResourcesForLevel(
     if (a.isOfficial !== b.isOfficial) return a.isOfficial ? -1 : 1;
     return aLangPref - bLangPref;
   });
-  return levelNumber === 1 ? sorted : sorted.slice(0, 3);
+  return sorted.slice(0, 6);
 }
 
 interface LessonDraft {
@@ -897,18 +882,21 @@ function buildAdaptiveLevelN(
   levelNumber: number,
   customTitle?: string,
 ): LevelBlueprintDraft {
+  const subjectKey = detectSubjectKey(subject);
   const codeLang =
-    detectSubjectKey(subject) === 'sql'
+    subjectKey === 'sql'
       ? 'sql'
-      : detectSubjectKey(subject) === 'rust'
+      : subjectKey === 'rust'
         ? 'rust'
-        : detectSubjectKey(subject) === 'java'
+        : subjectKey === 'java'
           ? 'java'
-          : detectSubjectKey(subject) === 'go'
+          : subjectKey === 'go'
             ? 'go'
-            : detectSubjectKey(subject) === 'typescript' || detectSubjectKey(subject) === 'react'
-              ? 'typescript'
-              : 'python';
+            : subjectKey === 'javascript'
+              ? 'javascript'
+              : subjectKey === 'typescript' || subjectKey === 'react'
+                ? 'typescript'
+                : 'python';
 
   const levelTitles: Record<number, string> = {
     1: `Fondamentaux essentiels et premier modèle en ${subject}`,
@@ -1173,12 +1161,19 @@ function materializeLevel(
       projectBrief: unlocked ? draft.projectBrief : null,
       projectDeliverables: unlocked ? draft.projectDeliverables : [],
       projectRubric: rubric,
+      generationSource: 'curated_track',
+      revision: 1,
+      previousVersionsCount: 0,
       validatedAt: null,
       lessons,
       resources,
       submissions: [],
       passThreshold: passThresholdForCourseLevel(levelNumber),
       projectPassed: false,
+      lessonsCompleted: false,
+      exercisesPassedCount: 0,
+      exercisePassed: false,
+      canValidate: false,
       createdAt: nowIso,
       updatedAt: nowIso,
     },
@@ -1227,6 +1222,8 @@ export function createCourseDetailLocal(
     status: 'active',
     skillId,
     learningPathId: null,
+    generationSource: 'curated_track',
+    generationModel: null,
     completedLessonsCount: 0,
     totalLessonsCount: levels[0]?.lessons.length ?? 0,
     resourcesCount: allResources.length,
@@ -1234,6 +1231,39 @@ export function createCourseDetailLocal(
     updatedAt: nowIso,
     levels,
     resources: allResources,
+  };
+}
+
+export function withComputedLevelReadiness(level: CourseLevel): CourseLevel {
+  const lessonsCompleted =
+    level.lessons.length > 0 && level.lessons.every((l) => l.status === 'completed');
+  const hasExercises = level.lessons.some((l) => l.exercises.length > 0);
+  const passedKeys = new Set(
+    level.submissions
+      .filter((s) => s.submissionKind === 'exercise' && s.passed)
+      .map((s) => `${s.lessonId ?? ''}::${s.exerciseId ?? s.title}`),
+  );
+  const exercisesPassedCount = passedKeys.size;
+  const exercisePassed = !hasExercises || exercisesPassedCount >= 1;
+  const projectPassed = level.submissions.some(
+    (s) =>
+      s.submissionKind === 'project' &&
+      Boolean(s.passed) &&
+      !s.manualReviewRequired &&
+      (s.score ?? 0) >= level.passThreshold,
+  );
+  const canValidate =
+    (level.status === 'unlocked' || level.status === 'in_progress') &&
+    lessonsCompleted &&
+    exercisePassed &&
+    projectPassed;
+  return {
+    ...level,
+    lessonsCompleted,
+    exercisesPassedCount,
+    exercisePassed,
+    projectPassed,
+    canValidate,
   };
 }
 
@@ -1253,6 +1283,8 @@ export function summarizeCourse(detail: CourseDetail): CourseSummary {
     status: detail.status,
     skillId: detail.skillId,
     learningPathId: detail.learningPathId,
+    generationSource: detail.generationSource ?? 'curated_track',
+    generationModel: detail.generationModel ?? null,
     completedLessonsCount,
     totalLessonsCount: allLessons.length,
     resourcesCount: detail.resources.length,
@@ -1328,11 +1360,32 @@ export function evaluateCourseSubmissionLocal(params: {
   const combinedLower = `${answer}\n${code}`.toLowerCase();
   const threshold = submissionKind === 'project' ? level.passThreshold : 65;
 
+  const priorCount = level.submissions.filter(
+    (s) =>
+      s.submissionKind === submissionKind &&
+      (submissionKind !== 'exercise' ||
+        (s.lessonId === (input.lessonId ?? null) &&
+          s.exerciseId === (input.exerciseId ?? null))),
+  ).length;
+  const attemptNumber = priorCount + 1;
+
+  const matchedExercise = input.lessonId
+    ? level.lessons
+        .find((l) => l.id === input.lessonId)
+        ?.exercises.find((ex) => !input.exerciseId || ex.id === input.exerciseId)
+    : undefined;
+  const starterUnchanged =
+    Boolean(matchedExercise?.starterCode?.trim()) &&
+    Boolean(code) &&
+    code.replace(/\s+/g, '') === matchedExercise!.starterCode!.trim().replace(/\s+/g, '');
+
   const isDeclarative = DECLARATIVE_PATTERNS.some((rx) => rx.test(answer));
   const codeHits = CODE_MARKERS.filter((m) => combinedLower.includes(m)).length;
   const edgeHits = EDGE_CASE_KEYWORDS.filter((k) => combinedLower.includes(k)).length;
   const words = answer.split(/\s+/).filter((w) => w.length >= 2);
-  const hasRealCode = code.length >= 24 && codeHits >= 1;
+  const hasRealCode = code.length >= 24 && codeHits >= 1 && !starterUnchanged;
+  const hasExternalUrl = Boolean(input.referenceUrl?.trim());
+  const manualReviewRequired = hasExternalUrl && !hasRealCode;
 
   const rubric =
     level.projectRubric.length > 0 ? level.projectRubric : defaultProjectRubric();
@@ -1344,20 +1397,31 @@ export function evaluateCourseSubmissionLocal(params: {
   const improvements: string[] = [];
   let nextStepHint = '';
 
-  if ((isDeclarative && !hasRealCode) || words.length < 4 || answer.length < 18) {
+  if (
+    starterUnchanged ||
+    manualReviewRequired ||
+    (isDeclarative && !hasRealCode) ||
+    words.length < 4 ||
+    answer.length < 18
+  ) {
     criteriaResults = rubric.map((c) => ({
       key: c.key,
       label: c.label,
       score: Math.min(5, Math.round(c.maxScore * 0.2)),
       maxScore: c.maxScore,
       passed: false,
-      feedback:
-        'Explication purement déclarative ou insuffisante : décrivez votre logique technique réelle et fournissez un extrait concret.',
+      feedback: starterUnchanged
+        ? 'Le code de départ n’a pas encore été complété.'
+        : manualReviewRequired
+          ? 'Un lien externe seul ne permet pas la validation automatique sans code vérifiable.'
+          : 'Explication purement déclarative ou insuffisante : décrivez votre logique technique réelle et fournissez un extrait concret.',
     }));
     totalScore = criteriaResults.reduce((acc, c) => acc + c.score, 0);
     passed = false;
     improvements.push(
-      'Remplacer les formulations déclaratives par une explication concrète des fonctions, types et cas limites traités.',
+      manualReviewRequired
+        ? 'Collez le code clé et les tests exécutés en plus de l’URL externe.'
+        : 'Remplacer les formulations déclaratives par une explication concrète des fonctions, types et cas limites traités.',
     );
     if (!hasRealCode) {
       improvements.push('Joindre un extrait de code ou de livrable vérifiable dans la zone de code.');
@@ -1412,7 +1476,7 @@ export function evaluateCourseSubmissionLocal(params: {
     });
 
     totalScore = criteriaResults.reduce((acc, c) => acc + c.score, 0);
-    passed = totalScore >= threshold;
+    passed = !manualReviewRequired && totalScore >= threshold;
 
     if (words.length >= 10) strengths.push('Démarche technique expliquée de manière compréhensible.');
     if (hasRealCode) strengths.push('Code ou livrable concret fourni à l’appui.');
@@ -1426,9 +1490,9 @@ export function evaluateCourseSubmissionLocal(params: {
     }
     nextStepHint = passed
       ? submissionKind === 'project'
-        ? `Projet approuvé (${totalScore}/100 >= ${threshold}/100) : vous pouvez maintenant cliquer sur « Valider le niveau ${level.levelNumber} » pour débloquer la suite.`
-        : 'Exercice validé : passez à l’exercice suivant ou au projet de fin de niveau.'
-      : `Score ${totalScore}/100 inférieur au seuil (${threshold}/100) : enrichissez les points listés puis soumettez à nouveau.`;
+        ? `Projet approuvé (${totalScore}/100 >= ${threshold}/100) : validez les chapitres et au moins un exercice pour débloquer le niveau ${level.levelNumber}.`
+        : 'Exercice validé : passez au chapitre suivant ou au projet de fin de niveau.'
+      : `Tentative #${attemptNumber} — Score ${totalScore}/100 inférieur au seuil (${threshold}/100) : enrichissez les points listés puis soumettez à nouveau.`;
   }
 
   const externalNote = input.referenceUrl?.trim() ? `\n\n> Note : ${EXTERNAL_URL_DISCLAIMER}` : '';
@@ -1463,6 +1527,10 @@ export function evaluateCourseSubmissionLocal(params: {
     strengths,
     improvements,
     nextStepHint,
+    attemptNumber,
+    evaluationMode: manualReviewRequired ? 'manual_review' : 'static_heuristic',
+    manualReviewRequired,
+    staticAnalysis: { has_logic: hasRealCode, starter_unchanged: starterUnchanged },
     createdAt: nowIso,
     updatedAt: nowIso,
   };
@@ -1476,17 +1544,29 @@ export function validateCourseLevelLocal(
   if (targetIdx === -1) {
     return { updated: course, error: 'Niveau introuvable dans ce cours.' };
   }
-  const target = course.levels[targetIdx];
+  const target = withComputedLevelReadiness(course.levels[targetIdx]);
   if (target.status === 'locked') {
     return {
       updated: course,
       error: 'Ce niveau est encore verrouillé : validez d’abord le niveau précédent.',
     };
   }
+  if (!target.lessonsCompleted) {
+    return {
+      updated: course,
+      error: `Terminez d’abord tous les chapitres du niveau ${target.levelNumber} avant de le valider.`,
+    };
+  }
+  if (!target.exercisePassed) {
+    return {
+      updated: course,
+      error: `Réussissez au moins un exercice du niveau ${target.levelNumber} avant sa validation.`,
+    };
+  }
   if (!target.projectPassed) {
     return {
       updated: course,
-      error: `Impossible de valider le niveau ${target.levelNumber} : le projet doit d’abord atteindre au moins ${target.passThreshold}/100.`,
+      error: `Impossible de valider le niveau ${target.levelNumber} : le projet doit d’abord atteindre au moins ${target.passThreshold}/100 sans revue manuelle bloquante.`,
     };
   }
 
@@ -1496,6 +1576,7 @@ export function validateCourseLevelLocal(
     ...target,
     status: 'validated',
     validatedAt: nowIso,
+    canValidate: false,
     updatedAt: nowIso,
   };
 
@@ -1546,4 +1627,54 @@ export function validateCourseLevelLocal(
   };
 
   return { updated };
+}
+
+export function regenerateCourseLevelLocal(
+  course: CourseDetail,
+  levelId: string,
+): { updated: CourseDetail; error?: string } {
+  const targetIdx = course.levels.findIndex((lv) => lv.id === levelId);
+  if (targetIdx === -1) {
+    return { updated: course, error: 'Niveau introuvable dans ce cours.' };
+  }
+  const target = course.levels[targetIdx];
+  if (target.status === 'locked') {
+    return { updated: course, error: 'Impossible de régénérer un niveau encore verrouillé.' };
+  }
+  if (target.status === 'validated') {
+    return { updated: course, error: 'Un niveau déjà validé ne peut pas être régénéré.' };
+  }
+
+  const nowIso = new Date().toISOString();
+  const rematerialized = materializeLevel(
+    course.userId,
+    course.id,
+    course.subject,
+    course.language,
+    target.levelNumber,
+    true,
+    nowIso,
+  );
+  const nextLevels = [...course.levels];
+  nextLevels[targetIdx] = withComputedLevelReadiness({
+    ...rematerialized.level,
+    id: target.id,
+    status: target.status,
+    lessons: rematerialized.level.lessons.map((l) => ({ ...l, levelId: target.id })),
+    resources: rematerialized.level.resources.map((r) => ({ ...r, levelId: target.id })),
+    submissions: target.submissions,
+    revision: (target.revision ?? 1) + 1,
+    previousVersionsCount: (target.previousVersionsCount ?? 0) + 1,
+  });
+
+  const allLessons = nextLevels.flatMap((lv) => lv.lessons);
+  return {
+    updated: {
+      ...course,
+      levels: nextLevels,
+      completedLessonsCount: allLessons.filter((l) => l.status === 'completed').length,
+      totalLessonsCount: allLessons.length,
+      updatedAt: nowIso,
+    },
+  };
 }

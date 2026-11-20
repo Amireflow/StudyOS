@@ -12,7 +12,9 @@ from app.models.tables import (
     CourseTable,
     LearningModuleTable,
     LearningPathTable,
+    LearningPlanVersionTable,
     LessonTable,
+    PersonalGoalTable,
     ProfileTable,
     ProjectTable,
     ScheduleEventTable,
@@ -23,6 +25,8 @@ from app.models.tables import (
     TaskTable,
     TimetableImportTable,
     UserAccountTable,
+    UserAiMemoryTable,
+    UserAvailabilityRuleTable,
 )
 
 __all__ = [
@@ -39,10 +43,14 @@ __all__ = [
     "SkillEvidenceTable",
     "SkillAssessmentTable",
     "ProjectTable",
+    "PersonalGoalTable",
     "AiConversationTable",
     "AiMessageTable",
     "AiActionProposalTable",
     "AiReportTable",
+    "UserAiMemoryTable",
+    "UserAvailabilityRuleTable",
+    "LearningPlanVersionTable",
     "CourseTable",
     "CourseLevelTable",
     "CourseLessonTable",

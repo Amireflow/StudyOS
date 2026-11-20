@@ -220,4 +220,46 @@ describe('PlanningPage', () => {
       screen.getByRole('heading', { level: 3, name: '[TP] Bases de Données' }),
     ).toBeInTheDocument();
   });
+
+  it('génère un programme intelligent, rejette sans muter puis applique réellement au calendrier', async () => {
+    const user = userEvent.setup();
+    renderPlanningPage();
+
+    // Ouvre le studio Programme intelligent
+    await user.click(screen.getByRole('button', { name: 'Programme intelligent' }));
+    expect(
+      screen.getByRole('region', { name: 'Moteur intelligent de planification' }),
+    ).toBeInTheDocument();
+
+    // Ajoute une règle d'indisponibilité personnelle
+    const labelInput = screen.getByLabelText('Libellé de disponibilité');
+    await user.clear(labelInput);
+    await user.type(labelInput, 'Mercredi bloqué');
+    await user.click(screen.getByRole('button', { name: 'Ajouter la règle' }));
+    expect(screen.getByText('Mercredi bloqué')).toBeInTheDocument();
+
+    // Génère un programme intelligent (v1) sans muter le calendrier
+    await user.click(screen.getByRole('button', { name: 'Générer le programme' }));
+    expect(screen.getByText('Version v1')).toBeInTheDocument();
+    expect(screen.getByText(/Programme généré/i)).toBeInTheDocument();
+
+    // Rejet sans modification du calendrier
+    await user.click(screen.getByRole('button', { name: 'Rejeter sans modifier' }));
+    expect(
+      screen.getByText(/Proposition v1 rejetée sans modifier le calendrier/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole('heading', { level: 3, name: /Session 1/i }),
+    ).not.toBeInTheDocument();
+
+    // Nouvelle génération (v2) puis application réelle au calendrier
+    await user.click(screen.getByRole('button', { name: 'Générer le programme' }));
+    expect(screen.getByText('Version v2')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Appliquer au calendrier' }));
+
+    expect(screen.getByRole('status')).toHaveTextContent(/Programme v2 appliqué/i);
+    expect(
+      screen.getAllByRole('heading', { level: 3, name: /Session 1/i }).length,
+    ).toBeGreaterThanOrEqual(1);
+  });
 });

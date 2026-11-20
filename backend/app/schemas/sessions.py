@@ -10,8 +10,15 @@ class SessionCreate(BaseModel):
     started_at: UtcDatetime | None = None
     ended_at: UtcDatetime | None = None
     result: str | None = None
+    planned_activity: str | None = None
+    actual_activity: str | None = None
+    outcome_status: str | None = None
+    deliverable_summary: str | None = None
+    blockers: str | None = None
+    next_step: str | None = None
     task_id: UUID | None = None
     project_id: UUID | None = None
+    goal_id: UUID | None = None
     module_id: UUID | None = None
     lesson_id: UUID | None = None
     skill_id: UUID | None = None
@@ -52,6 +59,12 @@ class SessionCreate(BaseModel):
 class SessionFinish(BaseModel):
     result: str
     ended_at: UtcDatetime | None = None
+    planned_activity: str | None = None
+    actual_activity: str | None = None
+    outcome_status: str | None = None
+    deliverable_summary: str | None = None
+    blockers: str | None = None
+    next_step: str | None = None
 
     @field_validator("result")
     @classmethod
@@ -67,8 +80,15 @@ class SessionUpdate(BaseModel):
     category: str | None = None
     status: SessionStatus | None = None
     result: str | None = None
+    planned_activity: str | None = None
+    actual_activity: str | None = None
+    outcome_status: str | None = None
+    deliverable_summary: str | None = None
+    blockers: str | None = None
+    next_step: str | None = None
     task_id: UUID | None = None
     project_id: UUID | None = None
+    goal_id: UUID | None = None
     module_id: UUID | None = None
     lesson_id: UUID | None = None
     skill_id: UUID | None = None
@@ -116,8 +136,15 @@ class SessionResponse(BaseModel):
     ended_at: datetime | None = None
     duration_minutes: int
     result: str | None = None
+    planned_activity: str | None = None
+    actual_activity: str | None = None
+    outcome_status: str | None = None
+    deliverable_summary: str | None = None
+    blockers: str | None = None
+    next_step: str | None = None
     task_id: UUID | None = None
     project_id: UUID | None = None
+    goal_id: UUID | None = None
     module_id: UUID | None = None
     lesson_id: UUID | None = None
     skill_id: UUID | None = None

@@ -4,8 +4,30 @@ from fastapi.testclient import TestClient
 def test_health_and_request_id(client: TestClient) -> None:
     response = client.get("/health")
     assert response.status_code == 200
-    assert response.json() == {"status": "ok", "env": "local"}
+    body = response.json()
+    assert body["status"] == "ok"
+    assert body["env"] == "local"
+    assert body["database"] in {"ok", "memory"}
     assert response.headers["X-Request-ID"].startswith("req_")
+
+
+def test_health_returns_503_without_leaking_secrets_when_db_fails(client: TestClient) -> None:
+    class _BrokenEngine:
+        def connect(self):
+            raise RuntimeError("postgresql://postgres:super_secret_pw@db.internal:5432/postgres unreachable")
+
+    original_engine = client.app.state.db_engine  # type: ignore[union-attr]
+    client.app.state.db_engine = _BrokenEngine()  # type: ignore[union-attr]
+    try:
+        response = client.get("/health")
+    finally:
+        client.app.state.db_engine = original_engine  # type: ignore[union-attr]
+
+    assert response.status_code == 503
+    body = response.json()
+    assert body == {"status": "degraded", "env": "local", "database": "error"}
+    assert "super_secret_pw" not in response.text
+    assert "db.internal" not in response.text
 
 
 def test_openapi_documents_expected_v1_routes(client: TestClient) -> None:
@@ -82,3 +104,34 @@ def test_validation_422_and_not_found_404_use_uniform_error_format(
     )
     assert not_found.status_code == 404
     assert not_found.json()["error"]["code"] == "NOT_FOUND"
+
+
+def test_cors_allows_idempotency_key_and_rls_covers_all_tables(client: TestClient) -> None:
+    import re
+    from pathlib import Path
+    import app.models  # noqa: F401
+    from app.core.database import Base
+
+    preflight = client.options(
+        "/api/v1/planning/generate",
+        headers={
+            "Origin": "http://localhost:5173",
+            "Access-Control-Request-Method": "POST",
+            "Access-Control-Request-Headers": "authorization,content-type,idempotency-key",
+        },
+    )
+    assert preflight.status_code == 200
+    allow_headers = (preflight.headers.get("access-control-allow-headers") or "").lower()
+    assert "idempotency-key" in allow_headers
+
+    rls_path = Path(__file__).resolve().parents[1] / "alembic" / "rls_supabase.sql"
+    rls_sql = rls_path.read_text(encoding="utf-8")
+    enabled_tables = set(
+        re.findall(
+            r'ALTER TABLE\s+(?:public\.)?"?([a-z0-9_]+)"?\s+ENABLE ROW LEVEL SECURITY',
+            rls_sql,
+            re.IGNORECASE,
+        )
+    )
+    orm_tables = set(Base.metadata.tables.keys())
+    assert enabled_tables == orm_tables

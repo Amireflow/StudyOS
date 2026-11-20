@@ -7,6 +7,7 @@ import type {
   ScheduleEvent,
   ScheduleEventSource,
   ScheduleEventType,
+  SessionFinishExtra,
   SessionStatus,
   StudySession,
   Task,
@@ -69,6 +70,10 @@ interface ApiScheduleEvent {
   teacher?: string | null;
   room?: string | null;
   group_name?: string | null;
+  goal_id?: string | null;
+  course_id?: string | null;
+  project_id?: string | null;
+  task_id?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -142,8 +147,15 @@ interface ApiSession {
   started_at: string;
   ended_at: string | null;
   result: string | null;
+  planned_activity?: string | null;
+  actual_activity?: string | null;
+  outcome_status?: string | null;
+  deliverable_summary?: string | null;
+  blockers?: string | null;
+  next_step?: string | null;
   task_id: string | null;
   project_id: string | null;
+  goal_id?: string | null;
   module_id: string | null;
   lesson_id: string | null;
   skill_id: string | null;
@@ -164,6 +176,9 @@ export interface ApiAuthAccountResponse {
   email: string | null;
   auth_provider: 'password' | 'external';
   has_password_account: boolean;
+  email_verified?: boolean;
+  can_change_password?: boolean;
+  password_reset_mode?: 'external_provider' | 'unavailable_no_mailer';
   last_login_at: string | null;
   created_at: string;
   profile: ApiProfile;
@@ -174,6 +189,9 @@ export interface AuthAccountInfo {
   email: string | null;
   authProvider: 'password' | 'external';
   hasPasswordAccount: boolean;
+  emailVerified: boolean;
+  canChangePassword: boolean;
+  passwordResetMode: 'external_provider' | 'unavailable_no_mailer';
   lastLoginAt: string | null;
   createdAt: string;
   profile: UserProfile;
@@ -234,6 +252,10 @@ function mapScheduleEvent(dto: ApiScheduleEvent): ScheduleEvent {
     teacher: dto.teacher ?? null,
     room: dto.room ?? null,
     groupName: dto.group_name ?? null,
+    goalId: dto.goal_id ?? null,
+    courseId: dto.course_id ?? null,
+    projectId: dto.project_id ?? null,
+    taskId: dto.task_id ?? null,
     createdAt: dto.created_at,
     updatedAt: dto.updated_at,
   };
@@ -328,8 +350,15 @@ function mapSession(dto: ApiSession): StudySession {
     startedAt: dto.started_at,
     endedAt: dto.ended_at,
     result: dto.result,
+    plannedActivity: dto.planned_activity ?? null,
+    actualActivity: dto.actual_activity ?? null,
+    outcomeStatus: dto.outcome_status ?? null,
+    deliverableSummary: dto.deliverable_summary ?? null,
+    blockers: dto.blockers ?? null,
+    nextStep: dto.next_step ?? null,
     taskId: dto.task_id,
     projectId: dto.project_id,
+    goalId: dto.goal_id ?? null,
     moduleId: dto.module_id,
     lessonId: dto.lesson_id,
     skillId: dto.skill_id,
@@ -344,6 +373,7 @@ export async function loginLocalApi(
 ): Promise<{ accessToken: string; email: string | null; profile: UserProfile }> {
   const response = await apiRequest<ApiLocalAuthResponse>('/auth/local-login', {
     method: 'POST',
+    skipAuthRefresh: true,
     body: {
       email: email.trim(),
       display_name: displayName?.trim() || null,
@@ -364,6 +394,7 @@ export async function registerAccountApi(payload: {
 }): Promise<{ accessToken: string; email: string | null; profile: UserProfile }> {
   const response = await apiRequest<ApiLocalAuthResponse>('/auth/register', {
     method: 'POST',
+    skipAuthRefresh: true,
     body: {
       email: payload.email.trim(),
       password: payload.password,
@@ -384,6 +415,7 @@ export async function loginAccountApi(payload: {
 }): Promise<{ accessToken: string; email: string | null; profile: UserProfile }> {
   const response = await apiRequest<ApiLocalAuthResponse>('/auth/login', {
     method: 'POST',
+    skipAuthRefresh: true,
     body: {
       email: payload.email.trim(),
       password: payload.password,
@@ -396,6 +428,30 @@ export async function loginAccountApi(payload: {
   };
 }
 
+export async function refreshSessionApi(): Promise<{
+  accessToken: string;
+  email: string | null;
+  profile: UserProfile;
+}> {
+  const response = await apiRequest<ApiLocalAuthResponse>('/auth/refresh', {
+    method: 'POST',
+    skipAuthRefresh: true,
+  });
+  if (
+    !response ||
+    typeof response.access_token !== 'string' ||
+    !response.profile ||
+    typeof response.profile.id !== 'string'
+  ) {
+    throw new ApiError(401, 'UNAUTHORIZED', 'Réponse de rafraîchissement invalide.');
+  }
+  return {
+    accessToken: response.access_token,
+    email: response.email ?? null,
+    profile: mapProfile(response.profile),
+  };
+}
+
 export async function changePasswordApi(
   accessToken: string,
   payload: { currentPassword: string; newPassword: string },
@@ -403,6 +459,7 @@ export async function changePasswordApi(
   const response = await apiRequest<ApiLocalAuthResponse>('/auth/change-password', {
     method: 'POST',
     accessToken,
+    skipAuthRefresh: true,
     body: {
       current_password: payload.currentPassword,
       new_password: payload.newPassword,
@@ -415,11 +472,32 @@ export async function changePasswordApi(
   };
 }
 
-export async function logoutAllSessionsApi(accessToken: string): Promise<void> {
-  await apiRequest<void>('/auth/logout', {
+export async function logoutSessionApi(accessToken?: string): Promise<void> {
+  await apiRequest<void>('/auth/logout?current_only=true', {
     method: 'POST',
     accessToken,
+    skipAuthRefresh: true,
   });
+}
+
+export async function logoutAllSessionsApi(accessToken: string): Promise<void> {
+  try {
+    await apiRequest<void>('/auth/logout-all', {
+      method: 'POST',
+      accessToken,
+      skipAuthRefresh: true,
+    });
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 404) {
+      await apiRequest<void>('/auth/logout', {
+        method: 'POST',
+        accessToken,
+        skipAuthRefresh: true,
+      });
+      return;
+    }
+    throw err;
+  }
 }
 
 export async function fetchAccountInfoApi(accessToken: string): Promise<AuthAccountInfo> {
@@ -429,6 +507,11 @@ export async function fetchAccountInfoApi(accessToken: string): Promise<AuthAcco
     email: dto.email ?? null,
     authProvider: dto.auth_provider,
     hasPasswordAccount: dto.has_password_account,
+    emailVerified: dto.email_verified ?? false,
+    canChangePassword: dto.can_change_password ?? dto.auth_provider === 'password',
+    passwordResetMode:
+      dto.password_reset_mode ??
+      (dto.auth_provider === 'external' ? 'external_provider' : 'unavailable_no_mailer'),
     lastLoginAt: dto.last_login_at,
     createdAt: dto.created_at,
     profile: mapProfile(dto.profile),
@@ -793,14 +876,23 @@ export async function finishSessionApi(
   accessToken: string,
   id: string,
   result: string,
+  extra?: SessionFinishExtra,
 ): Promise<StudySession> {
+  const body: Record<string, unknown> = {
+    result: result.trim(),
+    ended_at: new Date().toISOString(),
+  };
+  if (extra?.plannedActivity?.trim()) body.planned_activity = extra.plannedActivity.trim();
+  if (extra?.actualActivity?.trim()) body.actual_activity = extra.actualActivity.trim();
+  if (extra?.outcomeStatus) body.outcome_status = extra.outcomeStatus;
+  if (extra?.deliverableSummary?.trim()) body.deliverable_summary = extra.deliverableSummary.trim();
+  if (extra?.blockers?.trim()) body.blockers = extra.blockers.trim();
+  if (extra?.nextStep?.trim()) body.next_step = extra.nextStep.trim();
+
   const dto = await apiRequest<ApiSession>(`/sessions/${id}/finish`, {
     method: 'PATCH',
     accessToken,
-    body: {
-      result: result.trim(),
-      ended_at: new Date().toISOString(),
-    },
+    body,
   });
   return mapSession(dto);
 }

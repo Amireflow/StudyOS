@@ -2,6 +2,8 @@ import type {
   AiActionProposal,
   AiContextScope,
   AiConversation,
+  AiMemory,
+  AiMemoryUpdate,
   AiMessage,
   AiMessageRole,
   AiProviderCatalogItem,
@@ -10,6 +12,7 @@ import type {
   AiProviderModel,
   AiReport,
   AiReportType,
+  AiToolRiskLevel,
   AiToolSpec,
   ProposalStatus,
 } from '../types/domain';
@@ -18,6 +21,7 @@ import { apiRequest } from './api-client';
 interface ApiAiToolSpec {
   name: string;
   access: 'read' | 'proposal';
+  risk_level?: AiToolRiskLevel;
   label: string;
   description: string;
   requires_confirmation: boolean;
@@ -46,6 +50,7 @@ interface ApiAiMessage {
     included_scopes?: string[];
     proposal_ids?: string[];
     rejected_proposals_count?: number;
+    auto_executed_count?: number;
   };
   created_at: string;
 }
@@ -76,6 +81,28 @@ interface ApiAiTurn {
   user_message: ApiAiMessage;
   assistant_message: ApiAiMessage;
   proposals: ApiAiProposal[];
+  auto_executed_count?: number;
+}
+
+interface ApiAiMemory {
+  user_id: string;
+  academic_context: Record<string, unknown>;
+  availability_preferences: Record<string, unknown>;
+  learning_preferences: Record<string, unknown>;
+  constraints: string[];
+  long_term_goals: string[];
+  recent_decisions: Array<{ action_type?: string; summary?: string; decided_at?: string }>;
+  execution_history: Array<{
+    proposal_id?: string;
+    action_type?: string;
+    summary?: string;
+    entity?: string | null;
+    executed_at?: string;
+  }>;
+  weekly_study_hours: number | null;
+  default_session_minutes: number;
+  auto_execute_simple_actions: boolean;
+  updated_at: string;
 }
 
 interface ApiAiReport {
@@ -97,10 +124,28 @@ function mapTool(dto: ApiAiToolSpec): AiToolSpec {
   return {
     name: dto.name,
     access: dto.access,
+    riskLevel: dto.risk_level,
     label: dto.label,
     description: dto.description,
     requiresConfirmation: dto.requires_confirmation,
     parameterKeys: dto.parameter_keys,
+  };
+}
+
+function mapMemory(dto: ApiAiMemory): AiMemory {
+  return {
+    userId: dto.user_id,
+    academicContext: dto.academic_context ?? {},
+    availabilityPreferences: dto.availability_preferences ?? {},
+    learningPreferences: dto.learning_preferences ?? {},
+    constraints: Array.isArray(dto.constraints) ? dto.constraints : [],
+    longTermGoals: Array.isArray(dto.long_term_goals) ? dto.long_term_goals : [],
+    recentDecisions: Array.isArray(dto.recent_decisions) ? dto.recent_decisions : [],
+    executionHistory: Array.isArray(dto.execution_history) ? dto.execution_history : [],
+    weeklyStudyHours: dto.weekly_study_hours ?? null,
+    defaultSessionMinutes: dto.default_session_minutes ?? 60,
+    autoExecuteSimpleActions: Boolean(dto.auto_execute_simple_actions),
+    updatedAt: dto.updated_at,
   };
 }
 
@@ -129,6 +174,7 @@ function mapMessage(dto: ApiAiMessage): AiMessage {
       includedScopes: dto.metadata?.included_scopes,
       proposalIds: dto.metadata?.proposal_ids,
       rejectedProposalsCount: dto.metadata?.rejected_proposals_count,
+      autoExecutedCount: dto.metadata?.auto_executed_count,
     },
     createdAt: dto.created_at,
   };
@@ -220,28 +266,72 @@ export async function deleteConversationApi(
   });
 }
 
+export async function fetchAiMemoryApi(accessToken: string): Promise<AiMemory> {
+  const dto = await apiRequest<ApiAiMemory>('/ai/memory', { accessToken });
+  return mapMemory(dto);
+}
+
+export async function updateAiMemoryApi(
+  accessToken: string,
+  patch: AiMemoryUpdate,
+): Promise<AiMemory> {
+  const body: Record<string, unknown> = {};
+  if (patch.academicContext !== undefined) body.academic_context = patch.academicContext;
+  if (patch.availabilityPreferences !== undefined) {
+    body.availability_preferences = patch.availabilityPreferences;
+  }
+  if (patch.learningPreferences !== undefined) {
+    body.learning_preferences = patch.learningPreferences;
+  }
+  if (patch.constraints !== undefined) body.constraints = patch.constraints;
+  if (patch.longTermGoals !== undefined) body.long_term_goals = patch.longTermGoals;
+  if (patch.weeklyStudyHours !== undefined) body.weekly_study_hours = patch.weeklyStudyHours;
+  if (patch.defaultSessionMinutes !== undefined) {
+    body.default_session_minutes = patch.defaultSessionMinutes;
+  }
+  if (patch.autoExecuteSimpleActions !== undefined) {
+    body.auto_execute_simple_actions = patch.autoExecuteSimpleActions;
+  }
+  const dto = await apiRequest<ApiAiMemory>('/ai/memory', {
+    method: 'PATCH',
+    accessToken,
+    body,
+  });
+  return mapMemory(dto);
+}
+
 export async function sendAiMessageApi(
   accessToken: string,
   conversationId: string,
   content: string,
   contextScopes?: AiContextScope[],
+  options?: { idempotencyKey?: string; autoExecuteSimple?: boolean },
 ): Promise<{
   userMessage: AiMessage;
   assistantMessage: AiMessage;
   proposals: AiActionProposal[];
+  autoExecutedCount: number;
 }> {
+  const headers: Record<string, string> = {};
+  if (options?.idempotencyKey) {
+    headers['Idempotency-Key'] = options.idempotencyKey;
+  }
   const dto = await apiRequest<ApiAiTurn>(`/ai/conversations/${conversationId}/messages`, {
     method: 'POST',
     accessToken,
+    headers,
     body: {
       content: content.trim(),
       context_scopes: contextScopes ?? ['auto'],
+      idempotency_key: options?.idempotencyKey ?? null,
+      auto_execute_simple: options?.autoExecuteSimple ?? null,
     },
   });
   return {
     userMessage: mapMessage(dto.user_message),
     assistantMessage: mapMessage(dto.assistant_message),
     proposals: dto.proposals.map(mapProposal),
+    autoExecutedCount: Number(dto.auto_executed_count ?? 0),
   };
 }
 
@@ -271,11 +361,20 @@ export async function acceptProposalApi(
   accessToken: string,
   proposalId: string,
   payloadOverrides?: Record<string, unknown>,
+  idempotencyKey?: string,
 ): Promise<AiActionProposal> {
+  const headers: Record<string, string> = {};
+  if (idempotencyKey) {
+    headers['Idempotency-Key'] = idempotencyKey;
+  }
   const dto = await apiRequest<ApiAiProposal>(`/ai/proposals/${proposalId}/accept`, {
     method: 'POST',
     accessToken,
-    body: payloadOverrides ? { payload_overrides: payloadOverrides } : {},
+    headers,
+    body: {
+      ...(payloadOverrides ? { payload_overrides: payloadOverrides } : {}),
+      ...(idempotencyKey ? { idempotency_key: idempotencyKey } : {}),
+    },
   });
   return mapProposal(dto);
 }
@@ -312,6 +411,29 @@ export async function generateWeeklyReviewApi(accessToken: string): Promise<AiRe
 export async function fetchReportsApi(accessToken: string): Promise<AiReport[]> {
   const dtos = await apiRequest<ApiAiReport[]>('/ai/reports', { accessToken });
   return dtos.map(mapReport);
+}
+
+export async function ensureAiReportsApi(accessToken: string): Promise<{
+  dailyBriefing: AiReport;
+  weeklyReview: AiReport;
+  createdDaily: boolean;
+  createdWeekly: boolean;
+}> {
+  const dto = await apiRequest<{
+    daily_briefing: ApiAiReport;
+    weekly_review: ApiAiReport;
+    created_daily: boolean;
+    created_weekly: boolean;
+  }>('/ai/reports/ensure', {
+    method: 'POST',
+    accessToken,
+  });
+  return {
+    dailyBriefing: mapReport(dto.daily_briefing),
+    weeklyReview: mapReport(dto.weekly_review),
+    createdDaily: Boolean(dto.created_daily),
+    createdWeekly: Boolean(dto.created_weekly),
+  };
 }
 
 interface ApiAiProviderCatalogItem {

@@ -12,8 +12,16 @@ services:
         value: production
       - key: ALLOW_LOCAL_DEV_AUTH
         value: "false"
+      - key: ALLOW_INSECURE_LOCAL_AI_URL
+        value: "false"
       - key: APP_SECRET_KEY
         generateValue: true
+      - key: AI_KEY_ENCRYPTION_KEY
+        sync: false
+      - key: AI_KEY_ENCRYPTION_FALLBACK_KEYS
+        sync: false
+      - key: AUTH_COOKIE_SAMESITE
+        value: none
       - key: DATABASE_URL
         sync: false
       - key: AUTH_JWKS_URL

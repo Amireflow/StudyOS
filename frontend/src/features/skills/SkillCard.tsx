@@ -32,6 +32,7 @@ import { EvidenceForm } from './SkillForms';
 import {
   ASSESSMENT_STATUS_META,
   ASSESSMENT_TYPE_META,
+  EVIDENCE_VERIFICATION_META,
   SKILL_EVIDENCE_TYPE_META,
   SKILL_LEVEL_META,
   SKILL_PEDAGOGICAL_STATE_META,
@@ -134,7 +135,10 @@ export function SkillCard({
   const activeAssessment =
     skillAssessments.find(
       (a) =>
-        a.status === 'pending' || a.status === 'submitted' || a.status === 'evaluated',
+        a.status === 'pending' ||
+        a.status === 'submitted' ||
+        a.status === 'evaluated' ||
+        a.status === 'needs_manual_review',
     ) ?? null;
   const latestAssessment = skillAssessments[0] ?? null;
 
@@ -392,6 +396,9 @@ export function SkillCard({
           <ul className="space-y-1.5">
             {skillEvidence.map((item) => {
               const typeMeta = SKILL_EVIDENCE_TYPE_META[item.type];
+              const verStatus = item.verificationStatus ?? 'declared';
+              const verMeta = EVIDENCE_VERIFICATION_META[verStatus];
+              const cannotDelete = Boolean(item.isLocked && verStatus === 'approved');
               return (
                 <li
                   key={item.id}
@@ -400,6 +407,8 @@ export function SkillCard({
                   <div className="min-w-0 space-y-1">
                     <div className="flex flex-wrap items-center gap-2">
                       <Badge variant={typeMeta.badgeVariant}>{typeMeta.label}</Badge>
+                      <Badge variant={verMeta.badgeVariant}>{verMeta.label}</Badge>
+                      {item.isLocked && <Badge variant="neutral">Verrouillée</Badge>}
                       <span className="text-xs text-zinc-500 dark:text-zinc-400">
                         {formatDateTimeFr(item.observedAt)}
                       </span>
@@ -427,11 +436,17 @@ export function SkillCard({
                   </div>
 
                   <div className="shrink-0 self-end sm:self-start">
-                    <InlineConfirm
-                      triggerLabel="Retirer"
-                      ariaLabel={`Supprimer la preuve ${item.description}`}
-                      onConfirm={() => void onDeleteEvidence(skill.id, item.id)}
-                    />
+                    {cannotDelete ? (
+                      <span className="text-[11px] text-zinc-500 dark:text-zinc-400">
+                        Preuve approuvée verrouillée
+                      </span>
+                    ) : (
+                      <InlineConfirm
+                        triggerLabel="Retirer"
+                        ariaLabel={`Supprimer la preuve ${item.description}`}
+                        onConfirm={() => void onDeleteEvidence(skill.id, item.id)}
+                      />
+                    )}
                   </div>
                 </li>
               );

@@ -1,6 +1,7 @@
 from datetime import datetime
+from typing import Any
 from uuid import UUID
-from pydantic import BaseModel, field_validator, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 from app.schemas.common import (
     ProjectStatus,
     TaskPriority,
@@ -26,12 +27,18 @@ def _normalize_deliverables(value: list[str] | None) -> list[str] | None:
 
 class ProjectCreate(BaseModel):
     name: str
+    category: str = "project"
     description: str | None = None
     goal: str
     status: ProjectStatus = ProjectStatus.planned
     priority: TaskPriority = TaskPriority.normal
+    motivation: str | None = None
+    start_date: UtcDatetime | None = None
+    weekly_target_minutes: int = Field(default=180, ge=0, le=3000)
     next_action: str = ""
+    steps: list[dict[str, Any]] = Field(default_factory=list)
     deliverables: list[str] | None = None
+    success_criteria: list[str] = Field(default_factory=list)
     target_date: UtcDatetime | None = None
 
     @field_validator("name")
@@ -79,12 +86,18 @@ class ProjectCreate(BaseModel):
 
 class ProjectUpdate(BaseModel):
     name: str | None = None
+    category: str | None = None
     description: str | None = None
     goal: str | None = None
     status: ProjectStatus | None = None
     priority: TaskPriority | None = None
+    motivation: str | None = None
+    start_date: UtcDatetime | None = None
+    weekly_target_minutes: int | None = Field(default=None, ge=0, le=3000)
     next_action: str | None = None
+    steps: list[dict[str, Any]] | None = None
     deliverables: list[str] | None = None
+    success_criteria: list[str] | None = None
     target_date: UtcDatetime | None = None
 
     @field_validator("name")
@@ -138,13 +151,20 @@ class ProjectUpdate(BaseModel):
 class ProjectResponse(BaseModel):
     id: UUID
     user_id: UUID
+    category: str = "project"
     name: str
     description: str | None = None
     goal: str
     status: ProjectStatus
     priority: TaskPriority
+    motivation: str | None = None
+    start_date: datetime | None = None
+    weekly_target_minutes: int = 180
     next_action: str
+    steps: list[dict[str, Any]] = Field(default_factory=list)
     deliverables: list[str] | None = None
+    success_criteria: list[str] = Field(default_factory=list)
+    progress_history: list[dict[str, Any]] = Field(default_factory=list)
     target_date: datetime | None = None
     created_at: datetime
     updated_at: datetime

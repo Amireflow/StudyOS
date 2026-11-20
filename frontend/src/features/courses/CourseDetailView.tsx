@@ -45,6 +45,7 @@ export function CourseDetailView({ courseId }: CourseDetailViewProps) {
     deleteResource,
     submitWork,
     validateLevel,
+    regenerateLevel,
   } = useCoursesStore();
 
   const [selectedLevelNumber, setSelectedLevelNumber] = useState<number>(1);
@@ -195,6 +196,15 @@ export function CourseDetailView({ courseId }: CourseDetailViewProps) {
     }
   };
 
+  const handleRegenerateLevel = async () => {
+    if (!activeLevel) return;
+    clearMutationError();
+    const updated = await regenerateLevel(detail.id, activeLevel.id);
+    if (updated) {
+      setFeedback(`Niveau ${activeLevel.levelNumber} régénéré (révision ${(activeLevel.revision ?? 1) + 1}).`);
+    }
+  };
+
   const handleAddResource = async (input: CourseResourceInput) => {
     clearMutationError();
     const created = await addResource(detail.id, input);
@@ -229,6 +239,17 @@ export function CourseDetailView({ courseId }: CourseDetailViewProps) {
         </Link>
 
         <div className="flex flex-wrap items-center gap-2">
+          {activeLevel &&
+            (activeLevel.status === 'unlocked' || activeLevel.status === 'in_progress') && (
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                onClick={() => void handleRegenerateLevel()}
+              >
+                Régénérer le niveau
+              </Button>
+            )}
           {detail.status !== 'completed' && (
             <Button
               type="button"
@@ -254,6 +275,11 @@ export function CourseDetailView({ courseId }: CourseDetailViewProps) {
           <Badge variant={detail.status === 'completed' ? 'success' : 'neutral'}>
             Niveau {detail.currentLevel}/{detail.totalLevels}
           </Badge>
+          {activeLevel?.generationSource && (
+            <Badge variant="neutral">
+              {activeLevel.generationSource} · Rev. {activeLevel.revision ?? 1}
+            </Badge>
+          )}
           {detail.status === 'paused' && <Badge variant="warning">En pause</Badge>}
         </div>
 

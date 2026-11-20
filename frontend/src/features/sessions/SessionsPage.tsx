@@ -18,7 +18,7 @@ import { cn } from '../../lib/cn';
 import { addDays, formatDayHeaderFr, formatTimeFr, toLocalDateKey } from '../../lib/date';
 import { useLearningStore } from '../../state/LearningStoreContext';
 import { useStudyStore } from '../../state/StudyStoreContext';
-import type { SessionStatus, StudySession } from '../../types/domain';
+import type { SessionFinishExtra, SessionStatus, StudySession } from '../../types/domain';
 import { isActiveTaskStatus } from '../tasks/taskUtils';
 import { ActiveSessionCard } from './ActiveSessionCard';
 import { ManualSessionForm, StartSessionForm } from './SessionForms';
@@ -172,8 +172,12 @@ export function SessionsPage() {
     }
   };
 
-  const handleFinish = async (session: StudySession, result: string) => {
-    if (await finishSession(session.id, result)) {
+  const handleFinish = async (
+    session: StudySession,
+    result: string,
+    extra?: SessionFinishExtra,
+  ) => {
+    if (await finishSession(session.id, result, extra)) {
       setFeedback(`Séance « ${session.title} » clôturée et ajoutée aux totaux.`);
     }
   };
@@ -575,6 +579,15 @@ export function SessionsPage() {
                               <p className="line-clamp-2 text-xs leading-relaxed text-zinc-700 dark:text-zinc-300">
                                 {session.result}
                               </p>
+                            )}
+
+                            {(session.deliverableSummary || session.blockers) && (
+                              <div className="space-y-0.5 text-[11px] text-zinc-600 dark:text-zinc-400">
+                                {session.deliverableSummary && (
+                                  <p>Preuve / livrable : {session.deliverableSummary}</p>
+                                )}
+                                {session.blockers && <p>Difficultés : {session.blockers}</p>}
+                              </div>
                             )}
 
                             {(linkedTaskTitle ||

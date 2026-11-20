@@ -31,8 +31,10 @@ interface ApiCourseExercise {
   id: string;
   title: string;
   difficulty: 'guide' | 'pratique' | 'defi';
+  exercise_type?: 'closed_quiz' | 'code' | 'open_explanation';
   instructions_markdown: string;
   starter_code: string | null;
+  choices?: string[];
   hints: string[];
   expected_concepts: string[];
 }
@@ -108,6 +110,10 @@ interface ApiCourseSubmission {
   strengths: string[];
   improvements: string[];
   next_step_hint: string | null;
+  attempt_number?: number;
+  evaluation_mode?: string;
+  manual_review_required?: boolean;
+  static_analysis?: Record<string, unknown>;
   created_at: string;
   updated_at: string;
 }
@@ -126,12 +132,19 @@ interface ApiCourseLevel {
   project_brief: string | null;
   project_deliverables: string[];
   project_rubric: ApiCourseRubricCriterion[];
+  generation_source?: string;
+  revision?: number;
+  previous_versions_count?: number;
   validated_at: string | null;
   lessons: ApiCourseLesson[];
   resources: ApiCourseResource[];
   submissions: ApiCourseSubmission[];
   pass_threshold: number;
   project_passed: boolean;
+  lessons_completed?: boolean;
+  exercises_passed_count?: number;
+  exercise_passed?: boolean;
+  can_validate?: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -149,6 +162,8 @@ interface ApiCourseSummary {
   status: CourseStatus;
   skill_id: string | null;
   learning_path_id: string | null;
+  generation_source?: string;
+  generation_model?: string | null;
   completed_lessons_count: number;
   total_lessons_count: number;
   resources_count: number;
@@ -261,8 +276,10 @@ function mapExercise(dto: ApiCourseExercise): CourseExercise {
     id: dto.id,
     title: dto.title,
     difficulty: dto.difficulty,
+    exerciseType: dto.exercise_type ?? 'code',
     instructionsMarkdown: dto.instructions_markdown,
     starterCode: dto.starter_code ?? null,
+    choices: dto.choices ?? [],
     hints: dto.hints ?? [],
     expectedConcepts: dto.expected_concepts ?? [],
   };
@@ -348,6 +365,10 @@ function mapSubmission(dto: ApiCourseSubmission): CourseSubmission {
     strengths: dto.strengths ?? [],
     improvements: dto.improvements ?? [],
     nextStepHint: dto.next_step_hint ?? null,
+    attemptNumber: dto.attempt_number ?? 1,
+    evaluationMode: dto.evaluation_mode ?? 'static_heuristic',
+    manualReviewRequired: Boolean(dto.manual_review_required),
+    staticAnalysis: dto.static_analysis ?? {},
     createdAt: dto.created_at,
     updatedAt: dto.updated_at,
   };
@@ -368,12 +389,19 @@ function mapLevel(dto: ApiCourseLevel): CourseLevel {
     projectBrief: dto.project_brief ?? null,
     projectDeliverables: dto.project_deliverables ?? [],
     projectRubric: (dto.project_rubric ?? []).map(mapRubricCriterion),
+    generationSource: dto.generation_source ?? 'curated_track',
+    revision: dto.revision ?? 1,
+    previousVersionsCount: dto.previous_versions_count ?? 0,
     validatedAt: dto.validated_at ?? null,
     lessons: (dto.lessons ?? []).map(mapLesson),
     resources: (dto.resources ?? []).map(mapResource),
     submissions: (dto.submissions ?? []).map(mapSubmission),
     passThreshold: dto.pass_threshold,
     projectPassed: dto.project_passed,
+    lessonsCompleted: dto.lessons_completed,
+    exercisesPassedCount: dto.exercises_passed_count,
+    exercisePassed: dto.exercise_passed,
+    canValidate: dto.can_validate,
     createdAt: dto.created_at,
     updatedAt: dto.updated_at,
   };
@@ -393,6 +421,8 @@ function mapSummary(dto: ApiCourseSummary): CourseSummary {
     status: dto.status,
     skillId: dto.skill_id ?? null,
     learningPathId: dto.learning_path_id ?? null,
+    generationSource: dto.generation_source ?? 'curated_track',
+    generationModel: dto.generation_model ?? null,
     completedLessonsCount: dto.completed_lessons_count,
     totalLessonsCount: dto.total_lessons_count,
     resourcesCount: dto.resources_count,
@@ -609,6 +639,23 @@ export async function validateCourseLevelApi(
     {
       method: 'POST',
       accessToken,
+    },
+  );
+  return mapDetail(dto);
+}
+
+export async function regenerateCourseLevelApi(
+  accessToken: string,
+  courseId: string,
+  levelId: string,
+  focusHint?: string,
+): Promise<CourseDetail> {
+  const dto = await apiRequest<ApiCourseDetail>(
+    `/courses/${courseId}/levels/${levelId}/regenerate`,
+    {
+      method: 'POST',
+      accessToken,
+      body: focusHint?.trim() ? { focus_hint: focusHint.trim() } : {},
     },
   );
   return mapDetail(dto);

@@ -24,7 +24,9 @@ from app.schemas.schedule import (
     TimetableImportConfirmRequest,
     TimetableImportConfirmResponse,
     TimetableImportResponse,
+    TimetableImportRestoreResponse,
     TimetableImportUpdateDraftRequest,
+    TimetableReplacePreviewResponse,
 )
 from app.services.timetable_extractor import (
     DAY_NAMES_FR,
@@ -124,6 +126,10 @@ def enrich_schedule_events(
                 teacher=event.teacher,
                 room=event.room,
                 group_name=event.group_name,
+                goal_id=event.goal_id,
+                course_id=event.course_id,
+                project_id=event.project_id,
+                task_id=event.task_id,
                 duration_minutes=duration_minutes,
                 has_conflict=bool(conflicting_ids),
                 conflicting_event_ids=conflicting_ids,
@@ -189,6 +195,10 @@ class ScheduleService:
         return enrich_schedule_events(week_events, all_events)
 
     def create_event(self, user_id: UUID, payload: ScheduleEventCreate) -> ScheduleEventResponse:
+        if payload.import_id is not None:
+            linked_import = self._schedule_repo.get_import(user_id, payload.import_id)
+            if linked_import is None:
+                raise AppError(404, "NOT_FOUND", "Session d’importation associée introuvable.")
         now = datetime.now(timezone.utc)
         record = ScheduleEventRecord(
             id=uuid4(),
@@ -204,6 +214,10 @@ class ScheduleService:
             teacher=payload.teacher,
             room=payload.room,
             group_name=payload.group_name,
+            goal_id=payload.goal_id,
+            course_id=payload.course_id,
+            project_id=payload.project_id,
+            task_id=payload.task_id,
             created_at=now,
             updated_at=now,
         )
@@ -265,6 +279,14 @@ class ScheduleService:
             updates["room"] = payload.room
         if "group_name" in fields:
             updates["group_name"] = payload.group_name
+        if "goal_id" in fields:
+            updates["goal_id"] = payload.goal_id
+        if "course_id" in fields:
+            updates["course_id"] = payload.course_id
+        if "project_id" in fields:
+            updates["project_id"] = payload.project_id
+        if "task_id" in fields:
+            updates["task_id"] = payload.task_id
 
         saved = self._schedule_repo.save(existing.model_copy(update=updates))
         all_events = self._schedule_repo.list_by_user(user_id)
@@ -279,11 +301,18 @@ class ScheduleService:
         user_id: UUID,
         source_week_start: date,
         tz_name: str = "Africa/Dakar",
+        target_week_start: date | None = None,
     ) -> DuplicateWeekResponse:
         tz = ZoneInfo(tz_name)
         all_events = self._schedule_repo.list_by_user(user_id)
         monday = source_week_start - timedelta(days=source_week_start.weekday())
         sunday = monday + timedelta(days=6)
+        target_monday = (
+            target_week_start - timedelta(days=target_week_start.weekday())
+            if target_week_start is not None
+            else monday + timedelta(days=7)
+        )
+        day_delta = (target_monday - monday).days
 
         source_events = sorted(
             [
@@ -294,25 +323,27 @@ class ScheduleService:
             key=lambda event: event.starts_at,
         )
 
-        existing_keys = {
-            (event.title.strip().lower(), event.starts_at, event.ends_at)
-            for event in all_events
-        }
+        existing_keys: set[tuple[str, datetime, datetime]] = set()
+        for event in all_events:
+            existing_keys.add((event.title.strip().lower(), event.starts_at, event.ends_at))
+            existing_keys.add((_normalize_subject_fingerprint(event.title), event.starts_at, event.ends_at))
 
         now = datetime.now(timezone.utc)
         to_create: list[ScheduleEventRecord] = []
         skipped_count = 0
 
         for event in source_events:
-            next_starts = _shift_local_days(event.starts_at, 7, tz)
-            next_ends = _shift_local_days(event.ends_at, 7, tz)
-            fingerprint = (event.title.strip().lower(), next_starts, next_ends)
+            next_starts = _shift_local_days(event.starts_at, day_delta, tz)
+            next_ends = _shift_local_days(event.ends_at, day_delta, tz)
+            fp_exact = (event.title.strip().lower(), next_starts, next_ends)
+            fp_norm = (_normalize_subject_fingerprint(event.title), next_starts, next_ends)
 
-            if fingerprint in existing_keys:
+            if fp_exact in existing_keys or fp_norm in existing_keys:
                 skipped_count += 1
                 continue
 
-            existing_keys.add(fingerprint)
+            existing_keys.add(fp_exact)
+            existing_keys.add(fp_norm)
             to_create.append(
                 ScheduleEventRecord(
                     id=uuid4(),
@@ -541,6 +572,144 @@ class ScheduleService:
         saved = self._schedule_repo.save_import(wiped)
         return _to_import_response(saved)
 
+    @staticmethod
+    def _compute_import_period_bounds(
+        *,
+        base_monday: date,
+        recurrence_weeks: int,
+        parsed_valid_from: date | None,
+        parsed_valid_until: date | None,
+        tz: ZoneInfo,
+    ) -> tuple[datetime, datetime]:
+        period_start_date = base_monday
+        default_end_date = base_monday + timedelta(days=7 * recurrence_weeks - 1)
+        period_end_date = default_end_date
+        if recurrence_weeks > 1 and parsed_valid_from is not None:
+            period_start_date = max(base_monday, parsed_valid_from)
+        if recurrence_weeks > 1 and parsed_valid_until is not None:
+            period_end_date = min(default_end_date, parsed_valid_until)
+        if period_end_date < period_start_date:
+            period_end_date = period_start_date
+        start_utc = datetime.combine(period_start_date, time(0, 0, 0), tzinfo=tz).astimezone(
+            timezone.utc
+        )
+        end_utc = datetime.combine(
+            period_end_date, time(23, 59, 59, 999999), tzinfo=tz
+        ).astimezone(timezone.utc)
+        return start_utc, end_utc
+
+    def preview_replace_imported(
+        self,
+        user_id: UUID,
+        import_id: UUID,
+        *,
+        target_week_start: date | None = None,
+        recurrence_weeks: int = 1,
+        tz_name: str = "Africa/Dakar",
+    ) -> TimetableReplacePreviewResponse:
+        record = self._schedule_repo.get_import(user_id, import_id)
+        if record is None:
+            raise AppError(404, "NOT_FOUND", "Session d’importation d’emploi du temps introuvable.")
+
+        tz = ZoneInfo(tz_name)
+        local_today = datetime.now(timezone.utc).astimezone(tz).date()
+        parsed_valid_from: date | None = None
+        parsed_valid_until: date | None = None
+        if record.valid_from:
+            try:
+                parsed_valid_from = date.fromisoformat(record.valid_from)
+            except ValueError:
+                parsed_valid_from = None
+        if record.valid_until:
+            try:
+                parsed_valid_until = date.fromisoformat(record.valid_until)
+            except ValueError:
+                parsed_valid_until = None
+
+        weeks = max(1, min(recurrence_weeks, 24))
+        if target_week_start is not None:
+            base_monday = target_week_start - timedelta(days=target_week_start.weekday())
+        elif parsed_valid_from is not None:
+            if parsed_valid_from <= local_today <= (parsed_valid_until or local_today):
+                base_monday = local_today - timedelta(days=local_today.weekday())
+            else:
+                base_monday = parsed_valid_from - timedelta(days=parsed_valid_from.weekday())
+        else:
+            base_monday = local_today - timedelta(days=local_today.weekday())
+
+        period_start_utc, period_end_utc = self._compute_import_period_bounds(
+            base_monday=base_monday,
+            recurrence_weeks=weeks,
+            parsed_valid_from=parsed_valid_from,
+            parsed_valid_until=parsed_valid_until,
+            tz=tz,
+        )
+        all_events = self._schedule_repo.list_by_user(user_id)
+        affected = [
+            ev
+            for ev in all_events
+            if (ev.source == ScheduleEventSource.timetable_import or ev.import_id is not None)
+            and period_start_utc <= ev.starts_at <= period_end_utc
+        ]
+        return TimetableReplacePreviewResponse(
+            import_id=import_id,
+            period_start=period_start_utc,
+            period_end=period_end_utc,
+            affected_count=len(affected),
+            affected_events=enrich_schedule_events(affected, all_events),
+        )
+
+    def restore_import_snapshot(
+        self,
+        user_id: UUID,
+        import_id: UUID,
+    ) -> TimetableImportRestoreResponse:
+        record = self._schedule_repo.get_import(user_id, import_id)
+        if record is None:
+            raise AppError(404, "NOT_FOUND", "Session d’importation d’emploi du temps introuvable.")
+        if record.status != TimetableImportStatus.validated or not record.replaced_snapshot:
+            raise AppError(
+                409,
+                "NO_SNAPSHOT_TO_RESTORE",
+                "Aucun ancien emploi du temps remplacé n’est disponible pour restauration.",
+            )
+
+        all_events = self._schedule_repo.list_by_user(user_id)
+        to_remove = [ev for ev in all_events if ev.import_id == import_id]
+        removed_count = 0
+        for ev in to_remove:
+            if self._schedule_repo.delete(user_id, ev.id):
+                removed_count += 1
+
+        now = datetime.now(timezone.utc)
+        existing_ids = {ev.id for ev in self._schedule_repo.list_by_user(user_id)}
+        to_restore: list[ScheduleEventRecord] = []
+        for raw_item in record.replaced_snapshot:
+            restored_ev = ScheduleEventRecord.model_validate(raw_item)
+            ev_id = restored_ev.id if restored_ev.id not in existing_ids else uuid4()
+            existing_ids.add(ev_id)
+            to_restore.append(
+                restored_ev.model_copy(
+                    update={"id": ev_id, "user_id": user_id, "updated_at": now}
+                )
+            )
+
+        saved_restored = self._schedule_repo.save_many(to_restore) if to_restore else []
+        self._schedule_repo.save_import(
+            record.model_copy(
+                update={
+                    "replaced_snapshot": None,
+                    "replaced_events_count": 0,
+                    "updated_at": now,
+                }
+            )
+        )
+        return TimetableImportRestoreResponse(
+            import_id=import_id,
+            removed_events_count=removed_count,
+            restored_events_count=len(saved_restored),
+        )
+
     def confirm_import(
         self,
         user_id: UUID,
@@ -603,25 +772,6 @@ class ScheduleService:
         tz = ZoneInfo(tz_name)
         local_today = now.astimezone(tz).date()
 
-        base_date = req.target_week_start or local_today
-        base_monday = base_date - timedelta(days=base_date.weekday())
-
-        existing_events = self._schedule_repo.list_by_user(user_id)
-        anomalies = detect_timetable_anomalies(
-            normalized_courses,
-            existing_events=existing_events,
-            target_week_monday=base_monday,
-            tz_name=tz_name,
-        )
-        blocking_errors = [a for a in anomalies if a.severity == "error"]
-        if blocking_errors:
-            raise AppError(
-                422,
-                "TIMETABLE_VALIDATION_FAILED",
-                f"Impossible de valider l’emploi du temps ({len(blocking_errors)} anomalie(s) bloquante(s)) : {blocking_errors[0].message}",
-            )
-
-        # Calcul du nombre de semaines à générer
         recurrence_weeks = max(1, min(req.recurrence_weeks, 24))
         parsed_valid_from: date | None = None
         parsed_valid_until: date | None = None
@@ -644,16 +794,64 @@ class ScheduleService:
             )
 
         if req.target_week_start is None and parsed_valid_from is not None:
-            # Si la période de validité inclut la semaine courante, on commence à la semaine courante ou au début de validité
             if parsed_valid_from <= local_today <= (parsed_valid_until or local_today):
                 base_monday = local_today - timedelta(days=local_today.weekday())
             else:
                 base_monday = parsed_valid_from - timedelta(days=parsed_valid_from.weekday())
+        else:
+            base_date = req.target_week_start or local_today
+            base_monday = base_date - timedelta(days=base_date.weekday())
 
-        # Option de remplacement d'un ancien emploi du temps importé (sans toucher aux séances ni aux créneaux manuels)
+        period_start_utc, period_end_utc = self._compute_import_period_bounds(
+            base_monday=base_monday,
+            recurrence_weeks=recurrence_weeks,
+            parsed_valid_from=parsed_valid_from,
+            parsed_valid_until=parsed_valid_until,
+            tz=tz,
+        )
+
+        existing_events = self._schedule_repo.list_by_user(user_id)
+        replaced_targets = (
+            [
+                ev
+                for ev in existing_events
+                if (ev.source == ScheduleEventSource.timetable_import or ev.import_id is not None)
+                and period_start_utc <= ev.starts_at <= period_end_utc
+            ]
+            if req.replace_existing_imported
+            else []
+        )
+        replaced_ids = {ev.id for ev in replaced_targets}
+        events_for_conflict_check = (
+            [ev for ev in existing_events if ev.id not in replaced_ids]
+            if req.replace_existing_imported
+            else existing_events
+        )
+
+        anomalies = detect_timetable_anomalies(
+            normalized_courses,
+            existing_events=events_for_conflict_check,
+            target_week_monday=base_monday,
+            tz_name=tz_name,
+        )
+        blocking_errors = [a for a in anomalies if a.severity == "error"]
+        if blocking_errors:
+            raise AppError(
+                422,
+                "TIMETABLE_VALIDATION_FAILED",
+                f"Impossible de valider l’emploi du temps ({len(blocking_errors)} anomalie(s) bloquante(s)) : {blocking_errors[0].message}",
+            )
+
+        # Remplacement ciblé uniquement sur la période cible avec snapshot réversible
         replaced_count = 0
+        replaced_snapshot: list[dict[str, object]] | None = None
         if req.replace_existing_imported:
-            replaced_count = self._schedule_repo.delete_imported_events(user_id)
+            replaced_snapshot = [ev.model_dump(mode="json") for ev in replaced_targets]
+            replaced_count = self._schedule_repo.delete_imported_events(
+                user_id,
+                range_start=period_start_utc,
+                range_end=period_end_utc,
+            )
             existing_events = self._schedule_repo.list_by_user(user_id)
 
         existing_fingerprints: set[tuple[str, datetime, datetime]] = set()
@@ -755,6 +953,7 @@ class ScheduleService:
                 "created_events_count": len(enriched_created),
                 "skipped_duplicates_count": skipped_duplicates,
                 "replaced_events_count": replaced_count,
+                "replaced_snapshot": replaced_snapshot,
                 "updated_at": now,
                 "validated_at": now,
             }

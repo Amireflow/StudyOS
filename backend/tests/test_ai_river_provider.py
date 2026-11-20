@@ -1,7 +1,19 @@
+import socket
 from typing import Any
 from fastapi.testclient import TestClient
 import httpx
 import pytest
+
+
+def _mock_river_dns(monkeypatch: pytest.MonkeyPatch) -> None:
+    original_getaddrinfo = socket.getaddrinfo
+
+    def fake_getaddrinfo(host: str, port: Any, *args: Any, **kwargs: Any):  # type: ignore[no-untyped-def]
+        if str(host).lower() in ("api.river.ai", "console.river.ai"):
+            return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("35.228.48.71", int(port or 443)))]
+        return original_getaddrinfo(host, port, *args, **kwargs)
+
+    monkeypatch.setattr(socket, "getaddrinfo", fake_getaddrinfo)
 from app.ai.context_builder import BoundedUserContext
 from app.ai.prompt_manager import PromptManager
 from app.ai.provider import (
@@ -60,6 +72,7 @@ def test_river_models_discovery_with_api_key_and_invalid_key_handling(
     user_a_headers: dict[str, str],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    _mock_river_dns(monkeypatch)
     captured_calls: list[dict[str, Any]] = []
     original_get = httpx.Client.get
 
@@ -140,6 +153,7 @@ def test_river_config_persistence_secret_masking_isolation_and_copilot_chat(
     user_b_headers: dict[str, str],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    _mock_river_dns(monkeypatch)
     secret_key = "rk_live_super_secret_token_abcd"
 
     # Initialement local sans clé
@@ -342,6 +356,7 @@ def test_timetable_import_uses_configured_river_ai_for_image_analysis(
     user_a_headers: dict[str, str],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    _mock_river_dns(monkeypatch)
     import io
     from PIL import Image
 

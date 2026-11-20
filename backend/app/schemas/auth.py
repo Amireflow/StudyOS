@@ -3,6 +3,7 @@ import re
 from typing import Literal
 from uuid import UUID
 from pydantic import BaseModel, field_validator
+from app.core.security import validate_password_policy
 from app.schemas.common import validate_iana_timezone
 from app.schemas.profile import ProfileResponse
 
@@ -52,9 +53,7 @@ class RegisterRequest(BaseModel):
     @field_validator("password")
     @classmethod
     def validate_password(cls, value: str) -> str:
-        if len(value) < 8 or len(value) > 128:
-            raise ValueError("Le mot de passe doit contenir entre 8 et 128 caractères.")
-        return value
+        return validate_password_policy(value)
 
     @field_validator("display_name")
     @classmethod
@@ -106,9 +105,7 @@ class ChangePasswordRequest(BaseModel):
     @field_validator("new_password")
     @classmethod
     def validate_new_password(cls, value: str) -> str:
-        if len(value) < 8 or len(value) > 128:
-            raise ValueError("Le nouveau mot de passe doit contenir entre 8 et 128 caractères.")
-        return value
+        return validate_password_policy(value)
 
 
 class AuthTokenResponse(BaseModel):
@@ -124,6 +121,9 @@ class AuthAccountResponse(BaseModel):
     email: str | None = None
     auth_provider: Literal["password", "external"]
     has_password_account: bool
+    email_verified: bool = False
+    can_change_password: bool = False
+    password_reset_mode: Literal["external_provider", "unavailable_no_mailer"] = "unavailable_no_mailer"
     last_login_at: datetime | None = None
     created_at: datetime
     profile: ProfileResponse

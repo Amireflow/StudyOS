@@ -36,6 +36,14 @@ export function CourseProjectPanel({
 
   const projectSubmissions = level.submissions.filter((s) => s.submissionKind === 'project');
   const isValidated = level.status === 'validated';
+  const lessonsDone =
+    level.lessonsCompleted ??
+    (level.lessons.length > 0 && level.lessons.every((l) => l.status === 'completed'));
+  const hasExercises = level.lessons.some((l) => l.exercises.length > 0);
+  const exerciseDone =
+    level.exercisePassed ??
+    (!hasExercises || level.submissions.some((s) => s.submissionKind === 'exercise' && s.passed));
+  const canValidate = level.canValidate ?? (lessonsDone && exerciseDone && level.projectPassed);
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -222,10 +230,16 @@ export function CourseProjectPanel({
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <span className="text-sm font-bold text-zinc-950 dark:text-zinc-50">
                   Score : {sub.score ?? 0}/100
+                  {sub.attemptNumber && sub.attemptNumber > 1 ? ` · Tentative #${sub.attemptNumber}` : ''}
                 </span>
-                <Badge variant={sub.passed ? 'success' : 'danger'}>
-                  {sub.passed ? 'Seuil atteint' : 'Insuffisant'}
-                </Badge>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {sub.manualReviewRequired && (
+                    <Badge variant="warning">Revue manuelle requise</Badge>
+                  )}
+                  <Badge variant={sub.passed ? 'success' : 'danger'}>
+                    {sub.passed ? 'Seuil atteint' : 'Insuffisant'}
+                  </Badge>
+                </div>
               </div>
 
               {sub.feedbackMarkdown && <MarkdownContent content={sub.feedbackMarkdown} />}
@@ -285,13 +299,26 @@ export function CourseProjectPanel({
               </p>
             </div>
           </div>
-        ) : !level.projectPassed ? (
+        ) : !canValidate ? (
           <div className="space-y-3 rounded-xl bg-zinc-50 p-4 dark:bg-zinc-800/70">
             <div className="flex items-start gap-2.5 text-xs text-zinc-700 dark:text-zinc-300">
               <Icon icon={LockIcon} size={16} className="mt-0.5 shrink-0 text-zinc-500" />
-              <p>
-                Obtenez au moins <strong>{level.passThreshold}/100</strong> au projet de fin de niveau pour valider ce niveau et débloquer la suite.
-              </p>
+              <div className="space-y-1.5">
+                <p>
+                  Complétez les trois conditions ci-dessous avant de débloquer le niveau suivant :
+                </p>
+                <ul className="space-y-1 text-[11px]">
+                  <li>
+                    {lessonsDone ? '✓' : '○'} Tous les chapitres du niveau marqués lus
+                  </li>
+                  <li>
+                    {exerciseDone ? '✓' : '○'} Au moins un exercice du niveau réussi
+                  </li>
+                  <li>
+                    {level.projectPassed ? '✓' : '○'} Projet vérifiable réussi (score &gt;= {level.passThreshold}/100)
+                  </li>
+                </ul>
+              </div>
             </div>
             <Button type="button" variant="secondary" size="md" disabled>
               {isFinalLevel
@@ -304,7 +331,7 @@ export function CourseProjectPanel({
             <div className="flex items-start gap-2.5 text-xs text-teal-950 dark:text-teal-100">
               <Icon icon={SquareUnlock02Icon} size={17} className="mt-0.5 shrink-0 text-teal-700 dark:text-teal-300" />
               <p>
-                Votre projet a atteint le seuil requis ({level.passThreshold}/100). Validez ce niveau pour débloquer et générer automatiquement le contenu suivant.
+                Chapitres lus, exercice validé et projet au-dessus du seuil ({level.passThreshold}/100). Validez ce niveau pour débloquer la suite.
               </p>
             </div>
             <Button

@@ -77,6 +77,45 @@ const settingsSchema = z.object({
 
 type SettingsField = 'displayName' | 'timezone' | 'aiInstructions';
 
+const AVAILABILITY_WEEK_DAYS: Array<{ value: number; short: string; label: string }> = [
+  { value: 0, short: 'Lun', label: 'Lundi' },
+  { value: 1, short: 'Mar', label: 'Mardi' },
+  { value: 2, short: 'Mer', label: 'Mercredi' },
+  { value: 3, short: 'Jeu', label: 'Jeudi' },
+  { value: 4, short: 'Ven', label: 'Vendredi' },
+  { value: 5, short: 'Sam', label: 'Samedi' },
+  { value: 6, short: 'Dim', label: 'Dimanche' },
+];
+
+function extractAvailabilityPrefs(preferences: Record<string, unknown> | undefined) {
+  const nested = preferences?.availability;
+  const raw =
+    nested && typeof nested === 'object' && !Array.isArray(nested)
+      ? (nested as Record<string, unknown>)
+      : (preferences ?? {});
+  const startRaw = Number(raw.study_start_hour);
+  const studyStartHour = Number.isFinite(startRaw)
+    ? Math.max(5, Math.min(20, Math.round(startRaw)))
+    : 8;
+  const endRaw = Number(raw.study_end_hour);
+  const studyEndHour = Number.isFinite(endRaw)
+    ? Math.max(studyStartHour + 1, Math.min(23, Math.round(endRaw)))
+    : Math.max(studyStartHour + 1, 21);
+  const maxRaw = Number(raw.max_daily_study_minutes);
+  const maxDailyStudyMinutes = Number.isFinite(maxRaw)
+    ? Math.max(60, Math.min(480, Math.round(maxRaw)))
+    : 300;
+  const rawExcluded = Array.isArray(raw.excluded_days) ? raw.excluded_days : [];
+  const excludedDays = Array.from(
+    new Set(
+      rawExcluded
+        .map((d) => Number(d))
+        .filter((d) => Number.isInteger(d) && d >= 0 && d <= 6),
+    ),
+  ).sort((a, b) => a - b);
+  return { studyStartHour, studyEndHour, maxDailyStudyMinutes, excludedDays };
+}
+
 function getInitials(name: string): string {
   const parts = name
     .trim()
@@ -106,9 +145,16 @@ export function SettingsPage() {
   } = useStudyStore();
   const { paths, skills, projects } = useLearningStore();
 
+  const initialAvail = useMemo(() => extractAvailabilityPrefs(profile.preferences), [profile.preferences]);
   const [displayName, setDisplayName] = useState(profile.displayName);
   const [timezone, setTimezone] = useState(profile.timezone);
   const [aiInstructions, setAiInstructions] = useState(profile.aiInstructions ?? '');
+  const [studyStartHour, setStudyStartHour] = useState<number>(initialAvail.studyStartHour);
+  const [studyEndHour, setStudyEndHour] = useState<number>(initialAvail.studyEndHour);
+  const [maxDailyStudyMinutes, setMaxDailyStudyMinutes] = useState<number>(
+    initialAvail.maxDailyStudyMinutes,
+  );
+  const [excludedDays, setExcludedDays] = useState<number[]>(initialAvail.excludedDays);
   const [errors, setErrors] = useState<Partial<Record<SettingsField, string>>>({});
   const [feedback, setFeedback] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
@@ -117,16 +163,37 @@ export function SettingsPage() {
     setDisplayName(profile.displayName);
     setTimezone(profile.timezone);
     setAiInstructions(profile.aiInstructions ?? '');
-  }, [profile.displayName, profile.timezone, profile.aiInstructions]);
+    setStudyStartHour(initialAvail.studyStartHour);
+    setStudyEndHour(initialAvail.studyEndHour);
+    setMaxDailyStudyMinutes(initialAvail.maxDailyStudyMinutes);
+    setExcludedDays(initialAvail.excludedDays);
+  }, [profile.displayName, profile.timezone, profile.aiInstructions, initialAvail]);
 
   const isDirty = useMemo(() => {
     const savedInstructions = profile.aiInstructions ?? '';
+    const excludedChanged =
+      JSON.stringify([...excludedDays].sort((a, b) => a - b)) !==
+      JSON.stringify(initialAvail.excludedDays);
     return (
       displayName.trim() !== profile.displayName.trim() ||
       timezone !== profile.timezone ||
-      aiInstructions.trim() !== savedInstructions.trim()
+      aiInstructions.trim() !== savedInstructions.trim() ||
+      studyStartHour !== initialAvail.studyStartHour ||
+      studyEndHour !== initialAvail.studyEndHour ||
+      maxDailyStudyMinutes !== initialAvail.maxDailyStudyMinutes ||
+      excludedChanged
     );
-  }, [displayName, timezone, aiInstructions, profile]);
+  }, [
+    displayName,
+    timezone,
+    aiInstructions,
+    profile,
+    studyStartHour,
+    studyEndHour,
+    maxDailyStudyMinutes,
+    excludedDays,
+    initialAvail,
+  ]);
 
   const localTimePreview = useMemo(() => {
     try {
@@ -154,10 +221,22 @@ export function SettingsPage() {
     setErrors({});
     setIsSaving(true);
     try {
+      const normalizedStart = Math.max(5, Math.min(20, Math.round(studyStartHour)));
+      const normalizedEnd = Math.max(normalizedStart + 1, Math.min(23, Math.round(studyEndHour)));
+      const normalizedMaxMinutes = Math.max(60, Math.min(480, Math.round(maxDailyStudyMinutes)));
+      const normalizedExcluded = [...excludedDays].sort((a, b) => a - b);
+      const nextPreferences: Record<string, unknown> = {
+        ...(profile.preferences ?? {}),
+        study_start_hour: normalizedStart,
+        study_end_hour: normalizedEnd,
+        max_daily_study_minutes: normalizedMaxMinutes,
+        excluded_days: normalizedExcluded,
+      };
       const ok = await updateProfile({
         displayName: parsed.data.displayName,
         timezone: parsed.data.timezone,
         aiInstructions: parsed.data.aiInstructions?.trim() || null,
+        preferences: nextPreferences,
       });
       if (ok) {
         setFeedback('Paramètres du profil enregistrés.');
@@ -385,6 +464,91 @@ export function SettingsPage() {
             </FormField>
           </div>
 
+          {/* Disponibilités d'étude consommées par le Copilote IA */}
+          <div className="space-y-3 rounded-xl bg-zinc-50/90 p-3.5 dark:bg-zinc-800/50">
+            <p className="text-xs font-semibold text-zinc-800 dark:text-zinc-200">
+              Disponibilités d’étude (planification IA)
+            </p>
+            <div className="grid gap-3 sm:grid-cols-3">
+              <FormField id="settings-study-start" label="Début d’étude (h)">
+                <Input
+                  id="settings-study-start"
+                  type="number"
+                  min={5}
+                  max={20}
+                  value={studyStartHour}
+                  onChange={(e) => {
+                    const nextStart = Math.max(5, Math.min(20, Number(e.target.value) || 8));
+                    setStudyStartHour(nextStart);
+                    if (studyEndHour <= nextStart) {
+                      setStudyEndHour(Math.min(23, nextStart + 1));
+                    }
+                  }}
+                />
+              </FormField>
+              <FormField id="settings-study-end" label="Fin d’étude (h)">
+                <Input
+                  id="settings-study-end"
+                  type="number"
+                  min={6}
+                  max={23}
+                  value={studyEndHour}
+                  onChange={(e) => {
+                    const nextEnd = Math.max(studyStartHour + 1, Math.min(23, Number(e.target.value) || 21));
+                    setStudyEndHour(nextEnd);
+                  }}
+                />
+              </FormField>
+              <FormField id="settings-max-daily-minutes" label="Budget max / jour (min)">
+                <Input
+                  id="settings-max-daily-minutes"
+                  type="number"
+                  min={60}
+                  max={480}
+                  step={15}
+                  value={maxDailyStudyMinutes}
+                  onChange={(e) => {
+                    const nextMax = Math.max(60, Math.min(480, Number(e.target.value) || 300));
+                    setMaxDailyStudyMinutes(nextMax);
+                  }}
+                />
+              </FormField>
+            </div>
+            <div className="space-y-1.5">
+              <span className="block text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                Jours de repos / exclus de la planification IA
+              </span>
+              <div className="flex flex-wrap gap-1.5">
+                {AVAILABILITY_WEEK_DAYS.map((day) => {
+                  const isExcluded = excludedDays.includes(day.value);
+                  return (
+                    <button
+                      key={day.value}
+                      type="button"
+                      aria-pressed={isExcluded}
+                      aria-label={`Exclure ${day.label}`}
+                      onClick={() =>
+                        setExcludedDays((prev) =>
+                          prev.includes(day.value)
+                            ? prev.filter((d) => d !== day.value)
+                            : [...prev, day.value].sort((a, b) => a - b),
+                        )
+                      }
+                      className={cn(
+                        'rounded-lg px-2.5 py-1 text-xs font-medium transition-colors',
+                        isExcluded
+                          ? 'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-950'
+                          : 'bg-white text-zinc-600 hover:bg-zinc-100 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700',
+                      )}
+                    >
+                      {day.short}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+
           <div className="flex flex-wrap items-center justify-end gap-2 pt-1">
             {isDirty && (
               <Button
@@ -395,6 +559,10 @@ export function SettingsPage() {
                   setDisplayName(profile.displayName);
                   setTimezone(profile.timezone);
                   setAiInstructions(profile.aiInstructions ?? '');
+                  setStudyStartHour(initialAvail.studyStartHour);
+                  setStudyEndHour(initialAvail.studyEndHour);
+                  setMaxDailyStudyMinutes(initialAvail.maxDailyStudyMinutes);
+                  setExcludedDays(initialAvail.excludedDays);
                   setErrors({});
                 }}
               >

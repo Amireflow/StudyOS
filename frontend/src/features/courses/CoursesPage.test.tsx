@@ -50,12 +50,49 @@ describe('CoursesPage & verrou pédagogique multi-niveaux', () => {
     await user.click(level2Nav);
     expect(screen.getByText(/Niveau 2 verrouillé/)).toBeInTheDocument();
 
-    // Retour au Niveau 1 et marquer un chapitre lu ne débloque PAS le niveau suivant
+    // Compléter tous les chapitres + réussir au moins 1 exercice avant de pouvoir valider le niveau 1
     await user.click(screen.getByRole('button', { name: /Aller au projet du Niveau 1/ }));
     expect(screen.getByRole('tab', { name: 'Projet & validation' })).toHaveAttribute(
       'aria-selected',
       'true',
     );
+    expect(
+      screen.getByRole('button', {
+        name: 'Valider le niveau 1 et débloquer le niveau 2',
+      }),
+    ).toBeDisabled();
+
+    await user.click(screen.getByRole('tab', { name: 'Chapitres (4)' }));
+
+    // Réussir l'exercice du Chapitre 1 puis lire les 4 chapitres
+    const exAnswer = screen.getAllByLabelText(/Votre explication technique/)[0];
+    await user.click(exAnswer);
+    await user.paste(
+      'J’ai validé les bornes avec ValueError parce qu’une note négative ou supérieure à 100 est invalide, puis vérifié avec assert.',
+    );
+    const exCode = screen.getAllByLabelText(/Code de votre solution/)[0];
+    await user.clear(exCode);
+    await user.click(exCode);
+    await user.paste(
+      [
+        'def classify_score(score: int) -> str:',
+        '    if score < 0 or score > 100:',
+        '        raise ValueError("invalide")',
+        '    return "Acquis" if score >= 85 else "En cours"',
+        'assert classify_score(90) == "Acquis"',
+      ].join('\n'),
+    );
+    await user.click(screen.getAllByRole('button', { name: 'Corriger l’exercice' })[0]);
+    expect(await screen.findByText('Exercice validé')).toBeInTheDocument();
+
+    for (let idx = 0; idx < 4; idx += 1) {
+      await user.click(screen.getByRole('button', { name: 'Marquer lu' }));
+      if (idx < 3) {
+        await user.click(screen.getByRole('button', { name: 'Chapitre suivant' }));
+      } else {
+        await user.click(screen.getByRole('button', { name: 'Passer au projet du niveau' }));
+      }
+    }
 
     const validateBtnLocked = screen.getByRole('button', {
       name: 'Valider le niveau 1 et débloquer le niveau 2',
@@ -126,7 +163,7 @@ describe('CoursesPage & verrou pédagogique multi-niveaux', () => {
     // Vérifier l'onglet Docs & vidéos + ajout/suppression de ressource
     await user.click(screen.getByRole('tab', { name: 'Docs & vidéos' }));
     expect(screen.getByText(/Documentation officielle Python/)).toBeInTheDocument();
-    expect(screen.getByText(/Graven \/ YouTube/)).toBeInTheDocument();
+    expect(screen.getByText(/Harvard CS50/)).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Ajouter une ressource' }));
     await user.type(screen.getByLabelText(/Titre de la ressource/), 'Guide Pathlib Python');

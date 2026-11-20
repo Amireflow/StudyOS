@@ -13,14 +13,22 @@ class Settings(BaseSettings):
 
     app_env: str = "local"
     app_secret_key: str = "local-dev-secret-key-change-me-32bytes"
+    ai_key_encryption_key: str = ""
+    ai_key_encryption_fallback_keys: str = ""
     database_url: str = "sqlite:///./amireflow_local.db"
     frontend_origin: str = "http://localhost:5173"
     allow_local_dev_auth: bool = True
+    allow_insecure_local_ai_url: bool = False
     default_local_user_id: str = "00000000-0000-0000-0000-000000000001"
     default_timezone: str = "Africa/Dakar"
     auth_jwks_url: str = "https://rzjjcqmsepxtpmqwzwmf.supabase.co/auth/v1/.well-known/jwks.json"
     auth_issuer: str = "https://rzjjcqmsepxtpmqwzwmf.supabase.co/auth/v1"
     auth_audience: str = "authenticated"
+    access_token_ttl_seconds: int = 900
+    refresh_token_ttl_seconds: int = 14 * 86400
+    auth_cookie_name: str = "amireflow_refresh_token"
+    auth_cookie_samesite: str = ""
+    trusted_proxy_ips: str = ""
     ai_provider: str = "local"
     ai_api_key: str = ""
     ai_model: str = "local-coach-v1"
@@ -33,8 +41,16 @@ class Settings(BaseSettings):
 
     @property
     def cors_origins(self) -> list[str]:
-        origins = [item.strip() for item in self.frontend_origin.split(",") if item.strip()]
+        origins = [
+            item.strip().rstrip("/")
+            for item in self.frontend_origin.split(",")
+            if item.strip().rstrip("/")
+        ]
         return origins or ["http://localhost:5173"]
+
+    @property
+    def trusted_proxy_list(self) -> list[str]:
+        return [item.strip() for item in self.trusted_proxy_ips.split(",") if item.strip()]
 
 
 @lru_cache

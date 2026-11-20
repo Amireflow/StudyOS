@@ -5,7 +5,9 @@ from typing import Any
 from uuid import uuid4
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from jwt import PyJWKClient
+from sqlalchemy import text
 import app.models  # noqa: F401 - enregistre les modèles ORM dans Base.metadata
 from app.api.routes import (
     ai,
@@ -13,6 +15,8 @@ from app.api.routes import (
     courses,
     dashboard,
     learning,
+    objectives,
+    planning,
     profile,
     projects,
     schedule,
@@ -29,26 +33,60 @@ from app.repositories.memory import InMemoryStore
 logger = logging.getLogger("amireflow.study_os")
 
 
+_DEFAULT_SECRET_VALUES = {
+    "",
+    "local-dev-secret-key-change-me-32bytes",
+    "change-me-in-local-env",
+}
+
+
+def _validate_production_settings(settings: Settings) -> None:
+    if settings.app_env.strip().lower() != "production":
+        return
+
+    if settings.allow_local_dev_auth:
+        raise RuntimeError(
+            "Configuration dangereuse refusée : ALLOW_LOCAL_DEV_AUTH doit être false en production."
+        )
+    if settings.allow_insecure_local_ai_url:
+        raise RuntimeError(
+            "Configuration dangereuse refusée : ALLOW_INSECURE_LOCAL_AI_URL doit être false en production."
+        )
+    secret = (settings.app_secret_key or "").strip()
+    if secret in _DEFAULT_SECRET_VALUES or len(secret) < 32:
+        raise RuntimeError(
+            "Configuration dangereuse refusée : APP_SECRET_KEY doit contenir au moins 32 caractères non par défaut en production."
+        )
+    if "*" in settings.cors_origins:
+        raise RuntimeError(
+            "Configuration dangereuse refusée : FRONTEND_ORIGIN ne doit pas autoriser '*' en production."
+        )
+    if settings.database_url.strip() == "sqlite:///./amireflow_local.db":
+        raise RuntimeError(
+            "Configuration dangereuse refusée : DATABASE_URL SQLite par défaut interdit en production."
+        )
+
+
 def create_app(
     settings: Settings | None = None,
     store: InMemoryStore | None = None,
     *,
-    auto_create_tables: bool = True,
+    auto_create_tables: bool | None = None,
     jwks_client: Any = None,
 ) -> FastAPI:
     resolved_settings = settings or get_settings()
-    if (
-        resolved_settings.app_env.strip().lower() == "production"
-        and resolved_settings.allow_local_dev_auth
-    ):
-        raise RuntimeError(
-            "Configuration dangereuse refusée : ALLOW_LOCAL_DEV_AUTH doit être false en production."
-        )
+    _validate_production_settings(resolved_settings)
+    is_prod = resolved_settings.app_env.strip().lower() == "production"
+    should_create_tables = (
+        (resolved_settings.app_env.strip().lower() == "local")
+        if auto_create_tables is None
+        else auto_create_tables
+    )
 
     @asynccontextmanager
     async def lifespan(app_instance: FastAPI):
         engine = getattr(app_instance.state, "db_engine", None)
-        if engine is not None and auto_create_tables:
+        if engine is not None and should_create_tables:
             Base.metadata.create_all(engine)
         try:
             yield
@@ -60,8 +98,8 @@ def create_app(
         title="Amireflow Study OS API",
         version="1.0.0",
         description="API REST Amireflow Study OS v1.0 (Paliers 1 & 2 — Lots 1 à 8).",
-        docs_url="/docs",
-        openapi_url="/openapi.json",
+        docs_url=None if is_prod else "/docs",
+        openapi_url=None if is_prod else "/openapi.json",
         lifespan=lifespan,
     )
 
@@ -89,8 +127,9 @@ def create_app(
         CORSMiddleware,
         allow_origins=resolved_settings.cors_origins,
         allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
+        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+        allow_headers=["Authorization", "Content-Type", "X-Requested-With", "Idempotency-Key"],
+        expose_headers=["X-Request-ID"],
     )
 
     @application.middleware("http")
@@ -104,6 +143,8 @@ def create_app(
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-Frame-Options"] = "DENY"
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        if is_prod or request.url.scheme == "https":
+            response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
         logger.info(
             "http_request request_id=%s method=%s path=%s status=%s duration_ms=%s",
             request_id,
@@ -115,8 +156,30 @@ def create_app(
         return response
 
     @application.get("/health", tags=["Santé"], summary="Vérifier la disponibilité de l'API")
-    def health_check() -> dict[str, str]:
-        return {"status": "ok", "env": resolved_settings.app_env}
+    def health_check(request: Request) -> Response:
+        engine = getattr(request.app.state, "db_engine", None)
+        if engine is None:
+            return JSONResponse(
+                status_code=200,
+                content={"status": "ok", "env": resolved_settings.app_env, "database": "memory"},
+            )
+        try:
+            with engine.connect() as conn:
+                conn.execute(text("SELECT 1"))
+            return JSONResponse(
+                status_code=200,
+                content={"status": "ok", "env": resolved_settings.app_env, "database": "ok"},
+            )
+        except Exception:
+            logger.exception("health_check_database_failed")
+            return JSONResponse(
+                status_code=503,
+                content={
+                    "status": "degraded",
+                    "env": resolved_settings.app_env,
+                    "database": "error",
+                },
+            )
 
     api_prefix = "/api/v1"
     application.include_router(auth.router, prefix=api_prefix)
@@ -129,6 +192,8 @@ def create_app(
     application.include_router(courses.router, prefix=api_prefix)
     application.include_router(skills.router, prefix=api_prefix)
     application.include_router(projects.router, prefix=api_prefix)
+    application.include_router(objectives.router, prefix=api_prefix)
+    application.include_router(planning.router, prefix=api_prefix)
     application.include_router(ai.router, prefix=api_prefix)
 
     return application

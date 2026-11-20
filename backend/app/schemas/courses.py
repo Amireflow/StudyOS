@@ -26,10 +26,16 @@ class CourseExercise(BaseModel):
     id: str
     title: str
     difficulty: Literal["guide", "pratique", "defi"] = "guide"
+    exercise_type: Literal["closed_quiz", "code", "open_explanation"] = "code"
     instructions_markdown: str
     starter_code: str | None = None
+    choices: list[str] = Field(default_factory=list)
     hints: list[str] = Field(default_factory=list)
     expected_concepts: list[str] = Field(default_factory=list)
+
+
+class CourseLevelRegenerateRequest(BaseModel):
+    focus_hint: str | None = Field(default=None, max_length=500)
 
 
 class CourseRubricCriterion(BaseModel):
@@ -188,6 +194,8 @@ class CourseResourceCreate(BaseModel):
 
 
 class CourseSubmissionCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     submission_kind: CourseSubmissionKind
     lesson_id: UUID | None = None
     exercise_id: str | None = None
@@ -210,9 +218,9 @@ class CourseSubmissionCreate(BaseModel):
     @classmethod
     def validate_answer_text(cls, value: str) -> str:
         cleaned = value.strip()
-        if len(cleaned) < 12 or len(cleaned) > 8000:
+        if len(cleaned) < 1 or len(cleaned) > 8000:
             raise ValueError(
-                "Votre explication doit contenir entre 12 et 8000 caractères."
+                "Votre réponse doit contenir entre 1 et 8000 caractères."
             )
         return cleaned
 
@@ -282,6 +290,10 @@ class CourseSubmissionResponse(BaseModel):
     strengths: list[str] = Field(default_factory=list)
     improvements: list[str] = Field(default_factory=list)
     next_step_hint: str | None = None
+    attempt_number: int = 1
+    evaluation_mode: str = "static_heuristic"
+    manual_review_required: bool = False
+    static_analysis: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime
     updated_at: datetime
 
@@ -300,12 +312,19 @@ class CourseLevelResponse(BaseModel):
     project_brief: str | None = None
     project_deliverables: list[str] = Field(default_factory=list)
     project_rubric: list[CourseRubricCriterion] = Field(default_factory=list)
+    generation_source: str = "curated_track"
+    revision: int = 1
+    previous_versions_count: int = 0
     validated_at: datetime | None = None
     lessons: list[CourseLessonResponse] = Field(default_factory=list)
     resources: list[CourseResourceResponse] = Field(default_factory=list)
     submissions: list[CourseSubmissionResponse] = Field(default_factory=list)
     pass_threshold: int = 70
     project_passed: bool = False
+    lessons_completed: bool = False
+    exercises_passed_count: int = 0
+    exercise_passed: bool = False
+    can_validate: bool = False
     created_at: datetime
     updated_at: datetime
 
@@ -323,6 +342,8 @@ class CourseSummaryResponse(BaseModel):
     status: CourseStatus
     skill_id: UUID | None = None
     learning_path_id: UUID | None = None
+    generation_source: str = "curated_track"
+    generation_model: str | None = None
     completed_lessons_count: int = 0
     total_lessons_count: int = 0
     resources_count: int = 0

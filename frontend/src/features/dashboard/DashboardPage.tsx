@@ -130,7 +130,7 @@ export function DashboardPage() {
   );
 
   const activeProjects = useMemo(
-    () => projects.filter((p) => p.status === 'active' || p.status === 'planned'),
+    () => projects.filter((p) => p.status === 'active'),
     [projects],
   );
 

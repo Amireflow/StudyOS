@@ -182,3 +182,53 @@ WITH CHECK ((select auth.uid()) = user_id);
 
 -- Comptes utilisateurs : accès direct bloqué aux clients authenticated (réservé au backend / service_role)
 ALTER TABLE users ENABLE ROW LEVEL SECURITY;
+
+-- Objectifs personnels hors emploi du temps
+ALTER TABLE personal_goals ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "personal_goals_owner_all"
+ON personal_goals
+FOR ALL
+TO authenticated
+USING ((select auth.uid()) = user_id)
+WITH CHECK ((select auth.uid()) = user_id);
+
+-- Mémoire structurée persistante du Copilote IA
+ALTER TABLE user_ai_memory ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "user_ai_memory_owner_all"
+ON user_ai_memory
+FOR ALL
+TO authenticated
+USING ((select auth.uid()) = user_id)
+WITH CHECK ((select auth.uid()) = user_id);
+
+ALTER TABLE user_availability_rules ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "user_availability_rules_owner_all" ON user_availability_rules;
+CREATE POLICY "user_availability_rules_owner_all"
+ON user_availability_rules
+FOR ALL
+TO authenticated
+USING ((select auth.uid()) = user_id)
+WITH CHECK ((select auth.uid()) = user_id);
+
+ALTER TABLE learning_plan_versions ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "learning_plan_versions_owner_all" ON learning_plan_versions;
+CREATE POLICY "learning_plan_versions_owner_all"
+ON learning_plan_versions
+FOR ALL
+TO authenticated
+USING ((select auth.uid()) = user_id)
+WITH CHECK ((select auth.uid()) = user_id);
+
+-- Tables sensibles backend-only : RLS active sans politique client + révocation anon/authenticated
+ALTER TABLE user_ai_provider_configs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE auth_refresh_sessions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE auth_login_attempts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE auth_token_revocations ENABLE ROW LEVEL SECURITY;
+
+REVOKE ALL ON TABLE users FROM anon, authenticated;
+REVOKE ALL ON TABLE user_ai_provider_configs FROM anon, authenticated;
+REVOKE ALL ON TABLE auth_refresh_sessions FROM anon, authenticated;
+REVOKE ALL ON TABLE auth_login_attempts FROM anon, authenticated;
+REVOKE ALL ON TABLE auth_token_revocations FROM anon, authenticated;

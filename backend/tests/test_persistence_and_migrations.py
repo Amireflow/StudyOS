@@ -4,9 +4,10 @@ from uuid import UUID, uuid4
 from alembic import command
 from alembic.config import Config
 from fastapi.testclient import TestClient
-from sqlalchemy import text
+from sqlalchemy import inspect, text
+import app.models  # noqa: F401
 from app.core.config import Settings
-from app.core.database import create_db_engine
+from app.core.database import Base, create_db_engine
 from app.main import create_app
 
 
@@ -186,6 +187,21 @@ def test_alembic_migrations_and_restart_persistence_with_isolation(tmp_path: Pat
         assert course.status_code == 201
         course_id = course.json()["id"]
 
+        goal = client1.post(
+            "/api/v1/objectives",
+            json={
+                "title": "React",
+                "category": "framework",
+                "goal": "Maîtriser React et Vitest",
+                "weekly_target_minutes": 180,
+                "is_primary": False,
+                "create_linked_entities": False,
+            },
+            headers=headers_a,
+        )
+        assert goal.status_code == 201
+        goal_id = goal.json()["id"]
+
     # Instance 2 : redémarrage simulé sur le même fichier SQLite
     app2 = create_app(settings=settings, auto_create_tables=False)
     with TestClient(app2) as client2:
@@ -246,6 +262,11 @@ def test_alembic_migrations_and_restart_persistence_with_isolation(tmp_path: Pat
         assert len(course_detail["levels"]) == 3
         assert len(course_detail["levels"][0]["lessons"]) == 4
 
+        goals = client2.get("/api/v1/objectives", headers=headers_a2).json()
+        assert len(goals) == 1
+        assert goals[0]["id"] == goal_id
+        assert goals[0]["title"] == "React"
+
         # Second utilisateur totalement isolé
         login_b = client2.post(
             "/api/v1/auth/local-login",
@@ -260,6 +281,8 @@ def test_alembic_migrations_and_restart_persistence_with_isolation(tmp_path: Pat
         assert client2.get(f"/api/v1/projects/{project_id}", headers=headers_b).status_code == 404
         assert client2.get("/api/v1/courses", headers=headers_b).json() == []
         assert client2.get(f"/api/v1/courses/{course_id}", headers=headers_b).status_code == 404
+        assert client2.get("/api/v1/objectives", headers=headers_b).json() == []
+        assert client2.get(f"/api/v1/objectives/{goal_id}", headers=headers_b).status_code == 404
 
 
 def test_migration_0004_preserves_historical_skill_levels_and_data(tmp_path: Path) -> None:
@@ -323,3 +346,52 @@ def test_migration_0004_preserves_historical_skill_levels_and_data(tmp_path: Pat
         )
         assert patched.status_code == 200
         assert patched.json()["current_level"] == 3
+
+
+def test_alembic_reversible_downgrade_and_orm_schema_parity(tmp_path: Path) -> None:
+    """Vérifie upgrade head -> downgrade base -> upgrade head et la parité exacte ORM vs Alembic."""
+    backend_root = Path(__file__).resolve().parents[1]
+    alembic_db = tmp_path / "alembic_parity.db"
+    alembic_url = f"sqlite:///{alembic_db.as_posix()}"
+
+    cfg = Config(str(backend_root / "alembic.ini"))
+    cfg.set_main_option("script_location", str(backend_root / "alembic"))
+    cfg.set_main_option("sqlalchemy.url", alembic_url)
+
+    command.upgrade(cfg, "head")
+    command.downgrade(cfg, "base")
+
+    check_engine = create_db_engine(alembic_url)
+    try:
+        insp_after_down = inspect(check_engine)
+        remaining_app_tables = set(insp_after_down.get_table_names()) & set(
+            Base.metadata.tables.keys()
+        )
+        assert remaining_app_tables == set()
+    finally:
+        check_engine.dispose()
+
+    command.upgrade(cfg, "head")
+
+    orm_db = tmp_path / "orm_parity.db"
+    orm_engine = create_db_engine(f"sqlite:///{orm_db.as_posix()}")
+    alembic_engine = create_db_engine(alembic_url)
+    try:
+        Base.metadata.create_all(orm_engine)
+        alembic_insp = inspect(alembic_engine)
+        orm_insp = inspect(orm_engine)
+
+        alembic_tables = set(alembic_insp.get_table_names()) - {"alembic_version"}
+        orm_tables = set(orm_insp.get_table_names())
+        assert alembic_tables == orm_tables
+
+        for table_name in sorted(orm_tables):
+            alembic_cols = {c["name"] for c in alembic_insp.get_columns(table_name)}
+            orm_cols = {c["name"] for c in orm_insp.get_columns(table_name)}
+            assert alembic_cols == orm_cols, (
+                f"Dérive de colonnes sur '{table_name}': "
+                f"alembic-only={alembic_cols - orm_cols}, orm-only={orm_cols - alembic_cols}"
+            )
+    finally:
+        orm_engine.dispose()
+        alembic_engine.dispose()

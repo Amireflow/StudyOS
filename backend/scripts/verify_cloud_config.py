@@ -11,25 +11,12 @@ from sqlalchemy import inspect, text
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+import app.models  # noqa: F401,E402 - enregistre toutes les tables ORM dans Base.metadata
 from app.core.config import get_settings  # noqa: E402
-from app.core.database import create_db_engine  # noqa: E402
+from app.core.crypto import _decode_raw_32byte_key, _parse_key_entry  # noqa: E402
+from app.core.database import Base, create_db_engine  # noqa: E402
 
-EXPECTED_TABLES = {
-    "profiles",
-    "tasks",
-    "schedule_events",
-    "study_sessions",
-    "learning_paths",
-    "learning_modules",
-    "lessons",
-    "skills",
-    "skill_evidence",
-    "projects",
-    "ai_conversations",
-    "ai_messages",
-    "ai_action_proposals",
-    "ai_reports",
-}
+EXPECTED_TABLES = set(Base.metadata.tables.keys())
 
 
 def main() -> int:
@@ -42,9 +29,26 @@ def main() -> int:
         if settings.allow_local_dev_auth:
             print("ERREUR : ALLOW_LOCAL_DEV_AUTH doit être false en production.")
             return 1
+        if settings.allow_insecure_local_ai_url:
+            print("ERREUR : ALLOW_INSECURE_LOCAL_AI_URL doit être false en production.")
+            return 1
+        if len((settings.app_secret_key or "").strip()) < 32:
+            print("ERREUR : APP_SECRET_KEY doit contenir au moins 32 caractères en production.")
+            return 1
         if not settings.auth_jwks_url or not settings.auth_issuer:
             print("ERREUR : AUTH_JWKS_URL et AUTH_ISSUER sont requis en production.")
             return 1
+
+    if settings.ai_key_encryption_key.strip():
+        try:
+            _parse_key_entry(settings.ai_key_encryption_key, default_key_id="v1")
+        except Exception as exc:
+            print(f"ERREUR : AI_KEY_ENCRYPTION_KEY invalide ({exc}).")
+            return 1
+    elif settings.app_env.lower() == "production":
+        print("AVERTISSEMENT : AI_KEY_ENCRYPTION_KEY non défini (stockage de clés API IA utilisateurs désactivé).")
+
+    _ = _decode_raw_32byte_key  # vérifie l'import de l'utilitaire crypto
 
     engine = create_db_engine(settings.database_url)
     try:

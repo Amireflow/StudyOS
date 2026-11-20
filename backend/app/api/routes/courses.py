@@ -7,6 +7,7 @@ from app.schemas.courses import (
     CourseDetailResponse,
     CourseLessonProgressUpdate,
     CourseLessonResponse,
+    CourseLevelRegenerateRequest,
     CoursePreviewRequest,
     CoursePreviewResponse,
     CourseResourceCreate,
@@ -40,10 +41,10 @@ def list_courses(
 )
 def preview_course(
     payload: CoursePreviewRequest,
-    _user_id: UUID = Depends(get_current_user_id),
+    user_id: UUID = Depends(get_current_user_id),
     course_service: CourseService = Depends(get_course_service),
 ) -> CoursePreviewResponse:
-    return course_service.preview_course(payload)
+    return course_service.preview_course(payload, user_id=user_id)
 
 
 @router.post(
@@ -165,7 +166,7 @@ def submit_course_work(
 @router.post(
     "/{course_id}/levels/{level_id}/validate",
     response_model=CourseDetailResponse,
-    summary="Valider un niveau après réussite du projet et débloquer le niveau suivant",
+    summary="Valider un niveau après complétion des chapitres, exercices et projet",
 )
 def validate_course_level(
     course_id: UUID,
@@ -174,3 +175,23 @@ def validate_course_level(
     course_service: CourseService = Depends(get_course_service),
 ) -> CourseDetailResponse:
     return course_service.validate_level(user_id, course_id, level_id)
+
+
+@router.post(
+    "/{course_id}/levels/{level_id}/regenerate",
+    response_model=CourseDetailResponse,
+    summary="Régénérer le contenu d'un niveau non validé tout en archivant les versions précédentes",
+)
+def regenerate_course_level(
+    course_id: UUID,
+    level_id: UUID,
+    payload: CourseLevelRegenerateRequest | None = None,
+    user_id: UUID = Depends(get_current_user_id),
+    course_service: CourseService = Depends(get_course_service),
+) -> CourseDetailResponse:
+    return course_service.regenerate_level(
+        user_id,
+        course_id,
+        level_id,
+        payload or CourseLevelRegenerateRequest(),
+    )

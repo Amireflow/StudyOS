@@ -121,9 +121,28 @@ async function fetchModelsDirectClient(
   } catch {
     throw new Error('L’URL du fournisseur IA est invalide.');
   }
-  const isLocalHost = parsedUrl.hostname === 'localhost' || parsedUrl.hostname === '127.0.0.1';
-  if (parsedUrl.protocol !== 'https:' && !(parsedUrl.protocol === 'http:' && isLocalHost)) {
-    throw new Error('L’URL du fournisseur IA doit utiliser HTTPS (ou http://localhost en local).');
+  const hostname = parsedUrl.hostname.toLowerCase();
+  const isLoopback =
+    hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '[::1]';
+  const isPrivateIpv4 =
+    /^10\./.test(hostname) ||
+    /^192\.168\./.test(hostname) ||
+    /^169\.254\./.test(hostname) ||
+    /^127\./.test(hostname) ||
+    /^0\./.test(hostname) ||
+    /^172\.(1[6-9]|2\d|3[0-1])\./.test(hostname);
+  const isForbiddenHost =
+    isPrivateIpv4 ||
+    hostname.endsWith('.local') ||
+    hostname.endsWith('.internal') ||
+    hostname === 'metadata.google.internal' ||
+    hostname === '[::1]';
+
+  if (isForbiddenHost && !(isLoopback && import.meta.env.DEV)) {
+    throw new Error('Destination réseau privée ou interne interdite.');
+  }
+  if (parsedUrl.protocol !== 'https:' && !(parsedUrl.protocol === 'http:' && isLoopback && import.meta.env.DEV)) {
+    throw new Error('L’URL du fournisseur IA doit utiliser HTTPS (ou http://localhost en développement local).');
   }
 
   const headers: Record<string, string> =

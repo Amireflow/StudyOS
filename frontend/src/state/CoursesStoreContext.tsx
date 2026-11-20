@@ -17,6 +17,7 @@ import {
   fetchCourseDetailApi,
   fetchCoursesApi,
   previewCourseApi,
+  regenerateCourseLevelApi,
   submitCourseWorkApi,
   updateCourseApi,
   updateCourseLessonStatusApi,
@@ -41,8 +42,10 @@ import {
   createCourseDetailLocal,
   evaluateCourseSubmissionLocal,
   previewCourseLocal,
+  regenerateCourseLevelLocal,
   summarizeCourse,
   validateCourseLevelLocal,
+  withComputedLevelReadiness,
 } from '../features/courses/courseLocalEngine';
 import { useAuth } from './AuthContext';
 import { useLearningStore } from './LearningStoreContext';
@@ -93,6 +96,11 @@ export interface CoursesStoreContextValue {
     input: CourseSubmissionInput,
   ) => Promise<CourseSubmission | null>;
   validateLevel: (courseId: string, levelId: string) => Promise<CourseDetail | null>;
+  regenerateLevel: (
+    courseId: string,
+    levelId: string,
+    focusHint?: string,
+  ) => Promise<CourseDetail | null>;
 }
 
 const CoursesStoreContext = createContext<CoursesStoreContextValue | null>(null);
@@ -311,19 +319,21 @@ export function CoursesStoreProvider({ children }: { children: ReactNode }) {
         ...prev,
         courses: prev.courses.map((course) => {
           if (course.id !== courseId) return course;
-          const nextLevels = course.levels.map((lv) => ({
-            ...lv,
-            lessons: lv.lessons.map((l) =>
-              l.id !== lessonId
-                ? l
-                : {
-                    ...l,
-                    status,
-                    completedAt: status === 'completed' ? nowIso : null,
-                    updatedAt: nowIso,
-                  },
-            ),
-          }));
+          const nextLevels = course.levels.map((lv) =>
+            withComputedLevelReadiness({
+              ...lv,
+              lessons: lv.lessons.map((l) =>
+                l.id !== lessonId
+                  ? l
+                  : {
+                      ...l,
+                      status,
+                      completedAt: status === 'completed' ? nowIso : null,
+                      updatedAt: nowIso,
+                    },
+              ),
+            }),
+          );
           const allLessons = nextLevels.flatMap((lv) => lv.lessons);
           return {
             ...course,
@@ -451,8 +461,8 @@ export function CoursesStoreProvider({ children }: { children: ReactNode }) {
       input: CourseSubmissionInput,
     ): Promise<CourseSubmission | null> => {
       setMutationError(null);
-      if (input.answerText.trim().length < 12) {
-        setMutationError('Votre explication doit contenir au moins 12 caractères.');
+      if (input.answerText.trim().length < 1) {
+        setMutationError('Veuillez saisir ou sélectionner une réponse.');
         return null;
       }
 
@@ -499,14 +509,11 @@ export function CoursesStoreProvider({ children }: { children: ReactNode }) {
             levels: course.levels.map((lv) => {
               if (lv.id !== levelId) return lv;
               const nextSubs = [evaluated, ...lv.submissions];
-              return {
+              return withComputedLevelReadiness({
                 ...lv,
                 submissions: nextSubs,
-                projectPassed:
-                  lv.projectPassed ||
-                  (evaluated.submissionKind === 'project' && Boolean(evaluated.passed)),
                 updatedAt: nowIso,
-              };
+              });
             }),
             updatedAt: nowIso,
           };
@@ -575,6 +582,48 @@ export function CoursesStoreProvider({ children }: { children: ReactNode }) {
     [accessToken, isApiMode, learningStore, localState.courses, queryClient, userIdKey],
   );
 
+  const regenerateLevel = useCallback(
+    async (
+      courseId: string,
+      levelId: string,
+      focusHint?: string,
+    ): Promise<CourseDetail | null> => {
+      setMutationError(null);
+      if (isApiMode) {
+        try {
+          const updated = await regenerateCourseLevelApi(accessToken, courseId, levelId, focusHint);
+          await Promise.all([
+            queryClient.invalidateQueries({ queryKey: ['courses'] }),
+            queryClient.invalidateQueries({ queryKey: ['course-detail', userIdKey, courseId] }),
+          ]);
+          return updated;
+        } catch (err) {
+          setMutationError(
+            err instanceof Error ? err.message : 'Impossible de régénérer ce niveau.',
+          );
+          return null;
+        }
+      }
+
+      const existing = localState.courses.find((c) => c.id === courseId);
+      if (!existing) {
+        setMutationError('Cours introuvable.');
+        return null;
+      }
+      const { updated, error: regenErr } = regenerateCourseLevelLocal(existing, levelId);
+      if (regenErr) {
+        setMutationError(regenErr);
+        return null;
+      }
+      setLocalState((prev) => ({
+        ...prev,
+        courses: prev.courses.map((c) => (c.id === courseId ? updated : c)),
+      }));
+      return updated;
+    },
+    [accessToken, isApiMode, localState.courses, queryClient, userIdKey],
+  );
+
   const courses = useMemo(
     () =>
       isApiMode
@@ -610,6 +659,7 @@ export function CoursesStoreProvider({ children }: { children: ReactNode }) {
       deleteResource,
       submitWork,
       validateLevel,
+      regenerateLevel,
     }),
     [
       courses,
@@ -629,6 +679,7 @@ export function CoursesStoreProvider({ children }: { children: ReactNode }) {
       deleteResource,
       submitWork,
       validateLevel,
+      regenerateLevel,
     ],
   );
 

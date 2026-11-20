@@ -1,15 +1,21 @@
 import { useMemo, useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Add01Icon,
   Alert02Icon,
+  BookOpen01Icon,
+  Calendar03Icon,
   FolderKanbanIcon,
   GridViewIcon,
   ListViewIcon,
+  PencilEdit02Icon,
   Search01Icon,
+  SparklesIcon,
+  Target02Icon,
 } from '@hugeicons/core-free-icons';
 import { PageHeader } from '../../components/layout/PageHeader';
 import { Button } from '../../components/ui/Button';
-import { Input, Select } from '../../components/ui/FormFields';
+import { InlineConfirm, Input, Select } from '../../components/ui/FormFields';
 import { Icon } from '../../components/ui/Icon';
 import {
   EmptyState,
@@ -19,18 +25,51 @@ import {
 } from '../../components/ui/StateFeedback';
 import { cn } from '../../lib/cn';
 import { isoToDateInput } from '../../lib/date';
+import {
+  analyzeObjectivesIntakeApi,
+  applyUnifiedPlanApi,
+  confirmObjectivesIntakeApi,
+  createPersonalGoalApi,
+  deletePersonalGoalApi,
+  fetchObjectivesOverviewApi,
+  generateUnifiedPlanApi,
+  updatePersonalGoalApi,
+  type PersonalGoalCreateInput,
+} from '../../lib/objectivesApi';
+import { useAuth } from '../../state/AuthContext';
 import { useLearningStore } from '../../state/LearningStoreContext';
 import { useStudyStore } from '../../state/StudyStoreContext';
-import type { Project, ProjectStatus, StudySession, Task } from '../../types/domain';
+import type {
+  ConversationalIntakeRecap,
+  PersonalGoal,
+  Project,
+  ProjectStatus,
+  StudySession,
+  Task,
+  UnifiedPlan,
+} from '../../types/domain';
+import { ObjectivesIntakePanel } from './ObjectivesIntakePanel';
+import { PersonalGoalForm } from './PersonalGoalForm';
 import { ProjectCard } from './ProjectCard';
 import { ProjectForm, type ProjectSubmitPayload } from './ProjectForm';
 import { PROJECT_STATUS_META } from './projectsSchema';
+import { UnifiedPlanPanel } from './UnifiedPlanPanel';
+import {
+  analyzeLocalConversationalIntake,
+  computeGoalScheduleMetrics,
+  createLocalPersonalGoal,
+  deleteLocalPersonalGoal,
+  generateLocalUnifiedPlan,
+  readLocalPersonalGoals,
+  updateLocalPersonalGoal,
+} from './objectivesLocalEngine';
 
 type ViewMode = 'list' | 'board';
 
 const STATUS_FILTER_PILLS: Array<{ value: 'all' | ProjectStatus; label: string }> = [
   { value: 'all', label: 'Tous' },
   { value: 'active', label: 'Actifs' },
+  { value: 'paused', label: 'En pause' },
   { value: 'planned', label: 'Planifiés' },
   { value: 'blocked', label: 'Bloqués' },
   { value: 'completed', label: 'Terminés' },
@@ -49,7 +88,34 @@ const PILL_ACTIVE = 'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900'
 const PILL_IDLE =
   'bg-zinc-100 text-zinc-600 hover:bg-zinc-200/70 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700';
 
+const OBJECTIVE_STATUS_LABELS: Record<string, string> = {
+  active: 'Actif',
+  paused: 'En pause',
+  planned: 'Planifié',
+  blocked: 'Bloqué',
+  completed: 'Validé',
+  archived: 'Archivé',
+};
+
+const OBJECTIVE_CATEGORY_LABELS: Record<string, string> = {
+  learning_goal: 'Apprentissage',
+  language: 'Langage',
+  framework: 'Framework',
+  technology: 'Technologie',
+  spoken_language: 'Langue vivante',
+  skill: 'Compétence',
+  project: 'Projet',
+  personal_project: 'Projet personnel',
+  professional_project: 'Projet professionnel',
+  other: 'Objectif',
+};
+
 export function ProjectsPage() {
+  const { session } = useAuth();
+  const queryClient = useQueryClient();
+  const isApiMode = session?.mode === 'api' && Boolean(session.accessToken);
+  const accessToken = session?.mode === 'api' ? session.accessToken : '';
+
   const {
     projects,
     isLoading,
@@ -65,19 +131,68 @@ export function ProjectsPage() {
   const {
     tasks,
     sessions,
+    scheduleEvents,
+    activePriorityTitle,
     activePriorityProjectId,
     setActivePriority,
     createTask,
+    createScheduleEvent,
+    deleteScheduleEvent,
     dataMode,
   } = useStudyStore();
 
+  const [rawLocalGoals, setRawLocalGoals] = useState<PersonalGoal[]>(() =>
+    readLocalPersonalGoals([]),
+  );
   const [statusFilter, setStatusFilter] = useState<'all' | ProjectStatus>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [viewMode, setViewMode] = useState<ViewMode>('list');
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingProject, setEditingProject] = useState<Project | null>(null);
+  const [isGoalFormOpen, setIsGoalFormOpen] = useState(false);
+  const [editingGoal, setEditingGoal] = useState<PersonalGoal | null>(null);
+  const [isIntakeOpen, setIsIntakeOpen] = useState(false);
+  const [isUnifiedPlanOpen, setIsUnifiedPlanOpen] = useState(false);
   const [inlineWarning, setInlineWarning] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
+
+  const overviewQuery = useQuery({
+    queryKey: ['objectives-overview', session?.userId ?? 'anon'],
+    queryFn: () => fetchObjectivesOverviewApi(accessToken),
+    enabled: isApiMode,
+  });
+
+  const personalGoals = useMemo(() => {
+    if (isApiMode) {
+      return overviewQuery.data?.personalGoals ?? [];
+    }
+    return rawLocalGoals.map((g) => computeGoalScheduleMetrics(g, sessions));
+  }, [isApiMode, overviewQuery.data, rawLocalGoals, sessions]);
+
+  const academicObligationsCount = useMemo(() => {
+    if (isApiMode && overviewQuery.data) {
+      return overviewQuery.data.academicObligations.length;
+    }
+    return scheduleEvents.filter(
+      (ev) => ev.type === 'course' || ev.source === 'timetable_import',
+    ).length;
+  }, [isApiMode, overviewQuery.data, scheduleEvents]);
+
+  const refreshObjectivesQueries = async () => {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ['objectives-overview'] }),
+      queryClient.invalidateQueries({ queryKey: ['skills'] }),
+      queryClient.invalidateQueries({ queryKey: ['learning'] }),
+      queryClient.invalidateQueries({ queryKey: ['projects'] }),
+      queryClient.invalidateQueries({ queryKey: ['profile'] }),
+      queryClient.invalidateQueries({ queryKey: ['schedule'] }),
+      queryClient.invalidateQueries({ queryKey: ['tasks'] }),
+    ]);
+  };
+
+  const refreshLocalGoals = () => {
+    setRawLocalGoals(readLocalPersonalGoals([]));
+  };
 
   const summary = useMemo(() => {
     let activeCount = 0;
@@ -159,7 +274,16 @@ export function ProjectsPage() {
     if (editingProject) {
       if (await updateProject(editingProject.id, payload)) {
         if (activePriorityProjectId === editingProject.id) {
-          await setActivePriority(payload.name.trim(), null, editingProject.id);
+          if (
+            dataMode === 'local_demo' &&
+            (payload.status === 'paused' ||
+              payload.status === 'completed' ||
+              payload.status === 'archived')
+          ) {
+            await setActivePriority(null, null, null);
+          } else if (payload.status !== 'paused' && payload.status !== 'completed' && payload.status !== 'archived') {
+            await setActivePriority(payload.name.trim(), null, editingProject.id);
+          }
         }
         setFeedback(`Projet « ${payload.name} » mis à jour.`);
         setIsFormOpen(false);
@@ -184,6 +308,13 @@ export function ProjectsPage() {
       return;
     }
     if (await setProjectStatus(project.id, nextStatus)) {
+      if (
+        dataMode === 'local_demo' &&
+        activePriorityProjectId === project.id &&
+        (nextStatus === 'paused' || nextStatus === 'completed' || nextStatus === 'archived')
+      ) {
+        await setActivePriority(null, null, null);
+      }
       const label = PROJECT_STATUS_META[nextStatus].label.toLowerCase();
       setFeedback(`Projet « ${project.name} » passé à ${label}.`);
     }
@@ -228,10 +359,300 @@ export function ProjectsPage() {
     setSearchQuery('');
   };
 
+  const openGoalCreate = () => {
+    setEditingGoal(null);
+    setInlineWarning(null);
+    setIsGoalFormOpen(true);
+  };
+
+  const openGoalEdit = (goal: PersonalGoal) => {
+    setEditingGoal(goal);
+    setInlineWarning(null);
+    setIsGoalFormOpen(true);
+  };
+
+  const handleGoalSubmit = async (payload: PersonalGoalCreateInput) => {
+    if (isApiMode) {
+      if (editingGoal) {
+        await updatePersonalGoalApi(accessToken, editingGoal.id, payload);
+        setFeedback(`Objectif « ${payload.title} » mis à jour.`);
+      } else {
+        await createPersonalGoalApi(accessToken, payload);
+        setFeedback(`Objectif « ${payload.title} » créé et relié aux parcours.`);
+      }
+      await refreshObjectivesQueries();
+    } else {
+      if (editingGoal) {
+        updateLocalPersonalGoal(editingGoal.id, payload);
+        setFeedback(`Objectif « ${payload.title} » mis à jour.`);
+      } else {
+        createLocalPersonalGoal(payload);
+        setFeedback(`Objectif « ${payload.title} » créé hors emploi du temps universitaire.`);
+      }
+      if (payload.isPrimary) {
+        await setActivePriority(payload.title, null, null);
+      }
+      refreshLocalGoals();
+    }
+    setIsGoalFormOpen(false);
+    setEditingGoal(null);
+  };
+
+  const handleToggleGoalPause = async (goal: PersonalGoal) => {
+    const nextStatus = goal.status === 'paused' ? 'active' : 'paused';
+    if (isApiMode) {
+      await updatePersonalGoalApi(accessToken, goal.id, { status: nextStatus });
+      await refreshObjectivesQueries();
+    } else {
+      updateLocalPersonalGoal(goal.id, { status: nextStatus });
+      refreshLocalGoals();
+    }
+    setFeedback(
+      nextStatus === 'paused'
+        ? `Objectif « ${goal.title} » suspendu.`
+        : `Objectif « ${goal.title} » réactivé.`,
+    );
+  };
+
+  const handleSetGoalPriority = async (goal: PersonalGoal) => {
+    if (isApiMode) {
+      await updatePersonalGoalApi(accessToken, goal.id, { isPrimary: true });
+      await refreshObjectivesQueries();
+    } else {
+      updateLocalPersonalGoal(goal.id, { isPrimary: true });
+      await setActivePriority(goal.title, null, null);
+      refreshLocalGoals();
+    }
+    setFeedback(`Objectif « ${goal.title} » défini comme priorité principale.`);
+  };
+
+  const handleDeleteGoal = async (goal: PersonalGoal) => {
+    if (isApiMode) {
+      await deletePersonalGoalApi(accessToken, goal.id);
+      await refreshObjectivesQueries();
+    } else {
+      deleteLocalPersonalGoal(goal.id);
+      refreshLocalGoals();
+    }
+    setFeedback(`Objectif « ${goal.title} » supprimé.`);
+  };
+
+  const handleAnalyzeIntake = async (
+    message: string,
+    knownAnswers: Record<string, unknown>,
+  ): Promise<ConversationalIntakeRecap> => {
+    if (isApiMode) {
+      return analyzeObjectivesIntakeApi(accessToken, { message, knownAnswers });
+    }
+    return analyzeLocalConversationalIntake(message, knownAnswers);
+  };
+
+  const handleConfirmIntake = async ({
+    recap,
+    knownAnswers,
+  }: {
+    recap: ConversationalIntakeRecap;
+    knownAnswers: Record<string, unknown>;
+  }) => {
+    if (isApiMode) {
+      const res = await confirmObjectivesIntakeApi(accessToken, {
+        objectives: recap.objectives,
+        availableTimeWeeklyMinutes:
+          typeof knownAnswers.available_time_weekly_minutes === 'number'
+            ? knownAnswers.available_time_weekly_minutes
+            : recap.availableTimeWeeklyMinutes,
+        motivation:
+          typeof knownAnswers.motivation === 'string'
+            ? knownAnswers.motivation
+            : recap.motivation,
+        targetDate:
+          typeof knownAnswers.target_date === 'string'
+            ? knownAnswers.target_date
+            : recap.targetDate,
+        primaryTitle:
+          typeof knownAnswers.primary_title === 'string'
+            ? knownAnswers.primary_title
+            : null,
+      });
+      await refreshObjectivesQueries();
+      setFeedback(
+        `${res.createdGoals.length} objectif(s) et ${res.createdProjects.length} projet(s) enregistrés après confirmation.`,
+      );
+    } else {
+      const primaryTitle =
+        typeof knownAnswers.primary_title === 'string' ? knownAnswers.primary_title : null;
+      const weeklyMins =
+        typeof knownAnswers.available_time_weekly_minutes === 'number'
+          ? knownAnswers.available_time_weekly_minutes
+          : recap.availableTimeWeeklyMinutes ?? 120;
+      const motiv =
+        typeof knownAnswers.motivation === 'string'
+          ? knownAnswers.motivation
+          : recap.motivation;
+      const targetDate =
+        typeof knownAnswers.target_date === 'string'
+          ? knownAnswers.target_date
+          : recap.targetDate;
+      const currentLvl =
+        typeof knownAnswers.current_level === 'number' ? knownAnswers.current_level : null;
+      const targetLvl =
+        typeof knownAnswers.target_level === 'number' ? knownAnswers.target_level : null;
+
+      let activeProjCount = projects.filter((p) => p.status === 'active').length;
+      let createdGoalsCount = 0;
+      let createdProjectsCount = 0;
+
+      for (const candidate of recap.objectives) {
+        if (candidate.kind === 'project') {
+          const canActivate = activeProjCount < 3;
+          const ok = await createProject({
+            name: candidate.title,
+            goal: candidate.goal,
+            status: canActivate ? 'active' : 'planned',
+            priority: candidate.priority,
+            nextAction: candidate.nextAction || 'Définir le premier livrable',
+            deliverables: candidate.deliverables,
+            targetDate: targetDate ? targetDate.slice(0, 10) : undefined,
+          });
+          if (ok) {
+            createdProjectsCount += 1;
+            if (canActivate) activeProjCount += 1;
+          }
+        } else {
+          createLocalPersonalGoal({
+            title: candidate.title,
+            category: 'learning_goal',
+            goal: candidate.goal,
+            currentLevel: currentLvl ?? candidate.currentLevel,
+            targetLevel: targetLvl ?? candidate.targetLevel,
+            priority: candidate.priority,
+            isPrimary:
+              primaryTitle !== null &&
+              primaryTitle.toLowerCase() === candidate.title.toLowerCase(),
+            motivation: motiv,
+            targetDate,
+            weeklyTargetMinutes: weeklyMins,
+            deliverables: candidate.deliverables,
+            successCriteria: candidate.validationConditions,
+            nextAction: candidate.nextAction,
+          });
+          createdGoalsCount += 1;
+        }
+      }
+      if (primaryTitle) {
+        await setActivePriority(primaryTitle, null, null);
+      }
+      refreshLocalGoals();
+      setFeedback(
+        `${createdGoalsCount} objectif(s) et ${createdProjectsCount} projet(s) enregistrés après confirmation.`,
+      );
+    }
+    setIsIntakeOpen(false);
+  };
+
+  const handleGeneratePlan = async (params: {
+    weeklyAvailableMinutes: number;
+    primaryPriorityTitle: string | null;
+  }): Promise<UnifiedPlan> => {
+    if (isApiMode) {
+      return generateUnifiedPlanApi(accessToken, {
+        weeklyAvailableMinutes: params.weeklyAvailableMinutes,
+        primaryPriorityTitle: params.primaryPriorityTitle,
+        includeDailyRecovery: true,
+      });
+    }
+    return generateLocalUnifiedPlan({
+      goals: personalGoals,
+      projects,
+      tasks,
+      scheduleEvents,
+      sessions,
+      weeklyAvailableMinutes: params.weeklyAvailableMinutes,
+      primaryPriorityTitle: params.primaryPriorityTitle,
+      includeDailyRecovery: true,
+    });
+  };
+
+  const handleApplyPlan = async (plan: UnifiedPlan) => {
+    if (isApiMode) {
+      const res = await applyUnifiedPlanApi(accessToken, {
+        flexibleStudySlots: plan.flexibleStudySlots,
+        primaryPriorityTitle: plan.primaryPriorityTitle,
+        replaceExistingFlexibleWeek: true,
+        weekStart: plan.weekStart,
+      });
+      await refreshObjectivesQueries();
+      setFeedback(
+        `Programme validé : ${res.createdEventsCount} séance(s) planifiée(s) et ${res.linkedTasksCreatedCount} tâche(s) liée(s).`,
+      );
+    } else {
+      if (plan.primaryPriorityTitle) {
+        await setActivePriority(plan.primaryPriorityTitle, null, null);
+      }
+
+      // Déplacer ou remplacer d'anciens créneaux flexibles en conflit avec les cours ou les nouveaux blocs
+      const fixedAndNewRanges = [...plan.academicFixedSlots, ...plan.flexibleStudySlots].map(
+        (s) => ({
+          start: new Date(s.startsAt).getTime(),
+          end: new Date(s.endsAt).getTime(),
+        }),
+      );
+      for (const existing of scheduleEvents) {
+        const isFixed = existing.type === 'course' || existing.source === 'timetable_import';
+        if (isFixed) continue;
+        const eStart = new Date(existing.startsAt).getTime();
+        const eEnd = new Date(existing.endsAt).getTime();
+        if (fixedAndNewRanges.some((r) => eStart < r.end && r.start < eEnd)) {
+          await deleteScheduleEvent(existing.id);
+        }
+      }
+
+      const existingTaskTitles = new Set(tasks.map((t) => t.title.toLowerCase()));
+      let eventsCount = 0;
+      let tasksCount = 0;
+      for (const slot of plan.flexibleStudySlots) {
+        const createdEv = await createScheduleEvent({
+          title: slot.title,
+          type: slot.sourceCategory === 'project' ? 'project' : 'learning',
+          date: slot.localDate,
+          startTime: slot.localStartTime,
+          endTime: slot.localEndTime,
+          notes: `Résultat attendu : ${slot.expectedOutcome}`,
+        });
+        if (createdEv) eventsCount += 1;
+
+        if (!existingTaskTitles.has(slot.title.toLowerCase())) {
+          const createdTask = await createTask({
+            title: slot.title,
+            description: `Résultat attendu : ${slot.expectedOutcome}`,
+            priority:
+              plan.primaryPriorityTitle &&
+              slot.title.toLowerCase().includes(plan.primaryPriorityTitle.toLowerCase())
+                ? 'high'
+                : 'normal',
+            status: 'todo',
+            dueDate: slot.localDate,
+            projectId: slot.linkedProjectId ?? '',
+            moduleId: '',
+          });
+          if (createdTask) {
+            tasksCount += 1;
+            existingTaskTitles.add(slot.title.toLowerCase());
+          }
+        }
+      }
+
+      setFeedback(
+        `Programme unifié validé : ${eventsCount} créneau(x) flexible(s) ajouté(s) au planning et ${tasksCount} tâche(s) créée(s).`,
+      );
+    }
+    setIsUnifiedPlanOpen(false);
+  };
+
   if (isLoading) {
     return (
       <div className="space-y-5">
-        <PageHeader title="Projets" />
+        <PageHeader title="Mes objectifs et projets" />
         <LoadingState message="Chargement…" />
       </div>
     );
@@ -240,27 +661,51 @@ export function ProjectsPage() {
   if (error) {
     return (
       <div className="space-y-5">
-        <PageHeader title="Projets" />
+        <PageHeader title="Mes objectifs et projets" />
         <ErrorState message={error} onRetry={retry} />
       </div>
     );
   }
 
   const headerSubtitle =
-    projects.length > 0
-      ? `${summary.activeCount} actif${summary.activeCount > 1 ? 's' : ''} · ${summary.linkedTasksCount} tâche${summary.linkedTasksCount > 1 ? 's' : ''} liée${summary.linkedTasksCount > 1 ? 's' : ''}`
+    projects.length > 0 || personalGoals.length > 0
+      ? `${personalGoals.length} objectif${personalGoals.length > 1 ? 's' : ''} personnel${personalGoals.length > 1 ? 's' : ''} · ${summary.activeCount}/3 projet${summary.activeCount > 1 ? 's' : ''} actif${summary.activeCount > 1 ? 's' : ''} · ${summary.linkedTasksCount} tâche${summary.linkedTasksCount > 1 ? 's' : ''} liée${summary.linkedTasksCount > 1 ? 's' : ''}`
       : undefined;
 
   return (
     <div className="space-y-3.5 sm:space-y-5">
       <PageHeader
-        title="Projets"
+        title="Mes objectifs et projets"
         description={headerSubtitle}
         actions={
-          <Button type="button" variant="primary" size="sm" onClick={openCreate}>
-            <Icon icon={Add01Icon} size={15} />
-            Nouveau projet
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button type="button" variant="secondary" size="sm" onClick={openGoalCreate}>
+              <Icon icon={BookOpen01Icon} size={15} />
+              Nouvel objectif
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={() => setIsIntakeOpen((prev) => !prev)}
+            >
+              <Icon icon={SparklesIcon} size={15} />
+              Décrire à l’IA
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={() => setIsUnifiedPlanOpen((prev) => !prev)}
+            >
+              <Icon icon={Calendar03Icon} size={15} />
+              Programme unifié
+            </Button>
+            <Button type="button" variant="primary" size="sm" onClick={openCreate}>
+              <Icon icon={Add01Icon} size={15} />
+              Nouveau projet
+            </Button>
+          </div>
         }
       />
 
@@ -282,11 +727,16 @@ export function ProjectsPage() {
         </div>
       )}
 
-      {/* Avertissement anti-dispersion PROJ-01 (> 3 projets actifs) */}
-      {summary.activeCount > 3 && (
+      {/* Capacité et garde-fou anti-dispersion PROJ-01 (3 projets actifs maximum) */}
+      {summary.activeCount >= 3 && (
         <div
-          role="alert"
-          className="flex items-start gap-2.5 rounded-xl bg-amber-50 p-3.5 text-xs text-amber-950 dark:bg-amber-950/50 dark:text-amber-100"
+          role="status"
+          className={cn(
+            'flex items-start gap-2.5 rounded-xl p-3.5 text-xs',
+            summary.activeCount > 3
+              ? 'bg-amber-50 text-amber-950 dark:bg-amber-950/50 dark:text-amber-100'
+              : 'bg-zinc-100/90 text-zinc-800 dark:bg-zinc-800/70 dark:text-zinc-200',
+          )}
         >
           <Icon
             icon={Alert02Icon}
@@ -295,10 +745,12 @@ export function ProjectsPage() {
           />
           <div>
             <p className="font-semibold">
-              Attention à la dispersion ({summary.activeCount} projets actifs)
+              {summary.activeCount > 3
+                ? `Attention à la dispersion (${summary.activeCount} projets actifs)`
+                : 'Capacité maximale atteinte (3/3 projets actifs)'}
             </p>
-            <p className="text-amber-900 dark:text-amber-200">
-              Maximum recommandé : 3 projets actifs simultanés.
+            <p className="text-zinc-600 dark:text-zinc-300">
+              Maximum autorisé : 3 projets actifs simultanés. Mettez en pause, terminez ou archivez un projet pour en activer un autre.
             </p>
           </div>
         </div>
@@ -379,6 +831,175 @@ export function ProjectsPage() {
         </div>
       </section>
 
+      {/* Bandeau de séparation des 3 sources indépendantes */}
+      <section
+        aria-label="Séparation des trois sources"
+        className="grid gap-2.5 sm:grid-cols-3"
+      >
+        <div className="rounded-2xl bg-white p-3.5 dark:bg-zinc-900">
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+            1. Obligations académiques
+          </p>
+          <p className="mt-1 text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+            {academicObligationsCount} cours ou examen{academicObligationsCount > 1 ? 's' : ''} fixe{academicObligationsCount > 1 ? 's' : ''}
+          </p>
+          <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
+            Emploi du temps universitaire isolé, jamais mélangé aux objectifs personnels.
+          </p>
+        </div>
+
+        <div className="rounded-2xl bg-white p-3.5 dark:bg-zinc-900">
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+            2. Objectifs personnels
+          </p>
+          <p className="mt-1 text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+            {personalGoals.length} objectif{personalGoals.length > 1 ? 's' : ''} d’apprentissage
+          </p>
+          <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
+            {activePriorityTitle
+              ? `Priorité principale : ${activePriorityTitle}`
+              : 'Créneaux flexibles reliés aux parcours et compétences.'}
+          </p>
+        </div>
+
+        <div className="rounded-2xl bg-white p-3.5 dark:bg-zinc-900">
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+            3. Projets personnels et pros
+          </p>
+          <p className="mt-1 text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+            {summary.activeCount}/3 projet{summary.activeCount > 1 ? 's' : ''} actif{summary.activeCount > 1 ? 's' : ''}
+          </p>
+          <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
+            Livrables concrets, prochaines actions et séances reliées.
+          </p>
+        </div>
+      </section>
+
+      {isIntakeOpen && (
+        <ObjectivesIntakePanel
+          onAnalyze={handleAnalyzeIntake}
+          onConfirm={handleConfirmIntake}
+          onClose={() => setIsIntakeOpen(false)}
+        />
+      )}
+
+      {isUnifiedPlanOpen && (
+        <UnifiedPlanPanel
+          goals={personalGoals}
+          projects={projects}
+          currentPriorityTitle={activePriorityTitle}
+          onGenerate={handleGeneratePlan}
+          onApply={handleApplyPlan}
+          onClose={() => setIsUnifiedPlanOpen(false)}
+        />
+      )}
+
+      {isGoalFormOpen && (
+        <PersonalGoalForm
+          editingGoal={editingGoal}
+          onSubmit={handleGoalSubmit}
+          onCancel={() => {
+            setIsGoalFormOpen(false);
+            setEditingGoal(null);
+          }}
+        />
+      )}
+
+      {personalGoals.length > 0 && (
+        <section aria-label="Mes objectifs personnels" className="space-y-3">
+          <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+            Objectifs personnels d’apprentissage ({personalGoals.length})
+          </h2>
+          <div className="grid gap-3 md:grid-cols-2">
+            {personalGoals.map((goal) => (
+              <article
+                key={goal.id}
+                aria-label={`Objectif ${goal.title}`}
+                className="space-y-2.5 rounded-2xl bg-white p-4 shadow-sm ring-1 ring-zinc-200/70 dark:bg-zinc-900 dark:ring-zinc-800"
+              >
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <div>
+                    <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+                      {goal.title}
+                    </h3>
+                    <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                      {OBJECTIVE_CATEGORY_LABELS[goal.category] ?? goal.category} ·{' '}
+                      {OBJECTIVE_STATUS_LABELS[goal.status] ?? goal.status}
+                      {goal.isPrimary ? ' · Priorité principale' : ''}
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {!goal.isPrimary && goal.status === 'active' && (
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        aria-label={`Définir ${goal.title} comme priorité principale`}
+                        onClick={() => void handleSetGoalPriority(goal)}
+                      >
+                        <Icon icon={Target02Icon} size={13} />
+                        Priorité
+                      </Button>
+                    )}
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      aria-label={`${goal.status === 'paused' ? 'Reprendre' : 'Suspendre'} ${goal.title}`}
+                      onClick={() => void handleToggleGoalPause(goal)}
+                    >
+                      {goal.status === 'paused' ? 'Reprendre' : 'Suspendre'}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      aria-label={`Modifier l’objectif ${goal.title}`}
+                      onClick={() => openGoalEdit(goal)}
+                    >
+                      <Icon icon={PencilEdit02Icon} size={13} />
+                      Modifier
+                    </Button>
+                    <InlineConfirm
+                      triggerLabel="Supprimer"
+                      ariaLabel={`Supprimer l’objectif ${goal.title}`}
+                      onConfirm={() => void handleDeleteGoal(goal)}
+                    />
+                  </div>
+                </div>
+
+                <p className="text-xs text-zinc-700 dark:text-zinc-300">{goal.goal}</p>
+
+                <div className="flex flex-wrap gap-3 text-[11px] text-zinc-500 dark:text-zinc-400">
+                  {goal.currentLevel !== null && (
+                    <span>
+                      Niveau : {goal.currentLevel}/5
+                      {goal.targetLevel !== null ? ` vers ${goal.targetLevel}/5` : ''}
+                    </span>
+                  )}
+                  <span>Temps cible : {goal.weeklyTargetMinutes} min/sem.</span>
+                  <span>
+                    Progression : {goal.sessionsCount} séance(s) ({goal.completedMinutesLast7d} min / 7 j)
+                  </span>
+                </div>
+
+                {goal.nextAction && (
+                  <p className="rounded-lg bg-zinc-50 px-2.5 py-1.5 text-xs text-zinc-700 dark:bg-zinc-800/60 dark:text-zinc-300">
+                    <strong>Prochaine action :</strong> {goal.nextAction}
+                  </p>
+                )}
+
+                {goal.isBehindSchedule && goal.delayReason && (
+                  <p className="rounded-lg bg-amber-50 px-2.5 py-1.5 text-xs text-amber-950 dark:bg-amber-950/40 dark:text-amber-100">
+                    {goal.delayReason}
+                  </p>
+                )}
+              </article>
+            ))}
+          </div>
+        </section>
+      )}
+
       {/* Formulaire projet */}
       {isFormOpen && (
         <ProjectForm
@@ -426,6 +1047,7 @@ export function ProjectsPage() {
                 >
                   <option value="all">Tous les statuts</option>
                   <option value="active">Actifs</option>
+                  <option value="paused">En pause</option>
                   <option value="planned">Planifiés</option>
                   <option value="blocked">Bloqués</option>
                   <option value="completed">Terminés</option>

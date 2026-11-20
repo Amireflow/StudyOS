@@ -153,6 +153,7 @@ export function ProjectForm({
             >
               <option value="planned">Planifié</option>
               <option value="active">Actif</option>
+              <option value="paused">En pause</option>
               <option value="blocked">Bloqué</option>
               <option value="completed">Terminé</option>
               <option value="archived">Archivé</option>

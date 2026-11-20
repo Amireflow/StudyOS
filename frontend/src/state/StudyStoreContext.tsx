@@ -50,10 +50,12 @@ import {
   updateProfileApi,
   updateScheduleEventApi,
   updateTaskApi,
+  updateTimetableImportDraftApi,
 } from '../lib/studyApi';
 import type {
   ExtractedCourseRow,
   ScheduleEvent,
+  SessionFinishExtra,
   StudySession,
   Task,
   TaskStatus,
@@ -69,6 +71,7 @@ export interface LocalProfile {
   displayName: string;
   timezone: string;
   aiInstructions: string | null;
+  preferences?: Record<string, unknown>;
 }
 
 export interface StudyState {
@@ -119,6 +122,12 @@ function sanitizeStoredState(raw: unknown): StudyState {
         rawProfile && typeof rawProfile.aiInstructions === 'string'
           ? rawProfile.aiInstructions
           : null,
+      ...(rawProfile &&
+      rawProfile.preferences &&
+      typeof rawProfile.preferences === 'object' &&
+      !Array.isArray(rawProfile.preferences)
+        ? { preferences: rawProfile.preferences as Record<string, unknown> }
+        : {}),
     },
     activePriorityTitle:
       typeof candidate.activePriorityTitle === 'string' && candidate.activePriorityTitle.trim()
@@ -334,7 +343,11 @@ export interface StudyStoreContextValue extends StudyState {
   setTaskStatus: (id: string, status: TaskStatus) => Promise<boolean>;
   deleteTask: (id: string) => Promise<boolean>;
   startSession: (input: StartSessionValues) => Promise<boolean>;
-  finishSession: (id: string, result: string) => Promise<boolean>;
+  finishSession: (
+    id: string,
+    result: string,
+    extra?: SessionFinishExtra,
+  ) => Promise<boolean>;
   cancelSession: (id: string) => Promise<boolean>;
   recordManualSession: (input: ManualSessionValues) => Promise<boolean>;
   deleteSession: (id: string) => Promise<boolean>;
@@ -345,6 +358,14 @@ export interface StudyStoreContextValue extends StudyState {
     weekStart: Date,
   ) => Promise<{ createdCount: number; skippedCount: number } | null>;
   analyzeTimetableFile: (file: File) => Promise<TimetableImport | null>;
+  updateTimetableImportDraft: (
+    importRecord: TimetableImport,
+    options: {
+      courses: ExtractedCourseRow[];
+      validFrom?: string | null;
+      validUntil?: string | null;
+    },
+  ) => Promise<TimetableImport | null>;
   confirmTimetableImport: (
     importRecord: TimetableImport,
     options: {
@@ -569,6 +590,9 @@ export function StudyStoreProvider({ children }: { children: ReactNode }) {
       return true;
     };
 
+    const MAX_ACTIVE_CRITICAL_TASKS = 3;
+    const isTaskActive = (s: TaskStatus) => s === 'todo' || s === 'in_progress';
+
     const createTask = async (
       input: TaskFormValues,
       meta?: { source?: 'manual' | 'ai_proposal'; proposalId?: string | null },
@@ -576,6 +600,20 @@ export function StudyStoreProvider({ children }: { children: ReactNode }) {
       if (isApiMode) {
         const result = await runApiMutation(() => createTaskApi(accessToken, input), ['tasks']);
         return result.ok;
+      }
+
+      setMutationError(null);
+
+      if (isTaskActive(input.status) && input.priority === 'critical') {
+        const criticalCount = localState.tasks.filter(
+          (t) => isTaskActive(t.status) && t.priority === 'critical',
+        ).length;
+        if (criticalCount >= MAX_ACTIVE_CRITICAL_TASKS) {
+          setMutationError(
+            'Limite de 3 tâches critiques actives atteinte : terminez, mettez au parking ou rétrogradez une tâche critique avant d’en ajouter une autre.',
+          );
+          return false;
+        }
       }
 
       const nowIso = new Date().toISOString();
@@ -608,35 +646,66 @@ export function StudyStoreProvider({ children }: { children: ReactNode }) {
         return result.ok;
       }
 
+      setMutationError(null);
+
+      const existing = localState.tasks.find((t) => t.id === id);
+      if (
+        existing &&
+        isTaskActive(input.status) &&
+        input.priority === 'critical' &&
+        !(isTaskActive(existing.status) && existing.priority === 'critical')
+      ) {
+        const criticalCount = localState.tasks.filter(
+          (t) => t.id !== id && isTaskActive(t.status) && t.priority === 'critical',
+        ).length;
+        if (criticalCount >= MAX_ACTIVE_CRITICAL_TASKS) {
+          setMutationError(
+            'Limite de 3 tâches critiques actives atteinte : terminez, mettez au parking ou rétrogradez une tâche critique avant d’en ajouter une autre.',
+          );
+          return false;
+        }
+      }
+
       const nowIso = new Date().toISOString();
       const nextTitle = input.title.trim();
-      setLocalState((prev) => ({
-        ...prev,
-        activePriorityTitle:
-          prev.activePriorityTaskId === id ? nextTitle : prev.activePriorityTitle,
-        tasks: prev.tasks.map((task) =>
-          task.id !== id
-            ? task
-            : {
-                ...task,
-                title: nextTitle,
-                description: input.description?.trim() || null,
-                priority: input.priority,
-                status: input.status,
-                dueAt: dateInputToDueIso(input.dueDate ?? ''),
-                completedAt: input.status === 'done' ? (task.completedAt ?? nowIso) : null,
-                projectId:
-                  input.projectId !== undefined
-                    ? input.projectId.trim() || null
-                    : task.projectId,
-                moduleId:
-                  input.moduleId !== undefined
-                    ? input.moduleId.trim() || null
-                    : task.moduleId,
-                updatedAt: nowIso,
-              },
-        ),
-      }));
+      setLocalState((prev) => {
+        const isPriorityTask = prev.activePriorityTaskId === id;
+        const becomingInactive = !isTaskActive(input.status);
+        return {
+          ...prev,
+          activePriorityTaskId:
+            isPriorityTask && becomingInactive ? null : prev.activePriorityTaskId,
+          activePriorityTitle: isPriorityTask
+            ? becomingInactive
+              ? prev.activePriorityProjectId === null
+                ? null
+                : prev.activePriorityTitle
+              : nextTitle
+            : prev.activePriorityTitle,
+          tasks: prev.tasks.map((task) =>
+            task.id !== id
+              ? task
+              : {
+                  ...task,
+                  title: nextTitle,
+                  description: input.description?.trim() || null,
+                  priority: input.priority,
+                  status: input.status,
+                  dueAt: dateInputToDueIso(input.dueDate ?? ''),
+                  completedAt: input.status === 'done' ? (task.completedAt ?? nowIso) : null,
+                  projectId:
+                    input.projectId !== undefined
+                      ? input.projectId.trim() || null
+                      : task.projectId,
+                  moduleId:
+                    input.moduleId !== undefined
+                      ? input.moduleId.trim() || null
+                      : task.moduleId,
+                  updatedAt: nowIso,
+                },
+          ),
+        };
+      });
       return true;
     };
 
@@ -644,25 +713,55 @@ export function StudyStoreProvider({ children }: { children: ReactNode }) {
       if (isApiMode) {
         const result = await runApiMutation(
           () => updateTaskApi(accessToken, id, { status }),
-          ['tasks'],
+          ['tasks', 'profile'],
         );
         return result.ok;
       }
 
+      setMutationError(null);
+
+      const existing = localState.tasks.find((t) => t.id === id);
+      if (
+        existing &&
+        isTaskActive(status) &&
+        existing.priority === 'critical' &&
+        !isTaskActive(existing.status)
+      ) {
+        const criticalCount = localState.tasks.filter(
+          (t) => t.id !== id && isTaskActive(t.status) && t.priority === 'critical',
+        ).length;
+        if (criticalCount >= MAX_ACTIVE_CRITICAL_TASKS) {
+          setMutationError(
+            'Limite de 3 tâches critiques actives atteinte : terminez, mettez au parking ou rétrogradez une tâche critique avant d’en réactiver une autre.',
+          );
+          return false;
+        }
+      }
+
       const nowIso = new Date().toISOString();
-      setLocalState((prev) => ({
-        ...prev,
-        tasks: prev.tasks.map((task) =>
-          task.id !== id
-            ? task
-            : {
-                ...task,
-                status,
-                completedAt: status === 'done' ? (task.completedAt ?? nowIso) : null,
-                updatedAt: nowIso,
-              },
-        ),
-      }));
+      setLocalState((prev) => {
+        const isPriorityTask = prev.activePriorityTaskId === id;
+        const becomingInactive = !isTaskActive(status);
+        return {
+          ...prev,
+          activePriorityTaskId:
+            isPriorityTask && becomingInactive ? null : prev.activePriorityTaskId,
+          activePriorityTitle:
+            isPriorityTask && becomingInactive && prev.activePriorityProjectId === null
+              ? null
+              : prev.activePriorityTitle,
+          tasks: prev.tasks.map((task) =>
+            task.id !== id
+              ? task
+              : {
+                  ...task,
+                  status,
+                  completedAt: status === 'done' ? (task.completedAt ?? nowIso) : null,
+                  updatedAt: nowIso,
+                },
+          ),
+        };
+      });
       return true;
     };
 
@@ -713,10 +812,14 @@ export function StudyStoreProvider({ children }: { children: ReactNode }) {
       return true;
     };
 
-    const finishSession = async (id: string, resultText: string): Promise<boolean> => {
+    const finishSession = async (
+      id: string,
+      resultText: string,
+      extra?: SessionFinishExtra,
+    ): Promise<boolean> => {
       if (isApiMode) {
         const result = await runApiMutation(
-          () => finishSessionApi(accessToken, id, resultText),
+          () => finishSessionApi(accessToken, id, resultText, extra),
           ['sessions'],
         );
         return result.ok;
@@ -732,6 +835,12 @@ export function StudyStoreProvider({ children }: { children: ReactNode }) {
                 status: 'completed',
                 endedAt: nowIso,
                 result: resultText.trim(),
+                plannedActivity: extra?.plannedActivity?.trim() || s.plannedActivity || null,
+                actualActivity: extra?.actualActivity?.trim() || s.actualActivity || null,
+                outcomeStatus: extra?.outcomeStatus || s.outcomeStatus || 'completed',
+                deliverableSummary: extra?.deliverableSummary?.trim() || s.deliverableSummary || null,
+                blockers: extra?.blockers?.trim() || s.blockers || null,
+                nextStep: extra?.nextStep?.trim() || s.nextStep || null,
                 updatedAt: nowIso,
               }
             : s,
@@ -924,6 +1033,48 @@ export function StudyStoreProvider({ children }: { children: ReactNode }) {
         );
         return null;
       }
+    };
+
+    const updateTimetableImportDraft = async (
+      importRecord: TimetableImport,
+      options: {
+        courses: ExtractedCourseRow[];
+        validFrom?: string | null;
+        validUntil?: string | null;
+      },
+    ): Promise<TimetableImport | null> => {
+      if (isApiMode) {
+        const result = await runApiMutation(
+          () =>
+            updateTimetableImportDraftApi(accessToken, importRecord.id, {
+              courses: options.courses,
+              validFrom: options.validFrom ?? importRecord.validFrom,
+              validUntil: options.validUntil ?? importRecord.validUntil,
+            }),
+          [],
+        );
+        return result.ok ? result.data : null;
+      }
+
+      setMutationError(null);
+      const nowIso = new Date().toISOString();
+      const updatedCourses = options.courses.map((c) => ({
+        ...c,
+        dayLabel: c.dayOfWeek !== null ? (DAY_LABELS_FR[c.dayOfWeek] ?? null) : null,
+      }));
+      const anomalies = detectClientTimetableAnomalies(
+        updatedCourses,
+        scheduleEventsRef.current,
+      );
+      return {
+        ...importRecord,
+        validFrom: options.validFrom !== undefined ? options.validFrom : importRecord.validFrom,
+        validUntil: options.validUntil !== undefined ? options.validUntil : importRecord.validUntil,
+        extractedCourses: updatedCourses,
+        anomalies,
+        blockingAnomaliesCount: anomalies.filter((a) => a.severity === 'error').length,
+        updatedAt: nowIso,
+      };
     };
 
     const confirmTimetableImport = async (
@@ -1125,6 +1276,7 @@ export function StudyStoreProvider({ children }: { children: ReactNode }) {
       deleteScheduleEvent,
       duplicateWeekEvents,
       analyzeTimetableFile,
+      updateTimetableImportDraft,
       confirmTimetableImport,
       cancelTimetableImport,
       deleteTimetableImportSource,
@@ -1143,6 +1295,7 @@ export function StudyStoreProvider({ children }: { children: ReactNode }) {
             displayName: profileQuery.data.displayName,
             timezone: profileQuery.data.timezone,
             aiInstructions: profileQuery.data.aiInstructions,
+            preferences: profileQuery.data.preferences,
           }
         : DEFAULT_LOCAL_PROFILE,
       activePriorityTitle: profileQuery.data?.activePriorityTitle ?? null,

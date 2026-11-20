@@ -782,8 +782,8 @@ export function LearningStoreProvider({ children }: { children: ReactNode }) {
         targetLevel,
         proposedLevel: null,
         status: 'pending',
-        promptTitle: input.promptTitle?.trim() || generated.promptTitle,
-        promptInstructions: input.promptInstructions?.trim() || generated.promptInstructions,
+        promptTitle: generated.promptTitle,
+        promptInstructions: generated.promptInstructions,
         revealedHints: [],
         hintsTotal: generated.hints.length,
         hintsRevealedCount: 0,
@@ -1182,9 +1182,21 @@ export function LearningStoreProvider({ children }: { children: ReactNode }) {
       return true;
     };
 
+    const MAX_ACTIVE_PROJECTS = 3;
+
     const createProject = async (input: ProjectInput): Promise<boolean> => {
       if (isApiMode) {
         return runApiMutation(() => createProjectApi(accessToken, input), ['projects']);
+      }
+      setMutationError(null);
+      if (input.status === 'active') {
+        const activeCount = localState.projects.filter((p) => p.status === 'active').length;
+        if (activeCount >= MAX_ACTIVE_PROJECTS) {
+          setMutationError(
+            'Limite de 3 projets actifs atteinte : mettez en pause, terminez ou archivez un projet avant d’en activer un nouveau.',
+          );
+          return false;
+        }
       }
       if (input.status === 'active' && input.nextAction.trim().length < 2) {
         setMutationError('Une prochaine action concrète est obligatoire pour un projet actif.');
@@ -1211,11 +1223,23 @@ export function LearningStoreProvider({ children }: { children: ReactNode }) {
 
     const updateProject = async (id: string, patch: Partial<ProjectInput>): Promise<boolean> => {
       if (isApiMode) {
-        return runApiMutation(() => updateProjectApi(accessToken, id, patch), ['projects']);
+        return runApiMutation(() => updateProjectApi(accessToken, id, patch), ['projects', 'profile']);
       }
+      setMutationError(null);
       const existing = localState.projects.find((p) => p.id === id);
       if (!existing) return false;
       const nextStatus = patch.status ?? existing.status;
+      if (nextStatus === 'active' && existing.status !== 'active') {
+        const activeCount = localState.projects.filter(
+          (p) => p.status === 'active' && p.id !== id,
+        ).length;
+        if (activeCount >= MAX_ACTIVE_PROJECTS) {
+          setMutationError(
+            'Limite de 3 projets actifs atteinte : mettez en pause, terminez ou archivez un projet avant d’en activer un nouveau.',
+          );
+          return false;
+        }
+      }
       const nextAction = patch.nextAction !== undefined ? patch.nextAction.trim() : existing.nextAction;
       if (nextStatus === 'active' && nextAction.length < 2) {
         setMutationError('Une prochaine action concrète est obligatoire pour un projet actif.');

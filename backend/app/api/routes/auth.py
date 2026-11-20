@@ -1,5 +1,5 @@
 from uuid import NAMESPACE_URL, UUID, uuid5
-from fastapi import APIRouter, Depends, Response, status
+from fastapi import APIRouter, Depends, Query, Request, Response, status
 from app.api.deps import get_auth_service, get_profile_service
 from app.core.config import Settings
 from app.core.errors import AppError
@@ -19,10 +19,53 @@ from app.schemas.auth import (
 from app.schemas.profile import ProfileResponse, ProfileUpdate
 from app.services.auth_service import AuthService
 from app.services.profile_service import ProfileService
+from app.services.rate_limiter import resolve_client_ip
 
 router = APIRouter(prefix="/auth", tags=["Authentification"])
 
 LOCAL_TOKEN_TTL_SECONDS = 86400
+
+
+def _resolve_cookie_samesite(settings: Settings) -> str:
+    configured = (settings.auth_cookie_samesite or "").strip().lower()
+    if configured in ("lax", "strict", "none"):
+        return configured
+    return "none" if settings.app_env.strip().lower() == "production" else "lax"
+
+
+def _set_refresh_cookie(
+    response: Response,
+    request: Request,
+    raw_refresh_token: str | None,
+    settings: Settings,
+) -> None:
+    if not raw_refresh_token:
+        return
+    is_prod = settings.app_env.strip().lower() == "production"
+    samesite = _resolve_cookie_samesite(settings)
+    secure = is_prod or request.url.scheme == "https" or samesite == "none"
+    response.set_cookie(
+        key=settings.auth_cookie_name,
+        value=raw_refresh_token,
+        max_age=int(settings.refresh_token_ttl_seconds or (14 * 86400)),
+        path="/api/v1/auth",
+        httponly=True,
+        secure=secure,
+        samesite=samesite,  # type: ignore[arg-type]
+    )
+
+
+def _clear_refresh_cookie(response: Response, request: Request, settings: Settings) -> None:
+    is_prod = settings.app_env.strip().lower() == "production"
+    samesite = _resolve_cookie_samesite(settings)
+    secure = is_prod or request.url.scheme == "https" or samesite == "none"
+    response.delete_cookie(
+        key=settings.auth_cookie_name,
+        path="/api/v1/auth",
+        httponly=True,
+        secure=secure,
+        samesite=samesite,  # type: ignore[arg-type]
+    )
 
 
 @router.post(
@@ -33,9 +76,18 @@ LOCAL_TOKEN_TTL_SECONDS = 86400
 )
 def register_account(
     payload: RegisterRequest,
+    request: Request,
+    response: Response,
+    settings: Settings = Depends(get_app_settings),
     auth_service: AuthService = Depends(get_auth_service),
 ) -> AuthTokenResponse:
-    return auth_service.register(payload)
+    client_ip = resolve_client_ip(request, settings)
+    user_agent = request.headers.get("user-agent")
+    token_res, raw_refresh = auth_service.register(
+        payload, client_ip=client_ip, user_agent=user_agent
+    )
+    _set_refresh_cookie(response, request, raw_refresh, settings)
+    return token_res
 
 
 @router.post(
@@ -45,9 +97,43 @@ def register_account(
 )
 def login_account(
     payload: LoginRequest,
+    request: Request,
+    response: Response,
+    settings: Settings = Depends(get_app_settings),
     auth_service: AuthService = Depends(get_auth_service),
 ) -> AuthTokenResponse:
-    return auth_service.login(payload)
+    client_ip = resolve_client_ip(request, settings)
+    user_agent = request.headers.get("user-agent")
+    token_res, raw_refresh = auth_service.login(
+        payload, client_ip=client_ip, user_agent=user_agent
+    )
+    _set_refresh_cookie(response, request, raw_refresh, settings)
+    return token_res
+
+
+@router.post(
+    "/refresh",
+    response_model=AuthTokenResponse,
+    summary="Renouveler le jeton d'accès via le cookie de session HttpOnly (rotation)",
+)
+def refresh_access_token(
+    request: Request,
+    response: Response,
+    settings: Settings = Depends(get_app_settings),
+    auth_service: AuthService = Depends(get_auth_service),
+) -> AuthTokenResponse:
+    raw_cookie = request.cookies.get(settings.auth_cookie_name)
+    client_ip = resolve_client_ip(request, settings)
+    user_agent = request.headers.get("user-agent")
+    try:
+        token_res, next_raw_refresh = auth_service.refresh_session(
+            raw_cookie, client_ip=client_ip, user_agent=user_agent
+        )
+    except AppError:
+        _clear_refresh_cookie(response, request, settings)
+        raise
+    _set_refresh_cookie(response, request, next_raw_refresh, settings)
+    return token_res
 
 
 @router.post(
@@ -57,23 +143,59 @@ def login_account(
 )
 def change_password(
     payload: ChangePasswordRequest,
+    request: Request,
+    response: Response,
     user_id: UUID = Depends(get_current_user_id),
+    settings: Settings = Depends(get_app_settings),
     auth_service: AuthService = Depends(get_auth_service),
 ) -> AuthTokenResponse:
-    return auth_service.change_password(user_id, payload)
+    client_ip = resolve_client_ip(request, settings)
+    user_agent = request.headers.get("user-agent")
+    token_res, raw_refresh = auth_service.change_password(
+        user_id, payload, client_ip=client_ip, user_agent=user_agent
+    )
+    _set_refresh_cookie(response, request, raw_refresh, settings)
+    return token_res
 
 
 @router.post(
     "/logout",
     status_code=status.HTTP_204_NO_CONTENT,
-    summary="Révoquer toutes les sessions actives de l'utilisateur",
+    summary="Déconnecter la session courante ou toutes les sessions actives",
 )
 def logout_all_sessions(
+    request: Request,
+    current_only: bool = Query(default=False),
     user_id: UUID = Depends(get_current_user_id),
+    settings: Settings = Depends(get_app_settings),
+    auth_service: AuthService = Depends(get_auth_service),
+) -> Response:
+    raw_cookie = request.cookies.get(settings.auth_cookie_name)
+    auth_service.logout_session(
+        user_id,
+        raw_refresh_token=raw_cookie,
+        all_sessions=not current_only,
+    )
+    res = Response(status_code=status.HTTP_204_NO_CONTENT)
+    _clear_refresh_cookie(res, request, settings)
+    return res
+
+
+@router.post(
+    "/logout-all",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Révoquer toutes les sessions actives de l'utilisateur",
+)
+def logout_all_explicit(
+    request: Request,
+    user_id: UUID = Depends(get_current_user_id),
+    settings: Settings = Depends(get_app_settings),
     auth_service: AuthService = Depends(get_auth_service),
 ) -> Response:
     auth_service.logout_all_sessions(user_id)
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
+    res = Response(status_code=status.HTTP_204_NO_CONTENT)
+    _clear_refresh_cookie(res, request, settings)
+    return res
 
 
 @router.get(

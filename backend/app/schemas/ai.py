@@ -8,12 +8,17 @@ from app.schemas.common import (
     AiMessageRole,
     AiReportType,
     CourseLanguage,
+    LearningStatus,
+    ObjectiveCategory,
+    ObjectiveStatus,
+    ProjectStatus,
     ProposalStatus,
     ScheduleEventType,
     SkillAssessmentType,
     SkillEvidenceType,
     StrategicDecision,
     TaskPriority,
+    TaskStatus,
     UtcDatetime,
     normalize_optional_text,
     validate_optional_http_url,
@@ -23,6 +28,7 @@ from app.schemas.common import (
 class AiToolSpec(BaseModel):
     name: str
     access: Literal["read", "proposal"]
+    risk_level: Literal["read", "simple", "structuring", "sensitive"] = "structuring"
     label: str
     description: str
     requires_confirmation: bool
@@ -49,6 +55,8 @@ class AiConversationResponse(BaseModel):
 class AiMessageCreate(BaseModel):
     content: str
     context_scopes: list[AiContextScope] | None = None
+    idempotency_key: str | None = Field(default=None, max_length=80)
+    auto_execute_simple: bool | None = None
 
     @field_validator("content")
     @classmethod
@@ -57,6 +65,11 @@ class AiMessageCreate(BaseModel):
         if len(cleaned) < 2 or len(cleaned) > 2000:
             raise ValueError("Le message doit contenir entre 2 et 2000 caractères.")
         return cleaned
+
+    @field_validator("idempotency_key")
+    @classmethod
+    def validate_idempotency_key(cls, value: str | None) -> str | None:
+        return normalize_optional_text(value, 80)
 
 
 class AiMessageResponse(BaseModel):
@@ -95,10 +108,43 @@ class AiTurnResponse(BaseModel):
     user_message: AiMessageResponse
     assistant_message: AiMessageResponse
     proposals: list[AiActionProposalResponse]
+    auto_executed_count: int = 0
 
 
 class AcceptProposalRequest(BaseModel):
     payload_overrides: dict[str, Any] | None = None
+    idempotency_key: str | None = Field(default=None, max_length=80)
+
+    @field_validator("idempotency_key")
+    @classmethod
+    def validate_idempotency_key(cls, value: str | None) -> str | None:
+        return normalize_optional_text(value, 80)
+
+
+class AiMemoryResponse(BaseModel):
+    user_id: UUID
+    academic_context: dict[str, Any] = Field(default_factory=dict)
+    availability_preferences: dict[str, Any] = Field(default_factory=dict)
+    learning_preferences: dict[str, Any] = Field(default_factory=dict)
+    constraints: list[str] = Field(default_factory=list)
+    long_term_goals: list[str] = Field(default_factory=list)
+    recent_decisions: list[dict[str, Any]] = Field(default_factory=list)
+    execution_history: list[dict[str, Any]] = Field(default_factory=list)
+    weekly_study_hours: int | None = None
+    default_session_minutes: int = 60
+    auto_execute_simple_actions: bool = False
+    updated_at: datetime
+
+
+class AiMemoryUpdateRequest(BaseModel):
+    academic_context: dict[str, Any] | None = None
+    availability_preferences: dict[str, Any] | None = None
+    learning_preferences: dict[str, Any] | None = None
+    constraints: list[str] | None = None
+    long_term_goals: list[str] | None = None
+    weekly_study_hours: int | None = Field(default=None, ge=0, le=120)
+    default_session_minutes: int | None = Field(default=None, ge=15, le=240)
+    auto_execute_simple_actions: bool | None = None
 
 
 class UpdateProposalRequest(BaseModel):
@@ -159,6 +205,23 @@ class ParkTaskProposalPayload(BaseModel):
     @classmethod
     def validate_reason(cls, value: str | None) -> str | None:
         return normalize_optional_text(value, 300)
+
+
+class PauseProjectProposalPayload(BaseModel):
+    project_id: UUID
+    reason: str | None = None
+
+    @field_validator("reason")
+    @classmethod
+    def validate_reason(cls, value: str | None) -> str | None:
+        return normalize_optional_text(value, 300)
+
+
+class EnsureAiReportsResponse(BaseModel):
+    daily_briefing: AiReportResponse
+    weekly_review: AiReportResponse
+    created_daily: bool = False
+    created_weekly: bool = False
 
 
 class CreateScheduleProposalPayload(BaseModel):
@@ -301,6 +364,8 @@ class PlanStrategicActivityProposalPayload(BaseModel):
     opportunity_cost_note: str | None = None
     create_learning_path: bool = True
     create_project: bool = False
+    create_course: bool = False
+    course_subject: str | None = None
     park_only: bool = False
     frequency_per_week: int = Field(default=2, ge=0, le=7)
     session_duration_minutes: int = Field(default=60, ge=30, le=240)
@@ -367,6 +432,421 @@ class CreateCourseProposalPayload(BaseModel):
     @field_validator("goal")
     @classmethod
     def validate_goal(cls, value: str | None) -> str | None:
+        return normalize_optional_text(value, 300)
+
+
+class UpdateTaskProposalPayload(BaseModel):
+    task_id: UUID
+    title: str | None = None
+    description: str | None = None
+    status: TaskStatus | None = None
+    priority: TaskPriority | None = None
+    due_at: UtcDatetime | None = None
+    project_id: UUID | None = None
+    module_id: UUID | None = None
+
+    @field_validator("title")
+    @classmethod
+    def validate_title(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        cleaned = value.strip()
+        if len(cleaned) < 2 or len(cleaned) > 140:
+            raise ValueError("Le titre de la tâche doit contenir entre 2 et 140 caractères.")
+        return cleaned
+
+    @field_validator("description")
+    @classmethod
+    def validate_description(cls, value: str | None) -> str | None:
+        return normalize_optional_text(value, 1000)
+
+
+class CreateProjectProposalPayload(BaseModel):
+    name: str
+    category: str = "project"
+    description: str | None = None
+    goal: str
+    status: ProjectStatus = ProjectStatus.active
+    priority: TaskPriority = TaskPriority.normal
+    motivation: str | None = None
+    weekly_target_minutes: int = Field(default=180, ge=0, le=3000)
+    next_action: str = "Définir la première étape concrète"
+    deliverables: list[str] = Field(default_factory=list)
+    goal_id: UUID | None = None
+
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, value: str) -> str:
+        cleaned = value.strip()
+        if len(cleaned) < 2 or len(cleaned) > 140:
+            raise ValueError("Le nom du projet doit contenir entre 2 et 140 caractères.")
+        return cleaned
+
+    @field_validator("description", "motivation")
+    @classmethod
+    def validate_optional_long(cls, value: str | None) -> str | None:
+        return normalize_optional_text(value, 2000)
+
+    @field_validator("goal")
+    @classmethod
+    def validate_goal(cls, value: str) -> str:
+        cleaned = value.strip()
+        if len(cleaned) < 2 or len(cleaned) > 300:
+            raise ValueError("L’objectif du projet doit contenir entre 2 et 300 caractères.")
+        return cleaned
+
+    @field_validator("next_action")
+    @classmethod
+    def validate_next_action(cls, value: str) -> str:
+        cleaned = (value or "").strip()
+        if len(cleaned) > 240:
+            raise ValueError("La prochaine action ne doit pas dépasser 240 caractères.")
+        return cleaned
+
+
+class UpdateProjectProposalPayload(BaseModel):
+    project_id: UUID
+    name: str | None = None
+    description: str | None = None
+    goal: str | None = None
+    status: ProjectStatus | None = None
+    priority: TaskPriority | None = None
+    next_action: str | None = None
+    weekly_target_minutes: int | None = Field(default=None, ge=0, le=3000)
+
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        cleaned = value.strip()
+        if len(cleaned) < 2 or len(cleaned) > 140:
+            raise ValueError("Le nom du projet doit contenir entre 2 et 140 caractères.")
+        return cleaned
+
+    @field_validator("description")
+    @classmethod
+    def validate_description(cls, value: str | None) -> str | None:
+        return normalize_optional_text(value, 2000)
+
+    @field_validator("goal")
+    @classmethod
+    def validate_goal(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        cleaned = value.strip()
+        if len(cleaned) < 2 or len(cleaned) > 300:
+            raise ValueError("L’objectif du projet doit contenir entre 2 et 300 caractères.")
+        return cleaned
+
+    @field_validator("next_action")
+    @classmethod
+    def validate_next_action(cls, value: str | None) -> str | None:
+        return normalize_optional_text(value, 240)
+
+
+class CreateSkillProposalPayload(BaseModel):
+    name: str
+    domain: str = "Développement"
+    description: str | None = None
+    target_level: int | None = Field(default=3, ge=1, le=5)
+    goal_id: UUID | None = None
+    learning_path_id: UUID | None = None
+
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, value: str) -> str:
+        cleaned = value.strip()
+        if len(cleaned) < 2 or len(cleaned) > 120:
+            raise ValueError("Le nom de la compétence doit contenir entre 2 et 120 caractères.")
+        return cleaned
+
+    @field_validator("domain")
+    @classmethod
+    def validate_domain(cls, value: str) -> str:
+        cleaned = (value or "").strip() or "Général"
+        if len(cleaned) < 2 or len(cleaned) > 80:
+            raise ValueError("Le domaine doit contenir entre 2 et 80 caractères.")
+        return cleaned
+
+    @field_validator("description")
+    @classmethod
+    def validate_description(cls, value: str | None) -> str | None:
+        return normalize_optional_text(value, 1000)
+
+
+class CreateLearningPathProposalPayload(BaseModel):
+    title: str
+    goal: str
+    description: str | None = None
+    status: LearningStatus = LearningStatus.active
+    modules: list[dict[str, Any]] = Field(default_factory=list)
+
+    @field_validator("title")
+    @classmethod
+    def validate_title(cls, value: str) -> str:
+        cleaned = value.strip()
+        if len(cleaned) < 2 or len(cleaned) > 140:
+            raise ValueError("Le titre du parcours doit contenir entre 2 et 140 caractères.")
+        return cleaned
+
+    @field_validator("goal")
+    @classmethod
+    def validate_goal(cls, value: str) -> str:
+        cleaned = value.strip()
+        if len(cleaned) < 2 or len(cleaned) > 300:
+            raise ValueError("L’objectif du parcours doit contenir entre 2 et 300 caractères.")
+        return cleaned
+
+    @field_validator("description")
+    @classmethod
+    def validate_description(cls, value: str | None) -> str | None:
+        return normalize_optional_text(value, 1000)
+
+
+class UpdateLearningPathProposalPayload(BaseModel):
+    path_id: UUID
+    title: str | None = None
+    goal: str | None = None
+    description: str | None = None
+    status: LearningStatus | None = None
+    add_module_title: str | None = None
+    add_lesson_title: str | None = None
+
+    @field_validator("title", "add_module_title", "add_lesson_title")
+    @classmethod
+    def validate_short_titles(cls, value: str | None) -> str | None:
+        return normalize_optional_text(value, 140)
+
+    @field_validator("goal")
+    @classmethod
+    def validate_goal(cls, value: str | None) -> str | None:
+        return normalize_optional_text(value, 300)
+
+    @field_validator("description")
+    @classmethod
+    def validate_description(cls, value: str | None) -> str | None:
+        return normalize_optional_text(value, 1000)
+
+
+class CreatePersonalGoalProposalPayload(BaseModel):
+    title: str
+    category: ObjectiveCategory = ObjectiveCategory.learning_goal
+    goal: str
+    description: str | None = None
+    current_level: int | None = Field(default=0, ge=0, le=5)
+    target_level: int | None = Field(default=3, ge=1, le=5)
+    priority: TaskPriority = TaskPriority.high
+    is_primary: bool = False
+    motivation: str | None = None
+    weekly_target_minutes: int = Field(default=180, ge=0, le=2400)
+    next_action: str = "Planifier la première séance"
+    create_linked_entities: bool = True
+
+    @field_validator("title")
+    @classmethod
+    def validate_title(cls, value: str) -> str:
+        cleaned = value.strip()
+        if len(cleaned) < 2 or len(cleaned) > 140:
+            raise ValueError("Le titre de l’objectif doit contenir entre 2 et 140 caractères.")
+        return cleaned
+
+    @field_validator("goal")
+    @classmethod
+    def validate_goal(cls, value: str) -> str:
+        cleaned = value.strip()
+        if len(cleaned) < 2 or len(cleaned) > 300:
+            raise ValueError("La description d’objectif doit contenir entre 2 et 300 caractères.")
+        return cleaned
+
+    @field_validator("description", "motivation")
+    @classmethod
+    def validate_long(cls, value: str | None) -> str | None:
+        return normalize_optional_text(value, 2000)
+
+    @field_validator("next_action")
+    @classmethod
+    def validate_next_action(cls, value: str) -> str:
+        cleaned = (value or "").strip()
+        if len(cleaned) > 240:
+            raise ValueError("La prochaine action ne doit pas dépasser 240 caractères.")
+        return cleaned
+
+
+class UpdatePersonalGoalProposalPayload(BaseModel):
+    goal_id: UUID
+    title: str | None = None
+    goal: str | None = None
+    description: str | None = None
+    priority: TaskPriority | None = None
+    status: ObjectiveStatus | None = None
+    is_primary: bool | None = None
+    weekly_target_minutes: int | None = Field(default=None, ge=0, le=2400)
+    next_action: str | None = None
+
+    @field_validator("title")
+    @classmethod
+    def validate_title(cls, value: str | None) -> str | None:
+        return normalize_optional_text(value, 140)
+
+    @field_validator("goal")
+    @classmethod
+    def validate_goal(cls, value: str | None) -> str | None:
+        return normalize_optional_text(value, 300)
+
+    @field_validator("description")
+    @classmethod
+    def validate_description(cls, value: str | None) -> str | None:
+        return normalize_optional_text(value, 2000)
+
+    @field_validator("next_action")
+    @classmethod
+    def validate_next_action(cls, value: str | None) -> str | None:
+        return normalize_optional_text(value, 240)
+
+
+class CreateStudySessionProposalPayload(BaseModel):
+    title: str
+    category: str = "Apprentissage"
+    planned_activity: str | None = None
+    started_at: UtcDatetime | None = None
+    project_id: UUID | None = None
+    goal_id: UUID | None = None
+    task_id: UUID | None = None
+    skill_id: UUID | None = None
+
+    @field_validator("title")
+    @classmethod
+    def validate_title(cls, value: str) -> str:
+        cleaned = value.strip()
+        if len(cleaned) < 2 or len(cleaned) > 140:
+            raise ValueError("Le titre de la séance doit contenir entre 2 et 140 caractères.")
+        return cleaned
+
+    @field_validator("category")
+    @classmethod
+    def validate_category(cls, value: str) -> str:
+        cleaned = (value or "").strip() or "Apprentissage"
+        if len(cleaned) > 60:
+            raise ValueError("La catégorie ne doit pas dépasser 60 caractères.")
+        return cleaned
+
+    @field_validator("planned_activity")
+    @classmethod
+    def validate_planned_activity(cls, value: str | None) -> str | None:
+        return normalize_optional_text(value, 240)
+
+
+class UpdateScheduleEventProposalPayload(BaseModel):
+    event_id: UUID
+    title: str | None = None
+    starts_at: UtcDatetime | None = None
+    ends_at: UtcDatetime | None = None
+    notes: str | None = None
+    reason: str | None = None
+
+    @field_validator("title")
+    @classmethod
+    def validate_title(cls, value: str | None) -> str | None:
+        return normalize_optional_text(value, 140)
+
+    @field_validator("notes", "reason")
+    @classmethod
+    def validate_notes(cls, value: str | None) -> str | None:
+        return normalize_optional_text(value, 500)
+
+    @model_validator(mode="after")
+    def validate_dates(self) -> "UpdateScheduleEventProposalPayload":
+        if self.starts_at is not None and self.ends_at is not None and self.ends_at <= self.starts_at:
+            raise ValueError("L’heure de fin doit être strictement postérieure au début.")
+        return self
+
+
+class ArchiveScheduleEventProposalPayload(BaseModel):
+    event_id: UUID
+    reason: str | None = None
+
+    @field_validator("reason")
+    @classmethod
+    def validate_reason(cls, value: str | None) -> str | None:
+        return normalize_optional_text(value, 300)
+
+
+class UpdatePreferencesProposalPayload(BaseModel):
+    weekly_study_hours: int | None = Field(default=None, ge=0, le=120)
+    study_start_hour: int | None = Field(default=None, ge=5, le=20)
+    study_end_hour: int | None = Field(default=None, ge=6, le=23)
+    max_daily_study_minutes: int | None = Field(default=None, ge=60, le=480)
+    preferred_session_minutes: int | None = Field(default=None, ge=30, le=180)
+    excluded_days: list[Any] | None = None
+    ai_instructions: str | None = None
+    constraints: list[str] | None = None
+    long_term_goals: list[str] | None = None
+    academic_context: dict[str, Any] | None = None
+
+    @model_validator(mode="after")
+    def validate_hours(self) -> "UpdatePreferencesProposalPayload":
+        if (
+            self.study_start_hour is not None
+            and self.study_end_hour is not None
+            and self.study_end_hour <= self.study_start_hour
+        ):
+            raise ValueError("L’heure de fin doit être supérieure à l’heure de début.")
+        return self
+
+
+class ManageAvailabilityRuleProposalPayload(BaseModel):
+    label: str = Field(..., min_length=2, max_length=120)
+    rule_type: Literal["personal_unavailability", "confirmed_availability", "recovery_time"] = (
+        "personal_unavailability"
+    )
+    day_of_week: int | None = Field(default=None, ge=0, le=6)
+    start_time: str | None = Field(default=None, pattern=r"^\d{2}:\d{2}$")
+    end_time: str | None = Field(default=None, pattern=r"^\d{2}:\d{2}$")
+    starts_at: UtcDatetime | None = None
+    ends_at: UtcDatetime | None = None
+    timezone: str = Field(default="Europe/Paris", min_length=2, max_length=64)
+    recurrence: Literal["once", "weekly", "daily"] = "weekly"
+    notes: str | None = Field(default=None, max_length=500)
+
+
+class GenerateLearningPlanProposalPayload(BaseModel):
+    horizon_days: int = Field(default=7, ge=1, le=30)
+    focus_subject: str | None = Field(default=None, max_length=120)
+    exam_title: str | None = Field(default=None, max_length=160)
+    exam_at: UtcDatetime | None = None
+    weekly_hours_override: float | None = Field(default=None, gt=0.5, le=80)
+    daily_max_minutes: int | None = Field(default=None, ge=30, le=600)
+    preferred_session_minutes: int | None = Field(default=None, ge=25, le=180)
+    include_potential_slots: bool = True
+    create_missing_courses: bool = False
+    apply_immediately: bool = True
+    replace_future_planned: bool = True
+    plan_version_id: UUID | None = None
+    instruction: str | None = Field(default=None, max_length=500)
+
+
+class BatchActionStep(BaseModel):
+    action_type: AiActionType
+    payload: dict[str, Any] = Field(default_factory=dict)
+    link_to_step: dict[str, int] | None = None
+
+    @field_validator("action_type")
+    @classmethod
+    def forbid_nested_batch(cls, value: AiActionType) -> AiActionType:
+        if value == AiActionType.batch_actions:
+            raise ValueError("L’imbrication de batch_actions n’est pas autorisée.")
+        return value
+
+
+class BatchActionsProposalPayload(BaseModel):
+    summary: str | None = None
+    steps: list[BatchActionStep] = Field(min_length=1, max_length=12)
+    compensate_on_failure: bool = True
+
+    @field_validator("summary")
+    @classmethod
+    def validate_summary(cls, value: str | None) -> str | None:
         return normalize_optional_text(value, 300)
 
 
@@ -488,15 +968,33 @@ __all__ = [
     "UpdateProposalRequest",
     "RejectProposalRequest",
     "AiReportResponse",
+    "AiMemoryResponse",
+    "AiMemoryUpdateRequest",
     "CreateTaskProposalPayload",
+    "UpdateTaskProposalPayload",
     "ParkTaskProposalPayload",
+    "CreateProjectProposalPayload",
+    "UpdateProjectProposalPayload",
+    "PauseProjectProposalPayload",
+    "EnsureAiReportsResponse",
     "CreateScheduleProposalPayload",
+    "UpdateScheduleEventProposalPayload",
+    "ArchiveScheduleEventProposalPayload",
+    "CreateStudySessionProposalPayload",
+    "CreateSkillProposalPayload",
     "AddEvidenceProposalPayload",
     "ProposeSkillAssessmentPayload",
     "RecommendSkillProgressionPayload",
+    "CreateLearningPathProposalPayload",
+    "UpdateLearningPathProposalPayload",
+    "CreatePersonalGoalProposalPayload",
+    "UpdatePersonalGoalProposalPayload",
     "ProposedActivitySlot",
     "PlanStrategicActivityProposalPayload",
     "CreateCourseProposalPayload",
+    "UpdatePreferencesProposalPayload",
+    "BatchActionStep",
+    "BatchActionsProposalPayload",
     "RawProposalCandidate",
     "AiProviderKind",
     "AiProviderCatalogItem",

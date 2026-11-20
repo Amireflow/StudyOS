@@ -8,6 +8,7 @@ export const PROJECT_STATUS_META: Record<
 > = {
   planned: { label: 'Planifié', badgeVariant: 'neutral' },
   active: { label: 'Actif', badgeVariant: 'primary' },
+  paused: { label: 'En pause', badgeVariant: 'neutral' },
   blocked: { label: 'Bloqué', badgeVariant: 'warning' },
   completed: { label: 'Terminé', badgeVariant: 'success' },
   archived: { label: 'Archivé', badgeVariant: 'neutral' },
@@ -31,7 +32,7 @@ export const projectFormSchema = z
       .max(2000, 'La description ne doit pas dépasser 2000 caractères.')
       .optional()
       .or(z.literal('')),
-    status: z.enum(['planned', 'active', 'blocked', 'completed', 'archived']),
+    status: z.enum(['planned', 'active', 'paused', 'blocked', 'completed', 'archived']),
     priority: z.enum(['low', 'normal', 'high', 'critical']),
     nextAction: z
       .string()

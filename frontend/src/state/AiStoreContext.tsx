@@ -5,6 +5,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from 'react';
@@ -15,6 +16,8 @@ import {
   acceptProposalApi,
   createConversationApi,
   deleteConversationApi,
+  ensureAiReportsApi,
+  fetchAiMemoryApi,
   fetchAiToolsApi,
   fetchConversationDetailApi,
   fetchConversationsApi,
@@ -24,6 +27,7 @@ import {
   generateWeeklyReviewApi,
   rejectProposalApi,
   sendAiMessageApi,
+  updateAiMemoryApi,
   updateProposalApi,
 } from '../lib/aiApi';
 import { ApiError } from '../lib/api-client';
@@ -32,6 +36,8 @@ import type {
   AiActionProposal,
   AiContextScope,
   AiConversation,
+  AiMemory,
+  AiMemoryUpdate,
   AiMessage,
   AiReport,
   AiToolSpec,
@@ -97,6 +103,14 @@ const DEFAULT_LOCAL_TOOLS: AiToolSpec[] = [
     description: 'Propose de reporter une tâche non prioritaire au parking (Parcours C).',
     requiresConfirmation: true,
     parameterKeys: ['task_id', 'reason'],
+  },
+  {
+    name: 'pause_project',
+    access: 'proposal',
+    label: 'Proposer de mettre un projet en pause',
+    description: 'Propose de mettre un projet actif en pause pour libérer un emplacement actif (max 3).',
+    requiresConfirmation: true,
+    parameterKeys: ['project_id', 'reason'],
   },
   {
     name: 'create_schedule_event',
@@ -197,13 +211,47 @@ const DEFAULT_LOCAL_TOOLS: AiToolSpec[] = [
       'link_skill',
     ],
   },
+  {
+    name: 'manage_availability_rule',
+    access: 'proposal',
+    label: 'Enregistrer une règle de disponibilité ou d’indisponibilité',
+    description:
+      'Enregistre une indisponibilité personnelle, une disponibilité confirmée ou un temps de récupération.',
+    requiresConfirmation: true,
+    parameterKeys: ['label', 'rule_type', 'day_of_week', 'start_time', 'end_time'],
+  },
+  {
+    name: 'generate_learning_plan',
+    access: 'proposal',
+    label: 'Générer un programme d’apprentissage personnalisé',
+    description:
+      'Analyse toutes vos sources StudyOS et planifie un emploi du temps réaliste sans conflit ni surcharge.',
+    requiresConfirmation: true,
+    parameterKeys: ['horizon_days', 'focus_subject', 'exam_title', 'weekly_hours_override'],
+  },
 ];
+
+const DEFAULT_LOCAL_MEMORY: AiMemory = {
+  userId: LOCAL_USER_ID,
+  academicContext: {},
+  availabilityPreferences: {},
+  learningPreferences: {},
+  constraints: [],
+  longTermGoals: [],
+  recentDecisions: [],
+  executionHistory: [],
+  weeklyStudyHours: null,
+  defaultSessionMinutes: 60,
+  autoExecuteSimpleActions: false,
+  updatedAt: '2026-11-20T00:00:00Z',
+};
 
 export interface AiLocalState {
   conversations: AiConversation[];
   messages: AiMessage[];
   proposals: AiActionProposal[];
   reports: AiReport[];
+  aiMemory?: AiMemory;
 }
 
 const DEFAULT_AI_STATE: AiLocalState = {
@@ -211,6 +259,7 @@ const DEFAULT_AI_STATE: AiLocalState = {
   messages: [],
   proposals: [],
   reports: [],
+  aiMemory: DEFAULT_LOCAL_MEMORY,
 };
 
 function sanitizeAiState(raw: unknown): AiLocalState {
@@ -223,6 +272,7 @@ function sanitizeAiState(raw: unknown): AiLocalState {
     messages: Array.isArray(c.messages) ? c.messages : [],
     proposals: Array.isArray(c.proposals) ? c.proposals : [],
     reports: Array.isArray(c.reports) ? c.reports : [],
+    aiMemory: c.aiMemory ? { ...DEFAULT_LOCAL_MEMORY, ...c.aiMemory } : DEFAULT_LOCAL_MEMORY,
   };
 }
 
@@ -242,11 +292,13 @@ export interface AiStoreContextValue {
   messages: AiMessage[];
   proposals: AiActionProposal[];
   reports: AiReport[];
+  aiMemory: AiMemory;
   isLoading: boolean;
   error: string | null;
   mutationError: string | null;
   clearMutationError: () => void;
   retry: () => void;
+  updateAiMemory: (patch: AiMemoryUpdate) => Promise<boolean>;
   createConversation: (title?: string) => Promise<string | null>;
   deleteConversation: (id: string) => Promise<boolean>;
   sendMessage: (content: string, scopes?: AiContextScope[]) => Promise<boolean>;
@@ -313,6 +365,27 @@ export function AiStoreProvider({ children }: { children: ReactNode }) {
     enabled: isApiMode,
   });
 
+  const memoryQuery = useQuery({
+    queryKey: ['ai-memory', userIdKey],
+    queryFn: () => fetchAiMemoryApi(accessToken),
+    enabled: isApiMode,
+  });
+
+  const ensuredReportsUserRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!isApiMode || !reportsQuery.isSuccess || ensuredReportsUserRef.current === userIdKey) {
+      return;
+    }
+    ensuredReportsUserRef.current = userIdKey;
+    void ensureAiReportsApi(accessToken)
+      .then((res) => {
+        if (res.createdDaily || res.createdWeekly) {
+          void queryClient.invalidateQueries({ queryKey: ['ai-reports', userIdKey] });
+        }
+      })
+      .catch(() => {});
+  }, [accessToken, isApiMode, queryClient, reportsQuery.isSuccess, userIdKey]);
+
   const conversations = useMemo(
     () => (isApiMode ? (conversationsQuery.data ?? []) : localState.conversations),
     [isApiMode, conversationsQuery.data, localState.conversations],
@@ -350,12 +423,83 @@ export function AiStoreProvider({ children }: { children: ReactNode }) {
 
   const clearMutationError = useCallback(() => setMutationError(null), []);
 
+  const invalidateAllDomainCaches = useCallback(async () => {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ['ai-proposals'] }),
+      queryClient.invalidateQueries({ queryKey: ['ai-conversation-detail'] }),
+      queryClient.invalidateQueries({ queryKey: ['ai-memory'] }),
+      queryClient.invalidateQueries({ queryKey: ['tasks'] }),
+      queryClient.invalidateQueries({ queryKey: ['schedule'] }),
+      queryClient.invalidateQueries({ queryKey: ['sessions'] }),
+      queryClient.invalidateQueries({ queryKey: ['learning-overview'] }),
+      queryClient.invalidateQueries({ queryKey: ['projects'] }),
+      queryClient.invalidateQueries({ queryKey: ['objectives'] }),
+      queryClient.invalidateQueries({ queryKey: ['objectives-overview'] }),
+      queryClient.invalidateQueries({ queryKey: ['skills'] }),
+      queryClient.invalidateQueries({ queryKey: ['skill-evidence'] }),
+      queryClient.invalidateQueries({ queryKey: ['skill-assessments'] }),
+      queryClient.invalidateQueries({ queryKey: ['courses'] }),
+      queryClient.invalidateQueries({ queryKey: ['course-detail'] }),
+      queryClient.invalidateQueries({ queryKey: ['availability-rules'] }),
+      queryClient.invalidateQueries({ queryKey: ['planning-versions'] }),
+      queryClient.invalidateQueries({ queryKey: ['planning-validity'] }),
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] }),
+      queryClient.invalidateQueries({ queryKey: ['profile'] }),
+    ]);
+  }, [queryClient]);
+
   const retry = useCallback(() => {
     void queryClient.invalidateQueries({ queryKey: ['ai-conversations'] });
     void queryClient.invalidateQueries({ queryKey: ['ai-proposals'] });
     void queryClient.invalidateQueries({ queryKey: ['ai-reports'] });
     void queryClient.invalidateQueries({ queryKey: ['ai-conversation-detail'] });
+    void queryClient.invalidateQueries({ queryKey: ['ai-memory'] });
   }, [queryClient]);
+
+  const aiMemory = useMemo<AiMemory>(() => {
+    if (isApiMode) {
+      return memoryQuery.data ?? DEFAULT_LOCAL_MEMORY;
+    }
+    return localState.aiMemory ?? DEFAULT_LOCAL_MEMORY;
+  }, [isApiMode, localState.aiMemory, memoryQuery.data]);
+
+  const updateAiMemory = useCallback(
+    async (patch: AiMemoryUpdate): Promise<boolean> => {
+      setMutationError(null);
+      if (isApiMode) {
+        try {
+          await updateAiMemoryApi(accessToken, patch);
+          await Promise.all([
+            queryClient.invalidateQueries({ queryKey: ['ai-memory'] }),
+            queryClient.invalidateQueries({ queryKey: ['profile'] }),
+          ]);
+          return true;
+        } catch (err) {
+          setMutationError(
+            err instanceof Error ? err.message : 'Impossible de mettre à jour la mémoire IA.',
+          );
+          return false;
+        }
+      }
+      setLocalState((prev) => {
+        const cur = prev.aiMemory ?? DEFAULT_LOCAL_MEMORY;
+        return {
+          ...prev,
+          aiMemory: {
+            ...cur,
+            ...patch,
+            availabilityPreferences:
+              patch.availabilityPreferences !== undefined
+                ? { ...cur.availabilityPreferences, ...patch.availabilityPreferences }
+                : cur.availabilityPreferences,
+            updatedAt: new Date().toISOString(),
+          },
+        };
+      });
+      return true;
+    },
+    [accessToken, isApiMode, queryClient],
+  );
 
   const createConversation = useCallback(
     async (title?: string): Promise<string | null> => {
@@ -443,7 +587,10 @@ export function AiStoreProvider({ children }: { children: ReactNode }) {
 
       if (isApiMode) {
         try {
-          const turn = await sendAiMessageApi(accessToken, convId, trimmed, scopes);
+          const turn = await sendAiMessageApi(accessToken, convId, trimmed, scopes, {
+            idempotencyKey: generateId(),
+            autoExecuteSimple: aiMemory.autoExecuteSimpleActions,
+          });
           queryClient.setQueryData<{
             conversation: AiConversation;
             messages: AiMessage[];
@@ -473,6 +620,9 @@ export function AiStoreProvider({ children }: { children: ReactNode }) {
             queryClient.invalidateQueries({ queryKey: ['ai-conversation-detail'] }),
             queryClient.invalidateQueries({ queryKey: ['ai-proposals'] }),
           ]);
+          if (turn.autoExecutedCount > 0) {
+            await invalidateAllDomainCaches();
+          }
           return true;
         } catch (err) {
           setMutationError(
@@ -1067,13 +1217,43 @@ export function AiStoreProvider({ children }: { children: ReactNode }) {
         );
       }
 
+      const autoExecSimple =
+        aiMemory.autoExecuteSimpleActions &&
+        generatedProposals.length === 1 &&
+        generatedProposals[0].actionType === 'create_task';
+
+      if (autoExecSimple) {
+        const p0 = generatedProposals[0];
+        const title = String(p0.payload.title ?? 'Nouvelle tâche').trim();
+        const priority = (p0.payload.priority as TaskPriority) || 'normal';
+        await studyStore.createTask(
+          {
+            title,
+            description: String(p0.payload.description ?? ''),
+            priority,
+            status: 'todo',
+            dueDate: '',
+            projectId: '',
+            moduleId: '',
+          },
+          { source: 'ai_proposal', proposalId: p0.id },
+        );
+        generatedProposals[0] = {
+          ...p0,
+          status: 'executed',
+          executionResult: { entity: 'task', title, source: 'ai_proposal' },
+          resolvedAt: nowIso,
+        };
+        replyLines.push(`Action exécutée directement : **${p0.title}**.`);
+      }
+
       const userMessage: AiMessage = {
         id: generateId(),
         userId: LOCAL_USER_ID,
         conversationId: convId,
         role: 'user',
         content: trimmed,
-        metadata: { includedScopes: scopes },
+        metadata: { includedScopes: scopes, autoExecutedCount: autoExecSimple ? 1 : 0 },
         createdAt: nowIso,
       };
 
@@ -1090,6 +1270,7 @@ export function AiStoreProvider({ children }: { children: ReactNode }) {
           missingData,
           includedScopes: scopes,
           proposalIds: generatedProposals.map((p) => p.id),
+          autoExecutedCount: autoExecSimple ? 1 : 0,
         },
         createdAt: nowIso,
       };
@@ -1113,16 +1294,15 @@ export function AiStoreProvider({ children }: { children: ReactNode }) {
     [
       accessToken,
       activeConversationId,
+      aiMemory.autoExecuteSimpleActions,
       createConversation,
+      invalidateAllDomainCaches,
       isApiMode,
       learningStore.assessments,
       learningStore.projects,
       learningStore.skills,
       queryClient,
-      studyStore.activePriorityTitle,
-      studyStore.profile.aiInstructions,
-      studyStore.scheduleEvents,
-      studyStore.tasks,
+      studyStore,
     ],
   );
 
@@ -1181,23 +1361,14 @@ export function AiStoreProvider({ children }: { children: ReactNode }) {
       setMutationError(null);
       if (isApiMode) {
         try {
-          await acceptProposalApi(accessToken, proposalId, payloadOverrides);
+          await acceptProposalApi(accessToken, proposalId, payloadOverrides, generateId());
+          await invalidateAllDomainCaches();
+          return true;
+        } catch (err) {
           await Promise.all([
             queryClient.invalidateQueries({ queryKey: ['ai-proposals'] }),
             queryClient.invalidateQueries({ queryKey: ['ai-conversation-detail'] }),
-            queryClient.invalidateQueries({ queryKey: ['tasks'] }),
-            queryClient.invalidateQueries({ queryKey: ['schedule'] }),
-            queryClient.invalidateQueries({ queryKey: ['learning-overview'] }),
-            queryClient.invalidateQueries({ queryKey: ['projects'] }),
-            queryClient.invalidateQueries({ queryKey: ['skills'] }),
-            queryClient.invalidateQueries({ queryKey: ['skill-evidence'] }),
-            queryClient.invalidateQueries({ queryKey: ['skill-assessments'] }),
-            queryClient.invalidateQueries({ queryKey: ['courses'] }),
-            queryClient.invalidateQueries({ queryKey: ['course-detail'] }),
-            queryClient.invalidateQueries({ queryKey: ['profile'] }),
           ]);
-          return true;
-        } catch (err) {
           setMutationError(
             err instanceof Error ? err.message : 'Impossible d’exécuter la proposition.',
           );
@@ -1239,6 +1410,10 @@ export function AiStoreProvider({ children }: { children: ReactNode }) {
         const taskId = String(merged.task_id ?? '');
         await studyStore.setTaskStatus(taskId, 'parked');
         execResult = { entity: 'task', task_id: taskId, status: 'parked' };
+      } else if (target.actionType === 'pause_project') {
+        const projectId = String(merged.project_id ?? '');
+        await learningStore.updateProject(projectId, { status: 'blocked' });
+        execResult = { entity: 'project', project_id: projectId, status: 'blocked' };
       } else if (target.actionType === 'create_schedule_event') {
         const start = new Date(String(merged.starts_at ?? nowIso));
         const end = new Date(String(merged.ends_at ?? nowIso));
@@ -1448,6 +1623,7 @@ export function AiStoreProvider({ children }: { children: ReactNode }) {
     [
       accessToken,
       coursesStore,
+      invalidateAllDomainCaches,
       isApiMode,
       learningStore,
       localState.proposals,
@@ -1669,11 +1845,13 @@ export function AiStoreProvider({ children }: { children: ReactNode }) {
       messages,
       proposals,
       reports,
+      aiMemory,
       isLoading,
       error,
       mutationError,
       clearMutationError,
       retry,
+      updateAiMemory,
       createConversation,
       deleteConversation,
       sendMessage,
@@ -1690,11 +1868,13 @@ export function AiStoreProvider({ children }: { children: ReactNode }) {
       messages,
       proposals,
       reports,
+      aiMemory,
       isLoading,
       error,
       mutationError,
       clearMutationError,
       retry,
+      updateAiMemory,
       createConversation,
       deleteConversation,
       sendMessage,

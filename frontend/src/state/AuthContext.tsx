@@ -9,13 +9,18 @@ import {
   type ReactNode,
 } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
-import { readFromStorage, STORAGE_KEYS, writeToStorage } from '../lib/storage';
+import {
+  configureApiAuthHandlers,
+} from '../lib/api-client';
+import { STORAGE_KEYS } from '../lib/storage';
 import {
   changePasswordApi,
   loginAccountApi,
   loginLocalApi,
   loginSupabasePasswordApi,
   logoutAllSessionsApi,
+  logoutSessionApi,
+  refreshSessionApi,
   registerAccountApi,
 } from '../lib/studyApi';
 
@@ -39,6 +44,7 @@ export type AuthSession =
 export interface AuthContextValue {
   session: AuthSession | null;
   isAuthenticated: boolean;
+  isBootstrapping: boolean;
   authMessage: string | null;
   registerAccount: (input: {
     email: string;
@@ -59,43 +65,34 @@ export interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
-function sanitizeStoredSession(raw: unknown): AuthSession | null {
-  if (!raw || typeof raw !== 'object') {
-    return null;
-  }
-  const candidate = raw as Partial<AuthSession>;
-  if (candidate.mode === 'local_demo') {
-    return {
-      mode: 'local_demo',
-      accessToken: null,
-      userId: 'local-user',
-      email: 'local@amireflow.local',
-      displayName:
-        typeof candidate.displayName === 'string' && candidate.displayName.trim()
-          ? candidate.displayName.trim()
-          : 'Mode local',
-    };
-  }
-  if (
-    candidate.mode === 'api' &&
-    typeof candidate.accessToken === 'string' &&
-    candidate.accessToken &&
-    typeof candidate.userId === 'string' &&
-    candidate.userId
-  ) {
-    return {
-      mode: 'api',
-      accessToken: candidate.accessToken,
-      userId: candidate.userId,
-      email: typeof candidate.email === 'string' ? candidate.email : '',
-      displayName:
-        typeof candidate.displayName === 'string' && candidate.displayName.trim()
-          ? candidate.displayName.trim()
-          : 'Utilisateur',
-      authProvider: candidate.authProvider,
-    };
+function sanitizeStoredSession(): AuthSession | null {
+  // Aucun mode démo/local ou jeton d'accès n'est restauré depuis localStorage.
+  try {
+    window.localStorage.removeItem(STORAGE_KEYS.authSession);
+  } catch {
+    // Ignore les erreurs de stockage en navigation privée stricte.
   }
   return null;
+}
+
+function hasApiSessionHint(): boolean {
+  try {
+    return window.localStorage.getItem(STORAGE_KEYS.apiSessionHint) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function setApiSessionHint(enabled: boolean): void {
+  try {
+    if (enabled) {
+      window.localStorage.setItem(STORAGE_KEYS.apiSessionHint, '1');
+    } else {
+      window.localStorage.removeItem(STORAGE_KEYS.apiSessionHint);
+    }
+  } catch {
+    // Ignore les erreurs de stockage en navigation privée stricte.
+  }
 }
 
 export interface AuthProviderProps {
@@ -109,7 +106,14 @@ export function AuthProvider({ children, initialSession }: AuthProviderProps) {
     if (initialSession !== undefined) {
       return initialSession;
     }
-    return sanitizeStoredSession(readFromStorage<unknown>(STORAGE_KEYS.authSession, null));
+    return sanitizeStoredSession();
+  });
+  const [isBootstrapping, setIsBootstrapping] = useState<boolean>(() => {
+    if (initialSession !== undefined) {
+      return false;
+    }
+    sanitizeStoredSession();
+    return hasApiSessionHint();
   });
   const [authMessage, setAuthMessage] = useState<string | null>(null);
 
@@ -117,16 +121,46 @@ export function AuthProvider({ children, initialSession }: AuthProviderProps) {
     if (initialSession !== undefined) {
       return;
     }
-    if (session) {
-      writeToStorage(STORAGE_KEYS.authSession, session);
-    } else {
-      try {
-        window.localStorage.removeItem(STORAGE_KEYS.authSession);
-      } catch {
-        // Ignore les erreurs de stockage en navigation privée stricte.
-      }
+    try {
+      window.localStorage.removeItem(STORAGE_KEYS.authSession);
+    } catch {
+      // Ignore les erreurs de stockage en navigation privée stricte.
+    }
+    if (session?.mode === 'api' && session.authProvider !== 'supabase') {
+      setApiSessionHint(true);
     }
   }, [session, initialSession]);
+
+  useEffect(() => {
+    if (initialSession !== undefined || !isBootstrapping) {
+      return;
+    }
+    let active = true;
+    refreshSessionApi()
+      .then((res) => {
+        if (!active) return;
+        queryClient.setQueryData(['profile', res.profile.id], res.profile);
+        setSession({
+          mode: 'api',
+          accessToken: res.accessToken,
+          userId: res.profile.id,
+          email: res.email ?? '',
+          displayName: res.profile.displayName,
+          authProvider: 'password',
+        });
+      })
+      .catch(() => {
+        setApiSessionHint(false);
+      })
+      .finally(() => {
+        if (active) {
+          setIsBootstrapping(false);
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, [initialSession, isBootstrapping, queryClient]);
 
   const registerAccount = useCallback(
     async (input: { email: string; password: string; displayName: string; timezone?: string }) => {
@@ -240,12 +274,55 @@ export function AuthProvider({ children, initialSession }: AuthProviderProps) {
 
   const logout = useCallback(
     (reason?: string) => {
+      if (session?.mode === 'api') {
+        void logoutSessionApi(session.accessToken).catch(() => {
+          // Révoque côté client même si le serveur ne répond plus ou si le jeton est expiré.
+        });
+      }
+      setApiSessionHint(false);
       queryClient.clear();
       setSession(null);
       setAuthMessage(reason ?? null);
     },
-    [queryClient],
+    [session, queryClient],
   );
+
+  const apiAuthProvider = session?.mode === 'api' ? session.authProvider : undefined;
+
+  useEffect(() => {
+    configureApiAuthHandlers({
+      refreshAccessToken: async () => {
+        if (session?.mode !== 'api' || apiAuthProvider === 'supabase') {
+          return null;
+        }
+        try {
+          const refreshed = await refreshSessionApi();
+          setSession((prev) =>
+            prev && prev.mode === 'api'
+              ? {
+                  ...prev,
+                  accessToken: refreshed.accessToken,
+                  displayName: refreshed.profile.displayName,
+                  email: refreshed.email ?? prev.email,
+                }
+              : prev,
+          );
+          return refreshed.accessToken;
+        } catch {
+          return null;
+        }
+      },
+      onSessionExpired: (reason?: string) => {
+        setApiSessionHint(false);
+        queryClient.clear();
+        setSession(null);
+        setAuthMessage(reason ?? 'Votre session a expiré. Reconnectez-vous.');
+      },
+    });
+    return () => {
+      configureApiAuthHandlers({});
+    };
+  }, [session?.mode, apiAuthProvider, queryClient]);
 
   const logoutAllSessions = useCallback(async () => {
     if (session?.mode === 'api' && session.accessToken) {
@@ -255,6 +332,7 @@ export function AuthProvider({ children, initialSession }: AuthProviderProps) {
         // Révoque côté client même si le jeton était déjà expiré.
       }
     }
+    setApiSessionHint(false);
     queryClient.clear();
     setSession(null);
     setAuthMessage('Toutes vos sessions ont été déconnectées.');
@@ -276,6 +354,7 @@ export function AuthProvider({ children, initialSession }: AuthProviderProps) {
     () => ({
       session,
       isAuthenticated: session !== null,
+      isBootstrapping,
       authMessage,
       registerAccount,
       loginAccount,
@@ -290,6 +369,7 @@ export function AuthProvider({ children, initialSession }: AuthProviderProps) {
     }),
     [
       session,
+      isBootstrapping,
       authMessage,
       registerAccount,
       loginAccount,
@@ -319,8 +399,19 @@ export function useAuth(): AuthContextValue {
  * Protège les routes privées contre tout accès sans session active (AUTH-02).
  */
 export function RequireAuth({ children }: { children: ReactNode }) {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, isBootstrapping } = useAuth();
   const location = useLocation();
+
+  if (isBootstrapping) {
+    return (
+      <div
+        role="status"
+        className="flex min-h-[40vh] items-center justify-center p-6 text-sm text-zinc-500 dark:text-zinc-400"
+      >
+        Vérification de la session...
+      </div>
+    );
+  }
 
   if (!isAuthenticated) {
     return <Navigate to="/login" replace state={{ from: location.pathname }} />;

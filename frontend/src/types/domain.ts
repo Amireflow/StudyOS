@@ -43,10 +43,26 @@ export type SkillEvidenceType =
   | 'deliverable'
   | 'other';
 
+export type EvidenceVerificationStatus =
+  | 'declared'
+  | 'uploaded'
+  | 'inspected'
+  | 'verified'
+  | 'approved'
+  | 'unreachable';
+
+export type SkillEvaluationMode =
+  | 'heuristic_precheck'
+  | 'code_static'
+  | 'project_rubric'
+  | 'ai_assisted'
+  | 'manual_review';
+
 export type SkillAssessmentStatus =
   | 'pending'
   | 'submitted'
   | 'evaluated'
+  | 'needs_manual_review'
   | 'approved'
   | 'rejected'
   | 'cancelled';
@@ -72,7 +88,13 @@ export type SkillPedagogicalState =
   | 'validated'
   | 'needs_reinforcement';
 
-export type ProjectStatus = 'planned' | 'active' | 'blocked' | 'completed' | 'archived';
+export type ProjectStatus =
+  | 'planned'
+  | 'active'
+  | 'paused'
+  | 'blocked'
+  | 'completed'
+  | 'archived';
 
 export type ProposalStatus =
   | 'pending'
@@ -86,13 +108,29 @@ export type AiMessageRole = 'user' | 'assistant' | 'system';
 
 export type AiActionType =
   | 'create_task'
+  | 'update_task'
   | 'park_task'
+  | 'create_project'
+  | 'update_project'
+  | 'pause_project'
   | 'create_schedule_event'
+  | 'update_schedule_event'
+  | 'archive_schedule_event'
+  | 'create_study_session'
+  | 'create_skill'
   | 'add_skill_evidence'
   | 'propose_skill_assessment'
   | 'recommend_skill_progression'
+  | 'create_learning_path'
+  | 'update_learning_path'
+  | 'create_personal_goal'
+  | 'update_personal_goal'
   | 'plan_strategic_activity'
-  | 'create_course';
+  | 'create_course'
+  | 'update_preferences'
+  | 'manage_availability_rule'
+  | 'generate_learning_plan'
+  | 'batch_actions';
 
 export type StrategicDecision =
   | 'ACCEPTABLE'
@@ -109,6 +147,8 @@ export type AiContextScope =
   | 'learning'
   | 'skills'
   | 'projects'
+  | 'goals'
+  | 'memory'
   | 'weekly';
 
 export interface UserProfile {
@@ -155,6 +195,10 @@ export interface ScheduleEvent {
   teacher?: string | null;
   room?: string | null;
   groupName?: string | null;
+  goalId?: string | null;
+  courseId?: string | null;
+  projectId?: string | null;
+  taskId?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -228,8 +272,15 @@ export interface StudySession {
   startedAt: string;
   endedAt: string | null;
   result: string | null;
+  plannedActivity?: string | null;
+  actualActivity?: string | null;
+  outcomeStatus?: string | null;
+  deliverableSummary?: string | null;
+  blockers?: string | null;
+  nextStep?: string | null;
   taskId: string | null;
   projectId: string | null;
+  goalId?: string | null;
   moduleId: string | null;
   lessonId: string | null;
   skillId: string | null;
@@ -298,6 +349,10 @@ export interface SkillEvidence {
   isAdmissible?: boolean;
   externalReferenceVerified?: boolean;
   verificationNote?: string | null;
+  verificationStatus?: EvidenceVerificationStatus;
+  inspectionMetadata?: Record<string, unknown> | null;
+  inspectedAt?: string | null;
+  isLocked?: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -346,6 +401,11 @@ export interface SkillAssessment {
   evaluatorName: string | null;
   decisionReason: string | null;
   appliedLevelDelta: number | null;
+  rubricVersion?: string;
+  evaluatorVersion?: string;
+  evaluationMode?: SkillEvaluationMode;
+  manualReviewRequired?: boolean;
+  reviewedBy?: string | null;
   submittedAt: string | null;
   evaluatedAt: string | null;
   validatedAt: string | null;
@@ -364,6 +424,13 @@ export interface Project {
   nextAction: string;
   deliverables: string[] | null;
   targetDate: string | null;
+  category?: ObjectiveCategory;
+  motivation?: string | null;
+  startDate?: string | null;
+  weeklyTargetMinutes?: number;
+  steps?: Array<Record<string, unknown>>;
+  successCriteria?: string[];
+  progressHistory?: Array<Record<string, unknown>>;
   createdAt: string;
   updatedAt: string;
 }
@@ -410,6 +477,47 @@ export interface AiMessageMetadata {
   includedScopes?: string[];
   proposalIds?: string[];
   rejectedProposalsCount?: number;
+  autoExecutedCount?: number;
+}
+
+export interface AiMemoryDecisionItem {
+  action_type?: string;
+  summary?: string;
+  decided_at?: string;
+}
+
+export interface AiMemoryExecutionItem {
+  proposal_id?: string;
+  action_type?: string;
+  summary?: string;
+  entity?: string | null;
+  executed_at?: string;
+}
+
+export interface AiMemory {
+  userId: string;
+  academicContext: Record<string, unknown>;
+  availabilityPreferences: Record<string, unknown>;
+  learningPreferences: Record<string, unknown>;
+  constraints: string[];
+  longTermGoals: string[];
+  recentDecisions: AiMemoryDecisionItem[];
+  executionHistory: AiMemoryExecutionItem[];
+  weeklyStudyHours: number | null;
+  defaultSessionMinutes: number;
+  autoExecuteSimpleActions: boolean;
+  updatedAt: string;
+}
+
+export interface AiMemoryUpdate {
+  academicContext?: Record<string, unknown>;
+  availabilityPreferences?: Record<string, unknown>;
+  learningPreferences?: Record<string, unknown>;
+  constraints?: string[];
+  longTermGoals?: string[];
+  weeklyStudyHours?: number | null;
+  defaultSessionMinutes?: number;
+  autoExecuteSimpleActions?: boolean;
 }
 
 export interface AiMessage {
@@ -437,9 +545,12 @@ export interface AiReport {
   createdAt: string;
 }
 
+export type AiToolRiskLevel = 'read' | 'simple' | 'structuring' | 'sensitive';
+
 export interface AiToolSpec {
   name: string;
   access: 'read' | 'proposal';
+  riskLevel?: AiToolRiskLevel;
   label: string;
   description: string;
   requiresConfirmation: boolean;
@@ -477,7 +588,7 @@ export type CourseLanguage = 'fr' | 'en' | 'bilingual';
 
 export type CourseStatus = 'active' | 'paused' | 'completed';
 
-export type CourseLevelStatus = 'locked' | 'unlocked' | 'validated';
+export type CourseLevelStatus = 'locked' | 'unlocked' | 'in_progress' | 'validated';
 
 export type CourseLessonStatus = 'not_started' | 'in_progress' | 'completed';
 
@@ -503,8 +614,10 @@ export interface CourseExercise {
   id: string;
   title: string;
   difficulty: 'guide' | 'pratique' | 'defi';
+  exerciseType?: 'closed_quiz' | 'code' | 'open_explanation';
   instructionsMarkdown: string;
   starterCode: string | null;
+  choices?: string[];
   hints: string[];
   expectedConcepts: string[];
 }
@@ -580,6 +693,10 @@ export interface CourseSubmission {
   strengths: string[];
   improvements: string[];
   nextStepHint: string | null;
+  attemptNumber?: number;
+  evaluationMode?: string;
+  manualReviewRequired?: boolean;
+  staticAnalysis?: Record<string, unknown>;
   createdAt: string;
   updatedAt: string;
 }
@@ -598,12 +715,19 @@ export interface CourseLevel {
   projectBrief: string | null;
   projectDeliverables: string[];
   projectRubric: CourseRubricCriterion[];
+  generationSource?: string;
+  revision?: number;
+  previousVersionsCount?: number;
   validatedAt: string | null;
   lessons: CourseLesson[];
   resources: CourseResource[];
   submissions: CourseSubmission[];
   passThreshold: number;
   projectPassed: boolean;
+  lessonsCompleted?: boolean;
+  exercisesPassedCount?: number;
+  exercisePassed?: boolean;
+  canValidate?: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -621,6 +745,8 @@ export interface CourseSummary {
   status: CourseStatus;
   skillId: string | null;
   learningPathId: string | null;
+  generationSource?: string;
+  generationModel?: string | null;
   completedLessonsCount: number;
   totalLessonsCount: number;
   resourcesCount: number;
@@ -674,4 +800,163 @@ export interface CoursePreview {
   firstLevelProjectBrief: string;
   firstLevelProjectDeliverables: string[];
   firstLevelResources: CoursePreviewResource[];
+}
+
+export type ObjectiveCategory =
+  | 'learning_goal'
+  | 'language'
+  | 'framework'
+  | 'technology'
+  | 'spoken_language'
+  | 'skill'
+  | 'project'
+  | 'personal_project'
+  | 'professional_project'
+  | 'other';
+
+export type ObjectiveStatus =
+  | 'planned'
+  | 'active'
+  | 'paused'
+  | 'blocked'
+  | 'completed'
+  | 'archived';
+
+export interface SessionFinishExtra {
+  plannedActivity?: string;
+  actualActivity?: string;
+  outcomeStatus?: 'completed' | 'partial' | 'blocked';
+  deliverableSummary?: string;
+  blockers?: string;
+  nextStep?: string;
+}
+
+export interface PersonalGoal {
+  id: string;
+  userId: string;
+  category: ObjectiveCategory;
+  title: string;
+  description: string | null;
+  goal: string;
+  currentLevel: number | null;
+  targetLevel: number | null;
+  priority: TaskPriority;
+  isPrimary: boolean;
+  motivation: string | null;
+  startDate: string | null;
+  targetDate: string | null;
+  weeklyTargetMinutes: number;
+  status: ObjectiveStatus;
+  steps: Array<Record<string, unknown>>;
+  deliverables: string[];
+  nextAction: string;
+  successCriteria: string[];
+  progressHistory: Array<Record<string, unknown>>;
+  skillId: string | null;
+  learningPathId: string | null;
+  courseId: string | null;
+  completedMinutesLast7d: number;
+  sessionsCount: number;
+  isBehindSchedule: boolean;
+  delayReason: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ObjectivesOverview {
+  academicObligations: Array<Record<string, unknown>>;
+  personalGoals: PersonalGoal[];
+  projects: Array<Record<string, unknown>>;
+  prioritySummary: Record<string, unknown>;
+}
+
+export interface ExtractedObjectiveCandidate {
+  kind: 'personal_goal' | 'project';
+  category: string;
+  title: string;
+  goal: string;
+  currentLevel: number | null;
+  targetLevel: number | null;
+  priority: TaskPriority;
+  isPrimary: boolean;
+  motivation: string | null;
+  weeklyTargetMinutes: number | null;
+  targetDate: string | null;
+  deliverables: string[];
+  validationConditions: string[];
+  nextAction: string;
+}
+
+export interface ConversationalIntakeRecap {
+  objectives: ExtractedObjectiveCandidate[];
+  currentLevel: number | string | null;
+  targetLevel: number | string | null;
+  priority: string | null;
+  motivation: string | null;
+  availableTimeWeeklyMinutes: number | null;
+  targetDate: string | null;
+  expectedDeliverables: string[];
+  validationConditions: string[];
+  missingFields: string[];
+  progressiveQuestions: string[];
+  requiresConfirmation: boolean;
+  summaryMarkdown: string;
+}
+
+export interface UnifiedPlanSlot {
+  sourceCategory:
+    | 'academic_obligation'
+    | 'personal_goal'
+    | 'project'
+    | 'revision'
+    | 'evaluation'
+    | 'recovery';
+  isFixed: boolean;
+  title: string;
+  dayLabel: string;
+  localDate: string;
+  localStartTime: string;
+  localEndTime: string;
+  startsAt: string;
+  endsAt: string;
+  durationMinutes: number;
+  expectedOutcome: string;
+  linkedGoalId: string | null;
+  linkedProjectId: string | null;
+  linkedSkillId: string | null;
+  linkedPathId: string | null;
+  linkedModuleId: string | null;
+  linkedLessonId: string | null;
+  linkedTaskId: string | null;
+}
+
+export interface UnifiedPlanAdaptationItem {
+  targetTitle: string;
+  targetKind: 'personal_goal' | 'project' | 'academic';
+  cause: string;
+  actionTaken: string;
+}
+
+export interface UnifiedPlan {
+  weekStart: string;
+  primaryPriorityTitle: string | null;
+  secondaryObjectives: string[];
+  academicFixedSlots: UnifiedPlanSlot[];
+  flexibleStudySlots: UnifiedPlanSlot[];
+  recoverySlots: UnifiedPlanSlot[];
+  dailyBreakdown: Record<string, UnifiedPlanSlot[]>;
+  arbitrages: string[];
+  adaptations: UnifiedPlanAdaptationItem[];
+  displacedConflictsCount: number;
+  totalAcademicMinutes: number;
+  totalPersonalGoalMinutes: number;
+  totalProjectMinutes: number;
+  requiresValidation: boolean;
+}
+
+export interface UnifiedPlanApplyResult {
+  createdEventsCount: number;
+  displacedConflictsCount: number;
+  linkedTasksCreatedCount: number;
+  activePriorityTitle: string | null;
 }

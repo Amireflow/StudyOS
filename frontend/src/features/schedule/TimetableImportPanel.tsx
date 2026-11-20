@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState, type ChangeEvent, type DragEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent } from 'react';
 import {
   Add01Icon,
   Alert02Icon,
@@ -59,6 +59,7 @@ export function TimetableImportPanel({
   const {
     scheduleEvents,
     analyzeTimetableFile,
+    updateTimetableImportDraft,
     confirmTimetableImport,
     cancelTimetableImport,
     deleteTimetableImportSource,
@@ -69,8 +70,18 @@ export function TimetableImportPanel({
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisStep, setAnalysisStep] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isSavingDraft, setIsSavingDraft] = useState(false);
+  const [draftNotice, setDraftNotice] = useState<string | null>(null);
   const [localError, setLocalError] = useState<string | null>(null);
   const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (imagePreviewUrl && typeof URL !== 'undefined' && URL.revokeObjectURL) {
+        URL.revokeObjectURL(imagePreviewUrl);
+      }
+    };
+  }, [imagePreviewUrl]);
 
   const [importSession, setImportSession] = useState<TimetableImport | null>(null);
   const [courses, setCourses] = useState<ExtractedCourseRow[]>([]);
@@ -223,6 +234,24 @@ export function TimetableImportPanel({
       await cancelTimetableImport(importSession.id);
     }
     onImportCancelled();
+  };
+
+  const handleSaveDraft = async () => {
+    if (!importSession) return;
+    setLocalError(null);
+    setDraftNotice(null);
+    setIsSavingDraft(true);
+    const updated = await updateTimetableImportDraft(importSession, {
+      courses,
+      validFrom: validFrom || null,
+      validUntil: validUntil || null,
+    });
+    setIsSavingDraft(false);
+    if (updated) {
+      setImportSession(updated);
+      setCourses(updated.extractedCourses);
+      setDraftNotice('Brouillon de corrections enregistré.');
+    }
   };
 
   const handleConfirmImport = async () => {
@@ -759,22 +788,37 @@ export function TimetableImportPanel({
           </div>
 
           {/* Actions de validation obligatoire ou d'annulation (Section 6) */}
+          {draftNotice && (
+            <p role="status" className="text-right text-xs font-medium text-teal-700 dark:text-teal-300">
+              {draftNotice}
+            </p>
+          )}
           <div className="flex flex-wrap items-center justify-end gap-2 pt-3">
             <Button
               type="button"
               variant="secondary"
               size="sm"
-              disabled={isSubmitting}
+              disabled={isSubmitting || isSavingDraft}
               onClick={() => void handleCancelImport()}
             >
               Annuler l’importation
             </Button>
             <Button
               type="button"
+              variant="ghost"
+              size="sm"
+              isLoading={isSavingDraft}
+              disabled={isSubmitting}
+              onClick={() => void handleSaveDraft()}
+            >
+              Enregistrer le brouillon
+            </Button>
+            <Button
+              type="button"
               variant="primary"
               size="sm"
               isLoading={isSubmitting}
-              disabled={activeCoursesCount === 0 || blockingAnomalies.length > 0}
+              disabled={isSavingDraft || activeCoursesCount === 0 || blockingAnomalies.length > 0}
               onClick={() => void handleConfirmImport()}
             >
               Enregistrer mon emploi du temps

@@ -81,9 +81,10 @@ def test_01_06_08_10_compatible_request_reuses_skill_modify_accept_and_prevent_d
     patched = patch_res.json()
     assert patched["status"] == "pending"
     assert patched["payload"]["activity_title"] == "React & TypeScript avancé"
-    assert len(patched["payload"]["proposed_slots"]) == 1
+    assert len(patched["payload"]["proposed_slots"]) == 3
+    assert len({s["local_date"] for s in patched["payload"]["proposed_slots"]}) == 3
 
-    # Scénario 6 : Validation explicite -> crée le parcours, module, tâche objectif et le créneau calendrier
+    # Scénario 6 : Validation explicite -> crée le parcours, module, tâche objectif et les 3 créneaux multi-semaines
     accept_res = client.post(
         f"/api/v1/ai/proposals/{prop_id}/accept",
         json={},
@@ -92,7 +93,7 @@ def test_01_06_08_10_compatible_request_reuses_skill_modify_accept_and_prevent_d
     assert accept_res.status_code == 200
     acc_data = accept_res.json()
     assert acc_data["status"] == "executed"
-    assert acc_data["execution_result"]["created_events_count"] == 1
+    assert acc_data["execution_result"]["created_events_count"] == 3
     assert acc_data["execution_result"]["learning_path_id"] is not None
 
     paths = client.get("/api/v1/learning/paths", headers=user_a_headers).json()
@@ -104,9 +105,9 @@ def test_01_06_08_10_compatible_request_reuses_skill_modify_accept_and_prevent_d
     assert tasks[0]["proposal_id"] == prop_id
 
     events = client.get("/api/v1/schedule", headers=user_a_headers).json()
-    assert len(events) == 1
-    assert events[0]["title"] == "React & TypeScript avancé"
-    assert events[0]["source"] == "ai_proposal"
+    assert len(events) == 3
+    assert all(ev["title"] == "React & TypeScript avancé" for ev in events)
+    assert all(ev["source"] == "ai_proposal" for ev in events)
 
     # Scénario 10 : Double validation refusée (409) sans aucun doublon
     second_accept = client.post(
@@ -115,7 +116,7 @@ def test_01_06_08_10_compatible_request_reuses_skill_modify_accept_and_prevent_d
         headers=user_a_headers,
     )
     assert second_accept.status_code == 409
-    assert len(client.get("/api/v1/schedule", headers=user_a_headers).json()) == 1
+    assert len(client.get("/api/v1/schedule", headers=user_a_headers).json()) == 3
     assert len(client.get("/api/v1/learning/paths", headers=user_a_headers).json()) == 1
 
 

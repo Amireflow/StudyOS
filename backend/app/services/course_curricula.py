@@ -15,6 +15,8 @@ CURATED_RESOURCES: dict[str, list[dict[str, Any]]] = {
             "is_official": True,
             "source_name": "Python Software Foundation",
             "notes": "Référence officielle progressive : syntaxe, structures de données, modules et erreurs.",
+            "min_level": 1,
+            "max_level": 3,
         },
         {
             "title": "Documentation officielle Python 3 (Standard Library)",
@@ -23,7 +25,20 @@ CURATED_RESOURCES: dict[str, list[dict[str, Any]]] = {
             "language": "en",
             "is_official": True,
             "source_name": "Python.org",
-            "notes": "Référence complète des modules standard (pathlib, json, dataclasses, unittest).",
+            "notes": "Référence complète des modules standard (pathlib, json, dataclasses, asyncio, unittest).",
+            "min_level": 1,
+            "max_level": 5,
+        },
+        {
+            "title": "Harvard CS50P — Introduction to Programming with Python",
+            "url": "https://cs50.harvard.edu/python/",
+            "resource_type": "interactive",
+            "language": "en",
+            "is_official": True,
+            "source_name": "Harvard University",
+            "notes": "Cours universitaire complet avec exercices pratiques progressifs.",
+            "min_level": 1,
+            "max_level": 3,
         },
         {
             "title": "Pytest — Documentation officielle",
@@ -32,25 +47,77 @@ CURATED_RESOURCES: dict[str, list[dict[str, Any]]] = {
             "language": "en",
             "is_official": True,
             "source_name": "pytest.org",
-            "notes": "Indispensable pour écrire et structurer vos tests unitaires dès le niveau 2.",
+            "notes": "Indispensable pour écrire et structurer vos tests unitaires et fixtures.",
+            "min_level": 2,
+            "max_level": 5,
         },
         {
-            "title": "Formation complète Python pour débutants (Vidéo FR)",
-            "url": "https://www.youtube.com/watch?v=LamjAFnybo0",
-            "resource_type": "video",
-            "language": "fr",
-            "is_official": False,
-            "source_name": "Graven / YouTube",
-            "notes": "Explication vidéo pas à pas des bases Python avec exercices guidés.",
-        },
-        {
-            "title": "Harvard CS50P — Introduction to Programming with Python",
-            "url": "https://cs50.harvard.edu/python/",
-            "resource_type": "video",
+            "title": "FastAPI — Tutoriel et guide utilisateur officiel",
+            "url": "https://fastapi.tiangolo.com/tutorial/",
+            "resource_type": "documentation",
             "language": "en",
             "is_official": True,
-            "source_name": "Harvard University",
-            "notes": "Cours universitaire complet en vidéo et exercices pratiques progressifs.",
+            "source_name": "FastAPI",
+            "notes": "Référence officielle pour Pydantic v2, Depends, async/await et TestClient.",
+            "min_level": 3,
+            "max_level": 5,
+        },
+        {
+            "title": "SQLAlchemy 2.0 — Tutoriel unifié officiel",
+            "url": "https://docs.sqlalchemy.org/en/20/tutorial/",
+            "resource_type": "documentation",
+            "language": "en",
+            "is_official": True,
+            "source_name": "SQLAlchemy",
+            "notes": "ORM moderne typé, transactions, sessions et requêtes préparées.",
+            "min_level": 4,
+            "max_level": 5,
+        },
+    ],
+    "javascript": [
+        {
+            "title": "MDN Web Docs — Guide JavaScript (FR)",
+            "url": "https://developer.mozilla.org/fr/docs/Web/JavaScript/Guide",
+            "resource_type": "documentation",
+            "language": "fr",
+            "is_official": True,
+            "source_name": "Mozilla MDN",
+            "notes": "Référence officielle complète sur le langage JavaScript moderne (ES6+).",
+            "min_level": 1,
+            "max_level": 4,
+        },
+        {
+            "title": "The Modern JavaScript Tutorial (JavaScript.info)",
+            "url": "https://javascript.info/",
+            "resource_type": "interactive",
+            "language": "en",
+            "is_official": False,
+            "source_name": "JavaScript.info",
+            "notes": "Parcours approfondi : closures, prototypes, DOM, événements et promesses.",
+            "min_level": 1,
+            "max_level": 5,
+        },
+        {
+            "title": "MDN Web Docs — JavaScript asynchrone (FR)",
+            "url": "https://developer.mozilla.org/fr/docs/Learn_web_development/Extensions/Async_JS",
+            "resource_type": "documentation",
+            "language": "fr",
+            "is_official": True,
+            "source_name": "Mozilla MDN",
+            "notes": "Comprendre boucle d'événements, Promesses, Fetch API et async/await.",
+            "min_level": 2,
+            "max_level": 5,
+        },
+        {
+            "title": "Vitest — Documentation officielle de tests JS/TS",
+            "url": "https://vitest.dev/guide/",
+            "resource_type": "documentation",
+            "language": "en",
+            "is_official": True,
+            "source_name": "Vitest",
+            "notes": "Tests unitaires et d'intégration rapides avec modules ES.",
+            "min_level": 3,
+            "max_level": 5,
         },
     ],
     "typescript": [
@@ -62,15 +129,8 @@ CURATED_RESOURCES: dict[str, list[dict[str, Any]]] = {
             "is_official": True,
             "source_name": "Microsoft TypeScript",
             "notes": "Guide officiel du typage statique, interfaces, unions et génériques.",
-        },
-        {
-            "title": "MDN Web Docs — JavaScript & Fondamentaux Web (FR)",
-            "url": "https://developer.mozilla.org/fr/docs/Web/JavaScript/Guide",
-            "resource_type": "documentation",
-            "language": "fr",
-            "is_official": True,
-            "source_name": "MDN Web Docs",
-            "notes": "Socle JavaScript moderne indispensable sous TypeScript.",
+            "min_level": 1,
+            "max_level": 3,
         },
         {
             "title": "TypeScript Playground officiel",
@@ -80,15 +140,41 @@ CURATED_RESOURCES: dict[str, list[dict[str, Any]]] = {
             "is_official": True,
             "source_name": "TypeScript.org",
             "notes": "Bac à sable interactif pour tester vos types en direct sans installation.",
+            "min_level": 1,
+            "max_level": 5,
         },
         {
-            "title": "Apprendre TypeScript en pratique (Vidéo FR)",
-            "url": "https://grafikart.fr/formations/typescript",
-            "resource_type": "video",
+            "title": "TypeScript — Narrowing & Generics (Référence officielle)",
+            "url": "https://www.typescriptlang.org/docs/handbook/2/generics.html",
+            "resource_type": "documentation",
+            "language": "en",
+            "is_official": True,
+            "source_name": "Microsoft TypeScript",
+            "notes": "Conception d'abstractions génériques, contraintes `extends` et types utilitaires.",
+            "min_level": 2,
+            "max_level": 5,
+        },
+        {
+            "title": "TypeScript Utility Types & Conditional Types",
+            "url": "https://www.typescriptlang.org/docs/handbook/utility-types.html",
+            "resource_type": "documentation",
+            "language": "en",
+            "is_official": True,
+            "source_name": "Microsoft TypeScript",
+            "notes": "Types dérivés avancés (`Partial`, `Pick`, `Omit`, `Record`, `ReturnType`).",
+            "min_level": 3,
+            "max_level": 5,
+        },
+        {
+            "title": "MDN Web Docs — JavaScript & Fondamentaux Web (FR)",
+            "url": "https://developer.mozilla.org/fr/docs/Web/JavaScript/Guide",
+            "resource_type": "documentation",
             "language": "fr",
-            "is_official": False,
-            "source_name": "Grafikart",
-            "notes": "Série vidéo structurée en français : syntaxe, narrowing et génériques.",
+            "is_official": True,
+            "source_name": "MDN Web Docs",
+            "notes": "Socle JavaScript moderne exécuté sous TypeScript.",
+            "min_level": 1,
+            "max_level": 2,
         },
     ],
     "react": [
@@ -100,6 +186,8 @@ CURATED_RESOURCES: dict[str, list[dict[str, Any]]] = {
             "is_official": True,
             "source_name": "React Team (react.dev)",
             "notes": "Guide officiel interactif : composants, état, hooks et effets sans détour.",
+            "min_level": 1,
+            "max_level": 3,
         },
         {
             "title": "React Official Docs — Thinking in React",
@@ -109,26 +197,43 @@ CURATED_RESOURCES: dict[str, list[dict[str, Any]]] = {
             "is_official": True,
             "source_name": "React.dev",
             "notes": "Méthode officielle pour découper une interface en composants propres.",
+            "min_level": 1,
+            "max_level": 3,
         },
         {
-            "title": "Formation React moderne (Vidéo FR)",
-            "url": "https://grafikart.fr/formations/react",
-            "resource_type": "video",
-            "language": "fr",
-            "is_official": False,
-            "source_name": "Grafikart",
-            "notes": "Vidéos pratiques progressives sur React, hooks et formulaires.",
+            "title": "TanStack Query — Documentation officielle React",
+            "url": "https://tanstack.com/query/latest/docs/framework/react/overview",
+            "resource_type": "documentation",
+            "language": "en",
+            "is_official": True,
+            "source_name": "TanStack",
+            "notes": "Gestion du cache serveur, revalidations, mutations et synchronisation.",
+            "min_level": 2,
+            "max_level": 5,
+        },
+        {
+            "title": "Testing Library — React Testing Library",
+            "url": "https://testing-library.com/docs/react-testing-library/intro/",
+            "resource_type": "documentation",
+            "language": "en",
+            "is_official": True,
+            "source_name": "Testing Library",
+            "notes": "Tests d'accessibilité et de parcours utilisateur avec `getByRole` et `userEvent`.",
+            "min_level": 2,
+            "max_level": 5,
         },
     ],
     "sql": [
         {
-            "title": "Documentation officielle PostgreSQL (Référence SQL)",
+            "title": "Documentation officielle PostgreSQL (Tutoriel SQL)",
             "url": "https://www.postgresql.org/docs/current/tutorial.html",
             "resource_type": "documentation",
             "language": "en",
             "is_official": True,
             "source_name": "PostgreSQL Global Development Group",
             "notes": "Tutoriel officiel sur SELECT, jointures, agrégations et transactions.",
+            "min_level": 1,
+            "max_level": 3,
         },
         {
             "title": "SQLBolt — Exercices interactifs SQL pas à pas",
@@ -138,6 +243,8 @@ CURATED_RESOURCES: dict[str, list[dict[str, Any]]] = {
             "is_official": False,
             "source_name": "SQLBolt",
             "notes": "Leçons courtes et requêtes exécutables directement dans le navigateur.",
+            "min_level": 1,
+            "max_level": 2,
         },
         {
             "title": "Formation SQL & Bases de données relationnelles (FR)",
@@ -147,15 +254,30 @@ CURATED_RESOURCES: dict[str, list[dict[str, Any]]] = {
             "is_official": False,
             "source_name": "SQL.sh",
             "notes": "Fiches synthétiques en français pour chaque clause SQL avec exemples.",
+            "min_level": 1,
+            "max_level": 4,
         },
         {
-            "title": "PostgreSQL & SQL Full Course (Vidéo EN)",
-            "url": "https://www.youtube.com/watch?v=qw--VYLpxG4",
-            "resource_type": "video",
+            "title": "PostgreSQL — Indexation & plans d'exécution (Docs)",
+            "url": "https://www.postgresql.org/docs/current/indexes.html",
+            "resource_type": "documentation",
             "language": "en",
-            "is_official": False,
-            "source_name": "freeCodeCamp",
-            "notes": "Cours complet de 4 h couvrant schémas, requêtes, index et jointures.",
+            "is_official": True,
+            "source_name": "PostgreSQL.org",
+            "notes": "B-Tree, index composites, index partiels et lecture d'EXPLAIN ANALYZE.",
+            "min_level": 3,
+            "max_level": 5,
+        },
+        {
+            "title": "PostgreSQL — Contrôle de concurrence & Transactions (MVCC)",
+            "url": "https://www.postgresql.org/docs/current/mvcc.html",
+            "resource_type": "documentation",
+            "language": "en",
+            "is_official": True,
+            "source_name": "PostgreSQL.org",
+            "notes": "Niveaux d'isolation, verrous, deadlocks et intégrité transactionnelle.",
+            "min_level": 4,
+            "max_level": 5,
         },
     ],
     "rust": [
@@ -166,7 +288,9 @@ CURATED_RESOURCES: dict[str, list[dict[str, Any]]] = {
             "language": "en",
             "is_official": True,
             "source_name": "Rust-lang.org",
-            "notes": "Référence officielle complète sur l’ownership, le borrowing et les traits.",
+            "notes": "Référence officielle complète sur l’ownership, le borrowing, les traits et la concurrence.",
+            "min_level": 1,
+            "max_level": 5,
         },
         {
             "title": "Rust by Example (Officiel)",
@@ -176,6 +300,8 @@ CURATED_RESOURCES: dict[str, list[dict[str, Any]]] = {
             "is_official": True,
             "source_name": "Rust-lang.org",
             "notes": "Exemples compilables et modifiables directement en ligne.",
+            "min_level": 1,
+            "max_level": 4,
         },
         {
             "title": "Rustlings — Exercices officiels progressifs",
@@ -185,6 +311,19 @@ CURATED_RESOURCES: dict[str, list[dict[str, Any]]] = {
             "is_official": True,
             "source_name": "Rust Team",
             "notes": "Petits exercices ciblés pour maîtriser la syntaxe et le compilateur.",
+            "min_level": 1,
+            "max_level": 3,
+        },
+        {
+            "title": "Asynchronous Programming in Rust (Async Book)",
+            "url": "https://rust-lang.github.io/async-book/",
+            "resource_type": "documentation",
+            "language": "en",
+            "is_official": True,
+            "source_name": "Rust-lang.org",
+            "notes": "Futures, async/await, Tokio et conception de services concurrents sûrs.",
+            "min_level": 4,
+            "max_level": 5,
         },
     ],
     "java": [
@@ -195,7 +334,9 @@ CURATED_RESOURCES: dict[str, list[dict[str, Any]]] = {
             "language": "en",
             "is_official": True,
             "source_name": "Oracle Java",
-            "notes": "Guide officiel moderne : POO, collections, streams et concurrence.",
+            "notes": "Guide officiel moderne : POO, records, collections, streams et concurrence.",
+            "min_level": 1,
+            "max_level": 5,
         },
         {
             "title": "MOOC Java Programming (University of Helsinki)",
@@ -205,15 +346,19 @@ CURATED_RESOURCES: dict[str, list[dict[str, Any]]] = {
             "is_official": True,
             "source_name": "University of Helsinki",
             "notes": "Parcours universitaire reconnu avec exercices pratiques corrigés.",
+            "min_level": 1,
+            "max_level": 3,
         },
         {
-            "title": "Cours Java Orienté Objet complet (Vidéo FR)",
-            "url": "https://www.youtube.com/watch?v=rM2zT5C4R88",
-            "resource_type": "video",
-            "language": "fr",
-            "is_official": False,
-            "source_name": "YouTube FR",
-            "notes": "Vidéo claire en français pour démarrer avec les classes et méthodes Java.",
+            "title": "Dev.java — Streams, Optional & Collections modernes",
+            "url": "https://dev.java/learn/api/streams/",
+            "resource_type": "documentation",
+            "language": "en",
+            "is_official": True,
+            "source_name": "Oracle Java",
+            "notes": "Pipelines fonctionnels, collecteurs et bonnes pratiques sans NullPointerException.",
+            "min_level": 2,
+            "max_level": 5,
         },
     ],
     "go": [
@@ -225,15 +370,19 @@ CURATED_RESOURCES: dict[str, list[dict[str, Any]]] = {
             "is_official": True,
             "source_name": "go.dev",
             "notes": "Tour officiel interactif des bases, interfaces et goroutines.",
+            "min_level": 1,
+            "max_level": 3,
         },
         {
-            "title": "Documentation officielle Go",
+            "title": "Documentation officielle Go (Effective Go)",
             "url": "https://go.dev/doc/",
             "resource_type": "documentation",
             "language": "en",
             "is_official": True,
             "source_name": "go.dev",
             "notes": "Effective Go et guides officiels de conception idiomatique.",
+            "min_level": 1,
+            "max_level": 5,
         },
     ],
 }
@@ -247,6 +396,8 @@ FALLBACK_RESOURCES: list[dict[str, Any]] = [
         "is_official": True,
         "source_name": "Mozilla MDN",
         "notes": "Base documentaire fiable et régulièrement mise à jour.",
+        "min_level": 1,
+        "max_level": 5,
     },
     {
         "title": "Roadmap.sh — Parcours guidés par compétences",
@@ -256,24 +407,19 @@ FALLBACK_RESOURCES: list[dict[str, Any]] = [
         "is_official": False,
         "source_name": "roadmap.sh",
         "notes": "Cartographie claire des notions par palier de progression.",
+        "min_level": 1,
+        "max_level": 5,
     },
     {
-        "title": "Grafikart — Tutoriels vidéo pratiques en français",
-        "url": "https://grafikart.fr/tutoriels",
-        "resource_type": "video",
-        "language": "fr",
-        "is_official": False,
-        "source_name": "Grafikart",
-        "notes": "Explications vidéo structurées en français avec cas concrets.",
-    },
-    {
-        "title": "freeCodeCamp — Cours vidéo complets gratuits",
+        "title": "freeCodeCamp — Parcours pratiques gratuits",
         "url": "https://www.freecodecamp.org/learn/",
-        "resource_type": "video",
+        "resource_type": "interactive",
         "language": "en",
         "is_official": False,
         "source_name": "freeCodeCamp",
-        "notes": "Cours approfondis gratuits avec projets pratiques.",
+        "notes": "Exercices interactifs et projets progressifs gratuits.",
+        "min_level": 1,
+        "max_level": 5,
     },
 ]
 
@@ -308,10 +454,10 @@ def resolve_topic_key(subject: str) -> str:
     lowered = subject.strip().lower()
     if "python" in lowered or "fastapi" in lowered or "django" in lowered:
         return "python"
-    if "typescript" in lowered or lowered == "ts":
+    if "typescript" in lowered or re_word_match(lowered, "ts"):
         return "typescript"
-    if "javascript" in lowered or lowered == "js":
-        return "typescript"
+    if "javascript" in lowered or re_word_match(lowered, "js"):
+        return "javascript"
     if "react" in lowered or "next" in lowered:
         return "react"
     if "sql" in lowered or "postgres" in lowered:
@@ -329,10 +475,20 @@ def re_word_match(text: str, word: str) -> bool:
     return f" {word} " in f" {text} " or text == word
 
 
-def get_curated_resources_for_subject(subject: str, language_pref: str) -> list[dict[str, Any]]:
+def get_curated_resources_for_subject(
+    subject: str,
+    language_pref: str,
+    level_number: int = 1,
+) -> list[dict[str, Any]]:
     topic = resolve_topic_key(subject)
     raw_list = CURATED_RESOURCES.get(topic, [])
-    combined = list(raw_list) if raw_list else list(FALLBACK_RESOURCES)
+    base = list(raw_list) if raw_list else list(FALLBACK_RESOURCES)
+    scoped = [
+        r
+        for r in base
+        if int(r.get("min_level", 1)) <= level_number <= int(r.get("max_level", 5))
+    ]
+    combined = scoped if len(scoped) >= 2 else base
     if language_pref == "fr":
         combined.sort(key=lambda r: (0 if r["language"] == "fr" else 1, 0 if r["is_official"] else 1))
     elif language_pref == "en":
@@ -340,6 +496,113 @@ def get_curated_resources_for_subject(subject: str, language_pref: str) -> list[
     else:
         combined.sort(key=lambda r: (0 if r["is_official"] else 1, r["language"]))
     return combined[:6]
+
+
+def normalize_lesson_to_eight_parts(
+    lesson: dict[str, Any],
+    *,
+    subject: str,
+    code_lang: str,
+    level_number: int,
+    language_pref: str = "fr",
+) -> dict[str, Any]:
+    """Garantit une structure pédagogique complète en 8 rubriques et des exercices typés."""
+    raw_md = str(lesson.get("content_markdown") or "").strip()
+    summary = str(lesson.get("summary") or "").strip()
+    title = str(lesson.get("title") or "Chapitre").strip()
+    examples = list(lesson.get("code_examples") or [])
+    exercises = list(lesson.get("exercises") or [])
+
+    if "### 2. Prérequis" not in raw_md and "### 2. Prerequisites" not in raw_md:
+        ex_code_block = ""
+        if examples and "```" not in raw_md:
+            first_ex = examples[0]
+            ex_code_block = (
+                f"\n```{first_ex.get('language') or code_lang}\n"
+                f"{first_ex.get('code', '')}\n```\n"
+                f"*{first_ex.get('explanation', '')}*\n"
+            )
+
+        if language_pref == "en":
+            sections = [
+                f"## 1. Learning Objective\n\n{summary or title}",
+                f"### 2. Prerequisites & Intuition\n\nEnsure previous concepts in **{subject}** (Level {level_number}) are solid before combining them here.",
+                f"### 3. Step-by-Step Explanation\n\n{raw_md}",
+                f"### 4. Annotated Example\n\nInspect the input contract, transformation logic, and explicit return value.{ex_code_block}",
+                "### 5. Edge Cases & Common Pitfalls\n\n- Always validate empty, null, or out-of-bounds inputs early.\n- Avoid silent fallbacks when an invariant fails.",
+                "### 6. Best Practices\n\n- Keep functions single-purpose with shallow nesting and explicit types or contracts.",
+                f"### 7. Key Takeaway\n\nMastering **{title}** relies on explicit boundaries, readable invariants, and reproducible verification.",
+                "### 8. Comprehension Check\n\nBefore coding, explain *why* each guard exists and test both a nominal case and an invalid input.",
+            ]
+        else:
+            bilingual_note = (
+                f"\n\n*(Key terms: prerequisite = prérequis, edge case = cas limite, guard clause = retour anticipé)*"
+                if language_pref == "bilingual"
+                else ""
+            )
+            sections = [
+                f"## 1. Objectif pédagogique\n\n{summary or title}{bilingual_note}",
+                f"### 2. Prérequis & intuition\n\nPour aborder **{title}** en **{subject}** (Niveau {level_number}), appuyez-vous sur des entrées clairement typées et une séparation nette entre validation et calcul.",
+                f"### 3. Explication pas à pas\n\n{raw_md}",
+                f"### 4. Exemple concret commenté\n\nObservez comment l’exemple ci-dessous protège les entrées et rend le résultat explicite.{ex_code_block}",
+                "### 5. Cas limites & pièges fréquents\n\n- Entrée vide, nulle (`None`/`null`) ou hors bornes : validez dès le début de la fonction.\n- Ne masquez jamais une erreur par un résultat par défaut trompeur.",
+                "### 6. Bonnes pratiques\n\n- Fonctions courtes à responsabilité unique, noms explicites et gestion d’erreurs déterministe.",
+                f"### 7. Synthèse à retenir\n\n« {title} » repose sur un contrat clair (entrées attendues -> traitement -> sortie ou erreur explicite).",
+                "### 8. Contrôle de compréhension\n\nAvant de passer au chapitre suivant, résumez le rôle du cas limite principal avec vos mots et réalisez l’exercice guidé ci-dessous.",
+            ]
+        normalized_md = "\n\n".join(sections)
+    else:
+        normalized_md = raw_md
+
+    normalized_exercises: list[dict[str, Any]] = []
+    for idx, ex in enumerate(exercises):
+        item = dict(ex)
+        if "exercise_type" not in item:
+            starter = str(item.get("starter_code") or "").strip()
+            if item.get("expected_answer") and item.get("choices"):
+                item["exercise_type"] = "closed_quiz"
+            elif starter or code_lang != "text":
+                item["exercise_type"] = "code"
+            else:
+                item["exercise_type"] = "open_explanation"
+        item.setdefault("choices", [])
+        item.setdefault("expected_answer", None)
+        normalized_exercises.append(item)
+        # Ajouter un quiz fermé de contrôle de compréhension sur le premier chapitre si absent
+        if idx == 0 and len(exercises) == 1 and int(lesson.get("position") or 1) == 4:
+            concepts = list(item.get("expected_concepts") or [])
+            anchor = concepts[0] if concepts else subject
+            correct_choice = (
+                f"Valider les entrées/invariants dès le début et vérifier {anchor} sur cas nominal et cas limite"
+            )
+            normalized_exercises.append(
+                {
+                    "id": f"{item.get('id', f'lv{level_number}')}-quiz",
+                    "title": f"Contrôle rapide : {title}",
+                    "difficulty": "guide",
+                    "exercise_type": "closed_quiz",
+                    "instructions_markdown": (
+                        f"Quelle pratique garantit la fiabilité de « {title} » au niveau {level_number} ?"
+                    ),
+                    "choices": [
+                        correct_choice,
+                        "Ignorer les entrées invalides pour éviter de lever une erreur",
+                        "Dupliquer la logique dans chaque appelant sans tests",
+                    ],
+                    "expected_answer": correct_choice,
+                    "starter_code": None,
+                    "hints": [
+                        "Pensez aux retours anticipés (guard clauses) et aux cas limites."
+                    ],
+                    "expected_concepts": concepts[:3] or ["validation", "cas limite"],
+                }
+            )
+
+    return {
+        **lesson,
+        "content_markdown": normalized_md,
+        "exercises": normalized_exercises,
+    }
 
 
 def get_python_levels() -> dict[int, dict[str, Any]]:
@@ -1090,6 +1353,300 @@ def get_python_levels() -> dict[int, dict[str, Any]]:
                 "Suite de tests `TestClient` vérifiant 201, 404 et 422",
             ],
         },
+        4: {
+            "title": "Niveau 4 — SQLAlchemy 2, Alembic réversible, PostgreSQL & indexation",
+            "summary": "Modéliser des schémas relationnels robustes, transactions sûres et migrations réversibles.",
+            "objectives": [
+                "Concevoir des modèles SQLAlchemy 2.0 typés avec clés étrangères et contraintes CHECK",
+                "Écrire des migrations Alembic réversibles (`upgrade`/`downgrade`) sans perte de données",
+                "Éviter les problèmes N+1 et choisir des index adaptés aux requêtes fréquentes",
+                "Encapsuler les mutations multi-tables dans une transaction atomique",
+            ],
+            "lessons": [
+                {
+                    "position": 1,
+                    "title": "Modèles SQLAlchemy 2.0 et contraintes d'intégrité",
+                    "summary": "Garantir les invariants métier directement dans PostgreSQL via CheckConstraint et Index.",
+                    "estimated_minutes": 30,
+                    "content_markdown": "Utilisez `Mapped[...]` et `mapped_column(...)` avec `CheckConstraint` pour empêcher toute donnée incohérente même hors API.",
+                    "code_examples": [
+                        {
+                            "title": "Table ORM avec contrainte CHECK et index",
+                            "language": "python",
+                            "code": (
+                                "from sqlalchemy import CheckConstraint, Index, Integer, String\n"
+                                "from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column\n\n"
+                                "class Base(DeclarativeBase):\n    pass\n\n"
+                                "class CourseRow(Base):\n"
+                                "    __tablename__ = 'courses'\n"
+                                "    __table_args__ = (\n"
+                                "        CheckConstraint('current_level BETWEEN 1 AND 5', name='ck_level'),\n"
+                                "        Index('ix_courses_owner', 'owner_id'),\n"
+                                "    )\n"
+                                "    id: Mapped[str] = mapped_column(String(36), primary_key=True)\n"
+                                "    owner_id: Mapped[str] = mapped_column(String(36), nullable=False)\n"
+                                "    current_level: Mapped[int] = mapped_column(Integer, nullable=False, default=1)"
+                            ),
+                            "explanation": "La base refuse toute insertion hors [1, 5] quel que soit le point d'entrée.",
+                        }
+                    ],
+                    "exercises": [
+                        {
+                            "id": "py-4-1-ex1",
+                            "title": "Modèle ORM contraint + index composite",
+                            "difficulty": "pratique",
+                            "instructions_markdown": "Écrivez une classe SQLAlchemy 2 avec `CheckConstraint` sur `score` (0..100) et `Index` sur `user_id`.",
+                            "starter_code": "from sqlalchemy import CheckConstraint, Integer\n",
+                            "hints": ["Déclarez `__table_args__ = (CheckConstraint(...), Index(...))`."],
+                            "expected_concepts": ["CheckConstraint", "Mapped", "Index"],
+                        }
+                    ],
+                },
+                {
+                    "position": 2,
+                    "title": "Transactions atomiques et rollback sûr",
+                    "summary": "Ne jamais laisser d'écriture partielle en base lors d'une opération composée.",
+                    "estimated_minutes": 25,
+                    "content_markdown": "Utilisez `flush()` pendant les étapes intermédiaires puis un unique `commit()`, ou `with session.begin():`, afin qu'une erreur annule tout le bloc.",
+                    "code_examples": [
+                        {
+                            "title": "Unité de travail atomique avec rollback",
+                            "language": "python",
+                            "code": (
+                                "def approve_and_bump(db, skill_row, assessment_row):\n"
+                                "    try:\n"
+                                "        assessment_row.status = 'approved'\n"
+                                "        skill_row.current_level += 1\n"
+                                "        db.commit()\n"
+                                "    except Exception:\n"
+                                "        db.rollback()\n"
+                                "        raise"
+                            ),
+                            "explanation": "En cas d'exception, aucune modification partielle n'est conservée.",
+                        }
+                    ],
+                    "exercises": [
+                        {
+                            "id": "py-4-2-ex1",
+                            "title": "Mutation conditionnelle + rollback",
+                            "difficulty": "pratique",
+                            "instructions_markdown": "Implémentez une fonction Python effectuant deux mises à jour SQLAlchemy avec `try/except/rollback`.",
+                            "starter_code": "def transfer_state(db, src, dst):\n    pass\n",
+                            "hints": ["Appelez `db.rollback()` avant `raise` dans `except Exception:`."],
+                            "expected_concepts": ["commit", "rollback", "try", "except"],
+                        }
+                    ],
+                },
+                {
+                    "position": 3,
+                    "title": "Migrations Alembic réversibles",
+                    "summary": "Faire évoluer le schéma PostgreSQL et SQLite sans casser les données existantes.",
+                    "estimated_minutes": 25,
+                    "content_markdown": "Chaque migration doit définir `upgrade()` et `downgrade()`, fournir des valeurs par défaut aux nouvelles colonnes NOT NULL et être testée en aller-retour.",
+                    "code_examples": [
+                        {
+                            "title": "Ajout de colonne avec batch_alter_table",
+                            "language": "python",
+                            "code": (
+                                "from alembic import op\n"
+                                "import sqlalchemy as sa\n\n"
+                                "def upgrade():\n"
+                                "    op.add_column('courses', sa.Column('revision', sa.Integer(), nullable=False, server_default='1'))\n\n"
+                                "def downgrade():\n"
+                                "    op.drop_column('courses', 'revision')"
+                            ),
+                            "explanation": "`server_default` évite d'échouer sur les lignes déjà présentes.",
+                        }
+                    ],
+                    "exercises": [
+                        {
+                            "id": "py-4-3-ex1",
+                            "title": "Migration upgrade/downgrade propre",
+                            "difficulty": "pratique",
+                            "instructions_markdown": "Écrivez les fonctions `upgrade()` et `downgrade()` Alembic ajoutant un champ indexé sans casser les données.",
+                            "starter_code": "from alembic import op\nimport sqlalchemy as sa\n",
+                            "hints": ["Créez l'index dans `upgrade` et supprimez-le avant `drop_column` dans `downgrade`."],
+                            "expected_concepts": ["op.add_column", "op.drop_column", "upgrade", "downgrade"],
+                        }
+                    ],
+                },
+                {
+                    "position": 4,
+                    "title": "Requêtes efficaces et prévention du N+1",
+                    "summary": "Regrouper les lectures et vérifier le coût réel des requêtes.",
+                    "estimated_minutes": 25,
+                    "content_markdown": "Chargez les relations par lot (`selectinload` ou requête `WHERE id IN (...)`) au lieu d'exécuter une requête SQL par élément dans une boucle.",
+                    "code_examples": [
+                        {
+                            "title": "Regroupement par dictionnaire en Python",
+                            "language": "python",
+                            "code": (
+                                "by_course = {}\n"
+                                "for lesson in all_lessons:\n"
+                                "    by_course.setdefault(lesson.course_id, []).append(lesson)"
+                            ),
+                            "explanation": "Une seule requête SQL suffit pour alimenter tous les résumés.",
+                        }
+                    ],
+                    "exercises": [
+                        {
+                            "id": "py-4-4-ex1",
+                            "title": "Indexation en mémoire O(n) vs N+1",
+                            "difficulty": "defi",
+                            "instructions_markdown": "Écrivez une fonction Python qui regroupe des leçons par `level_id` en O(n) et calcule le taux de complétion.",
+                            "starter_code": "def summarize_levels(lessons: list[dict]) -> dict[str, float]:\n    pass\n",
+                            "hints": ["Groupez avec un dictionnaire intermédiaire puis calculez `completed / total`."],
+                            "expected_concepts": ["dict", "return", "for"],
+                        }
+                    ],
+                },
+            ],
+            "project_title": "Couche de persistance Python SQLAlchemy 2 + Alembic testée (CRUD & transactions)",
+            "project_brief": "### Contexte\nConstruisez un dépôt SQLAlchemy 2.0 complet avec contraintes CHECK, index, transaction atomique rollback-safe et test d'aller-retour Alembic.",
+            "project_deliverables": [
+                "Modèles ORM contraints avec clés étrangères et index",
+                "Opération transactionnelle atomique avec test de rollback",
+                "Script Alembic réversible testé (`upgrade` / `downgrade`)",
+            ],
+        },
+        5: {
+            "title": "Niveau 5 — Architecture sécurisée, observabilité & mise en production Python",
+            "summary": "Concevoir un service Python durci : chiffrement AEAD, SSRF-safe HTTP, limitation de débit et tests de non-régression.",
+            "objectives": [
+                "Protéger les secrets avec chiffrement authentifié (AES-GCM) et zéro fuite dans les logs",
+                "Valider toutes les URL sortantes contre le SSRF et gérer les timeouts/redirections",
+                "Structurer des tests d'architecture, de sécurité et de performance reproductibles",
+            ],
+            "lessons": [
+                {
+                    "position": 1,
+                    "title": "Chiffrement authentifié AES-256-GCM des secrets",
+                    "summary": "Protéger les clés tierces au repos avec nonce unique et données associées (AAD).",
+                    "estimated_minutes": 30,
+                    "content_markdown": "Ne stockez jamais de secret tiers en clair : utilisez AES-256-GCM avec nonce aléatoire de 12 octets et l'identifiant propriétaire en AAD.",
+                    "code_examples": [
+                        {
+                            "title": "Enveloppe chiffrée versionnée avec AESGCM",
+                            "language": "python",
+                            "code": (
+                                "import os\nfrom cryptography.hazmat.primitives.ciphers.aead import AESGCM\n\n"
+                                "def seal(key: bytes, secret: str, aad: bytes) -> bytes:\n"
+                                "    nonce = os.urandom(12)\n"
+                                "    return nonce + AESGCM(key).encrypt(nonce, secret.encode('utf-8'), aad)"
+                            ),
+                            "explanation": "L'AAD lie le texte chiffré à un utilisateur précis pour empêcher toute substitution de ligne en base.",
+                        }
+                    ],
+                    "exercises": [
+                        {
+                            "id": "py-5-1-ex1",
+                            "title": "Fail-closed si clé de chiffrement absente",
+                            "difficulty": "pratique",
+                            "instructions_markdown": "Écrivez un wrapper Python qui refuse de chiffrer si la variable d'environnement est vide au lieu de stocker en clair.",
+                            "starter_code": "def encrypt_or_fail(master_key: str, secret: str) -> str:\n    pass\n",
+                            "hints": ["Levez `ValueError` ou `RuntimeError` si `not master_key.strip()`."],
+                            "expected_concepts": ["raise", "ValueError", "len"],
+                        }
+                    ],
+                },
+                {
+                    "position": 2,
+                    "title": "Client HTTP sortant SSRF-safe",
+                    "summary": "Bloquer IP privées, métadonnées cloud, redirections 3xx et réponses géantes.",
+                    "estimated_minutes": 30,
+                    "content_markdown": "Toute URL fournie par un utilisateur doit être parsée, limitée à HTTPS, vérifiée contre les plages privées/loopback/link-local après résolution DNS, et appelée sans suivre les redirections.",
+                    "code_examples": [
+                        {
+                            "title": "Filtrage ipaddress sur IP résolue",
+                            "language": "python",
+                            "code": (
+                                "import ipaddress\n\n"
+                                "def is_safe_public_ip(raw_ip: str) -> bool:\n"
+                                "    ip = ipaddress.ip_address(raw_ip)\n"
+                                "    return ip.is_global and not (ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved)"
+                            ),
+                            "explanation": "Bloque aussi 169.254.169.254 et les adresses loopback IPv4/IPv6.",
+                        }
+                    ],
+                    "exercises": [
+                        {
+                            "id": "py-5-2-ex1",
+                            "title": "Validateur d'URL sortante",
+                            "difficulty": "defi",
+                            "instructions_markdown": "Écrivez une fonction Python rejetant `http://`, `@`, query strings et IP privées avec `ipaddress`.",
+                            "starter_code": "from urllib.parse import urlparse\nimport ipaddress\n",
+                            "hints": ["Vérifiez `parsed.scheme == 'https'`, `not parsed.username`, et testez `ip.is_global`."],
+                            "expected_concepts": ["urlparse", "ipaddress", "https", "raise"],
+                        }
+                    ],
+                },
+                {
+                    "position": 3,
+                    "title": "Observabilité, request_id et erreurs propres",
+                    "summary": "Corréler chaque erreur sans jamais exposer de trace ni secret au client.",
+                    "estimated_minutes": 25,
+                    "content_markdown": "Générez un `request_id` unique par requête, loguez les erreurs internes côté serveur et renvoyez un contrat JSON uniforme sans stacktrace.",
+                    "code_examples": [
+                        {
+                            "title": "Contrat d'erreur normalisé",
+                            "language": "python",
+                            "code": (
+                                "def format_error(code: str, message: str, request_id: str) -> dict:\n"
+                                "    return {'error': {'code': code, 'message': message, 'request_id': request_id}}"
+                            ),
+                            "explanation": "Facilite le support tout en protégeant les détails internes.",
+                        }
+                    ],
+                    "exercises": [
+                        {
+                            "id": "py-5-3-ex1",
+                            "title": "Sanitisation de logs sans secret",
+                            "difficulty": "pratique",
+                            "instructions_markdown": "Écrivez une fonction Python masquant toute clé `sk-...` ou `Bearer ...` dans un message d'erreur.",
+                            "starter_code": "import re\ndef redact_secrets(text: str) -> str:\n    pass\n",
+                            "hints": ["Utilisez `re.sub` pour remplacer les jetons sensibles par `[REDACTED]`."],
+                            "expected_concepts": ["re.sub", "return"],
+                        }
+                    ],
+                },
+                {
+                    "position": 4,
+                    "title": "Checklist sécurité & tests de non-régression",
+                    "summary": "Automatiser les preuves de sécurité avant déploiement.",
+                    "estimated_minutes": 25,
+                    "content_markdown": "Chaque règle critique (isolation multi-tenant, absence de fuite de clé, rejet des entrées falsifiées) doit avoir un test Pytest dédié.",
+                    "code_examples": [
+                        {
+                            "title": "Assertion de non-régression IDOR",
+                            "language": "python",
+                            "code": (
+                                "def assert_isolated(status_code: int) -> None:\n"
+                                "    assert status_code in (403, 404)"
+                            ),
+                            "explanation": "Empêche toute régression silencieuse d'accès cross-tenant.",
+                        }
+                    ],
+                    "exercises": [
+                        {
+                            "id": "py-5-4-ex1",
+                            "title": "Suite de garde-fous production",
+                            "difficulty": "defi",
+                            "instructions_markdown": "Écrivez une fonction Python `check_prod_config(env, secret, allow_local)` qui lève une erreur sur configuration faible.",
+                            "starter_code": "def check_prod_config(env: str, secret: str, allow_local: bool) -> None:\n    pass\n",
+                            "hints": ["En `env == 'production'`, interdisez `allow_local` et exigez `len(secret) >= 32`."],
+                            "expected_concepts": ["production", "len", "raise"],
+                        }
+                    ],
+                },
+            ],
+            "project_title": "Service Python durci prêt pour la production (chiffrement, SSRF, garde-fous & suite Pytest)",
+            "project_brief": "### Contexte\nAssemblez un mini-service Python production combinant stockage chiffré de configuration, validation SSRF, garde-fous de démarrage et suite complète de tests Pytest.",
+            "project_deliverables": [
+                "Chiffrement AEAD fail-closed testé",
+                "Validateur SSRF et masquage strict des secrets",
+                "Tests Pytest nominaux et adversariaux passants",
+            ],
+        },
     }
 
 
@@ -1691,57 +2248,748 @@ def get_typescript_levels() -> dict[int, dict[str, Any]]:
                 "Suite de tests Vitest passante",
             ],
         },
+        4: {
+            "title": "Niveau 4 — Types conditionnels, utilitaires et contrats API génériques",
+            "summary": "Concevoir des abstractions génériques sûres avec `keyof`, types conditionnels et inférence contrôlée.",
+            "objectives": [
+                "Composer `Partial`, `Pick`, `Omit`, `Record` et types utilitaires maison",
+                "Inférer automatiquement types de retour et signatures d’actions (`infer`, `satisfies`)",
+                "Typage strict des clients HTTP génériques et gestion d'erreurs typée",
+            ],
+            "lessons": [
+                {
+                    "position": 1,
+                    "title": "Contraintes génériques, `keyof` et opérateur `satisfies`",
+                    "summary": "Préserver l’inférence littérale tout en validant un contrat de structure.",
+                    "estimated_minutes": 30,
+                    "content_markdown": "`satisfies` vérifie qu'une constante respecte un type sans écraser ses types littéraux précis.",
+                    "code_examples": [
+                        {
+                            "title": "Lookup typé avec `keyof T`",
+                            "language": "typescript",
+                            "code": "function pluck<T, K extends keyof T>(obj: T, key: K): T[K] {\n  return obj[key];\n}",
+                            "explanation": "Le compilateur garantit que `key` existe réellement sur `obj`.",
+                        }
+                    ],
+                    "exercises": [
+                        {
+                            "id": "ts-4-1-ex1",
+                            "title": "Accesseur générique `pickKeys`",
+                            "difficulty": "pratique",
+                            "instructions_markdown": "Écrivez une fonction TypeScript générique `pickField<T, K extends keyof T>(item: T, key: K): T[K]`.",
+                            "starter_code": "function pickField<T, K extends keyof T>(item: T, key: K): T[K] {\n  throw new Error('TODO');\n}\n",
+                            "hints": ["Retournez `item[key]`."],
+                            "expected_concepts": ["keyof", "extends", "return"],
+                        }
+                    ],
+                },
+                {
+                    "position": 2,
+                    "title": "Client `apiRequest<T>` générique et erreurs typées",
+                    "summary": "Standardiser appels réseau, statuts 401/422 et désérialisation sûre.",
+                    "estimated_minutes": 30,
+                    "content_markdown": "Encapsulez `fetch` dans un client générique qui valide le statut HTTP et lève une erreur métier structurée.",
+                    "code_examples": [
+                        {
+                            "title": "Type résultat sûr Ok | Err",
+                            "language": "typescript",
+                            "code": "type Result<T, E = string> = { ok: true; value: T } | { ok: false; error: E };",
+                            "explanation": "Oblige chaque appelant à traiter l'échec avant de lire `value`.",
+                        }
+                    ],
+                    "exercises": [
+                        {
+                            "id": "ts-4-2-ex1",
+                            "title": "Helper Result<T, E> avec narrowing",
+                            "difficulty": "pratique",
+                            "instructions_markdown": "Implémentez `unwrapOr<T, E>(res: Result<T, E>, fallback: T): T` sans cast `as`.",
+                            "starter_code": "type Result<T, E> = { ok: true; value: T } | { ok: false; error: E };\n",
+                            "hints": ["Testez `if (res.ok) return res.value; return fallback;`."],
+                            "expected_concepts": ["Result", "if", "return"],
+                        }
+                    ],
+                },
+                {
+                    "position": 3,
+                    "title": "Types conditionnels et validation à l'exécution",
+                    "summary": "Relier la sûreté statique TypeScript à des gardes de type runtime (`value is T`).",
+                    "estimated_minutes": 25,
+                    "content_markdown": "Les types TypeScript disparaissent à l'exécution : toute donnée JSON externe doit passer par un type guard `isX(raw): raw is X`.",
+                    "code_examples": [
+                        {
+                            "title": "Prédicat de type utilisateur",
+                            "language": "typescript",
+                            "code": "function isNonEmptyString(v: unknown): v is string {\n  return typeof v === 'string' && v.trim().length > 0;\n}",
+                            "explanation": "Après `if (isNonEmptyString(x))`, TypeScript sait que `x` est `string`.",
+                        }
+                    ],
+                    "exercises": [
+                        {
+                            "id": "ts-4-3-ex1",
+                            "title": "Prédicat `isRecord` sur `unknown`",
+                            "difficulty": "pratique",
+                            "instructions_markdown": "Écrivez un type guard `isPlainRecord(v: unknown): v is Record<string, unknown>` rejetant `null` et tableaux.",
+                            "starter_code": "function isPlainRecord(v: unknown): v is Record<string, unknown> {\n  return false;\n}\n",
+                            "hints": ["Vérifiez `typeof v === 'object' && v !== null && !Array.isArray(v)`."],
+                            "expected_concepts": ["unknown", "isPlainRecord", "Array.isArray"],
+                        }
+                    ],
+                },
+                {
+                    "position": 4,
+                    "title": "Refactorisation de DTO complexes sans `any`",
+                    "summary": "Éliminer `any` et assertions dangereuses dans les stores frontend.",
+                    "estimated_minutes": 25,
+                    "content_markdown": "Utilisez `Readonly<T>`, `Partial<T>` et des mappers purs testables en Vitest.",
+                    "code_examples": [
+                        {
+                            "title": "Patch typé immuable",
+                            "language": "typescript",
+                            "code": "function mergePatch<T extends object>(base: T, patch: Partial<T>): T {\n  return { ...base, ...patch };\n}",
+                            "explanation": "Empêche d'ajouter des clés inconnues lors d'une mise à jour.",
+                        }
+                    ],
+                    "exercises": [
+                        {
+                            "id": "ts-4-4-ex1",
+                            "title": "Mapper défensif de réponse API",
+                            "difficulty": "defi",
+                            "instructions_markdown": "Écrivez une fonction TypeScript qui convertit un objet `unknown` en `{ id: string; score: number }` ou lève une `Error`.",
+                            "starter_code": "function parseScoreDto(raw: unknown): { id: string; score: number } {\n  throw new Error('TODO');\n}\n",
+                            "hints": ["Validez `typeof obj === 'object' && obj !== null` puis chaque champ avec `typeof`."],
+                            "expected_concepts": ["unknown", "typeof", "throw"],
+                        }
+                    ],
+                },
+            ],
+            "project_title": "SDK TypeScript générique typé + gardes runtime + tests Vitest",
+            "project_brief": "### Contexte\nConcevez une mini-bibliothèque SDK TypeScript : `apiRequest<T>`, type `Result<T, E>`, prédicats runtime et suite de tests Vitest sous `tsc --noEmit` strict.",
+            "project_deliverables": [
+                "Client générique avec erreurs typées et zéro `any`",
+                "Prédicats runtime vérifiant les entrées JSON `unknown`",
+                "Tests Vitest couvrant succès, erreur et données corrompues",
+            ],
+        },
+        5: {
+            "title": "Niveau 5 — Architecture TypeScript stricte, tests de contrat & production",
+            "summary": "Garantir fiabilité bout-en-bout entre schéma backend, build Vite/tsc et sécurité client.",
+            "objectives": [
+                "Concevoir des machines à états typées sans transitions invalides",
+                "Auditer la sécurité frontend (aucun jeton en localStorage, validation d'URL)",
+                "Maintenir 0 erreur `tsc --noEmit` et un bundle production propre",
+            ],
+            "lessons": [
+                {
+                    "position": 1,
+                    "title": "Machines à états et transitions sûres",
+                    "summary": "Empêcher les états incohérents directement au niveau des types.",
+                    "estimated_minutes": 25,
+                    "content_markdown": "Modélisez explicitement les transitions autorisées via des signatures discriminées et `assertNever`.",
+                    "code_examples": [
+                        {
+                            "title": "Transition contrôlée de proposition IA",
+                            "language": "typescript",
+                            "code": "type ProposalStatus = 'pending' | 'executed' | 'rejected';\nfunction canAccept(s: ProposalStatus): boolean {\n  return s === 'pending';\n}",
+                            "explanation": "Centralise les règles de transition dans des helpers purs.",
+                        }
+                    ],
+                    "exercises": [
+                        {
+                            "id": "ts-5-1-ex1",
+                            "title": "Transition de niveau verrouillée",
+                            "difficulty": "pratique",
+                            "instructions_markdown": "Écrivez une fonction TypeScript vérifiant les transitions `'locked' -> 'unlocked' -> 'validated'` sans saut direct.",
+                            "starter_code": "type LevelStatus = 'locked' | 'unlocked' | 'validated';\n",
+                            "hints": ["Utilisez un objet `Record<LevelStatus, LevelStatus[]>`."],
+                            "expected_concepts": ["Record", "includes", "return"],
+                        }
+                    ],
+                },
+                {
+                    "position": 2,
+                    "title": "Sécurité côté navigateur : tokens mémoire & URL sûres",
+                    "summary": "Éviter XSS token theft et redirections/requêtes non sécurisées.",
+                    "estimated_minutes": 30,
+                    "content_markdown": "Conservez les jetons d'accès uniquement en mémoire React et validez toute URL externe avant `fetch`.",
+                    "code_examples": [
+                        {
+                            "title": "Validation HTTPS côté client",
+                            "language": "typescript",
+                            "code": "function assertHttpsUrl(raw: string): URL {\n  const u = new URL(raw);\n  if (u.protocol !== 'https:') throw new Error('HTTPS requis');\n  return u;\n}",
+                            "explanation": "Rejette `javascript:`, `data:` et `http://` externes.",
+                        }
+                    ],
+                    "exercises": [
+                        {
+                            "id": "ts-5-2-ex1",
+                            "title": "Validateur client d'URL API",
+                            "difficulty": "pratique",
+                            "instructions_markdown": "Écrivez `validateClientUrl(raw: string): string` autorisant `https:` et rejetant les IP privées `127.`/`10.`/`192.168.`.",
+                            "starter_code": "function validateClientUrl(raw: string): string {\n  throw new Error('TODO');\n}\n",
+                            "hints": ["Parsez avec `new URL(raw)` puis vérifiez `u.protocol` et `u.hostname`."],
+                            "expected_concepts": ["URL", "protocol", "throw"],
+                        }
+                    ],
+                },
+                {
+                    "position": 3,
+                    "title": "Refresh single-flight et résilience HTTP",
+                    "summary": "Éviter les courses de jetons lors des requêtes parallèles.",
+                    "estimated_minutes": 30,
+                    "content_markdown": "Partagez une unique promesse en vol (`inflightRefresh`) quand plusieurs requêtes reçoivent `401` simultanément.",
+                    "code_examples": [
+                        {
+                            "title": "Mutualisation d'appel asynchrone en vol",
+                            "language": "typescript",
+                            "code": (
+                                "let inflight: Promise<string | null> | null = null;\n"
+                                "export async function refreshOnce(fn: () => Promise<string | null>): Promise<string | null> {\n"
+                                "  if (!inflight) inflight = fn().finally(() => { inflight = null; });\n"
+                                "  return inflight;\n}"
+                            ),
+                            "explanation": "Évite de révoquer la famille de jetons par doubles appels simultanés.",
+                        }
+                    ],
+                    "exercises": [
+                        {
+                            "id": "ts-5-3-ex1",
+                            "title": "Verrou single-flight typé",
+                            "difficulty": "defi",
+                            "instructions_markdown": "Implémentez un helper générique `singleFlight<T>(fn: () => Promise<T>): () => Promise<T>` réinitialisé dans `.finally()`.",
+                            "starter_code": "function singleFlight<T>(fn: () => Promise<T>): () => Promise<T> {\n  throw new Error('TODO');\n}\n",
+                            "hints": ["Stockez `let pending: Promise<T> | null = null` dans la closure."],
+                            "expected_concepts": ["Promise", "finally", "return"],
+                        }
+                    ],
+                },
+                {
+                    "position": 4,
+                    "title": "Tests de contrat et build strict CI",
+                    "summary": "Garantir zéro régression de typage et de bundle avant livraison.",
+                    "estimated_minutes": 25,
+                    "content_markdown": "Associez `tsc --noEmit`, Vitest et `vite build` dans chaque pipeline.",
+                    "code_examples": [
+                        {
+                            "title": "Garde de contrat stricte",
+                            "language": "typescript",
+                            "code": "const assertPresent = <T>(v: T | null | undefined, msg: string): T => {\n  if (v == null) throw new Error(msg);\n  return v;\n};",
+                            "explanation": "Lève une erreur explicite au lieu de propager `undefined`.",
+                        }
+                    ],
+                    "exercises": [
+                        {
+                            "id": "ts-5-4-ex1",
+                            "title": "Assertion typée réutilisable",
+                            "difficulty": "pratique",
+                            "instructions_markdown": "Écrivez `assertDefined<T>(val: T | null | undefined): T` avec tests nominaux et nul.",
+                            "starter_code": "function assertDefined<T>(val: T | null | undefined): T {\n  throw new Error('TODO');\n}\n",
+                            "hints": ["Vérifiez `if (val === null || val === undefined) throw new Error(...)`."],
+                            "expected_concepts": ["undefined", "throw", "return"],
+                        }
+                    ],
+                },
+            ],
+            "project_title": "Client applicatif TypeScript production (machines à états, single-flight & validation sécurité)",
+            "project_brief": "### Contexte\nConstruisez un module client TypeScript production avec machine à états typée, refresh single-flight sans fuite, validation d'URL et tests Vitest.",
+            "project_deliverables": [
+                "Machine à états discriminée exhaustive",
+                "Refresh single-flight et validation URL sécurisée",
+                "Tests Vitest et 0 erreur `tsc --noEmit`",
+            ],
+        },
     }
 
 
-def get_generic_levels(subject: str, total_levels: int) -> dict[int, dict[str, Any]]:
-    code_lang = SUBJECT_CODE_LANG.get(resolve_topic_key(subject), "text")
+def _build_track_levels(
+    *,
+    prefix: str,
+    code_lang: str,
+    specs: dict[int, dict[str, Any]],
+) -> dict[int, dict[str, Any]]:
+    levels: dict[int, dict[str, Any]] = {}
+    for lvl_num, spec in specs.items():
+        lessons: list[dict[str, Any]] = []
+        for idx, ch in enumerate(spec["chapters"], start=1):
+            lessons.append(
+                {
+                    "position": idx,
+                    "title": ch["title"],
+                    "summary": ch["summary"],
+                    "estimated_minutes": ch.get("minutes", 25),
+                    "content_markdown": (
+                        f"## 1. Objectif pédagogique\n\n{ch['summary']}\n\n"
+                        f"### 2. Prérequis & intuition\n\n{ch.get('intuition', 'Appuyez-vous sur des entrées valides et des fonctions courtes.')}\n\n"
+                        f"### 3. Explication pas à pas\n\n{ch['explanation']}\n\n"
+                        f"### 4. Exemple concret commenté\n\n```{code_lang}\n{ch['code']}\n```\n\n"
+                        f"### 5. Cas limites & pièges fréquents\n\n{ch.get('pitfalls', '- Validez les entrées nulles, vides ou hors bornes dès le début.')}\n\n"
+                        f"### 6. Bonnes pratiques\n\n{ch['tip']}\n\n"
+                        f"### 7. Synthèse à retenir\n\n{ch['summary']}\n\n"
+                        f"### 8. Contrôle de compréhension\n\nComplétez l’exercice ci-dessous en justifiant chaque garde."
+                    ),
+                    "code_examples": [
+                        {
+                            "title": ch["example_title"],
+                            "language": code_lang,
+                            "code": ch["code"],
+                            "explanation": ch["tip"],
+                        }
+                    ],
+                    "exercises": [
+                        {
+                            "id": f"{prefix}-{lvl_num}-{idx}-ex1",
+                            "title": ch["exercise_title"],
+                            "difficulty": "guide" if idx <= 2 else ("defi" if lvl_num >= 4 and idx == 4 else "pratique"),
+                            "exercise_type": ch.get("exercise_type", "code"),
+                            "instructions_markdown": ch["exercise_prompt"],
+                            "starter_code": ch.get("starter", ""),
+                            "hints": ch["hints"],
+                            "expected_concepts": ch["concepts"],
+                            "choices": ch.get("choices", []),
+                            "expected_answer": ch.get("expected_answer"),
+                        }
+                    ],
+                }
+            )
+        levels[lvl_num] = {
+            "title": spec["title"],
+            "summary": spec["summary"],
+            "objectives": spec["objectives"],
+            "lessons": lessons,
+            "project_title": spec["project_title"],
+            "project_brief": spec["project_brief"],
+            "project_deliverables": spec["project_deliverables"],
+        }
+    return levels
+
+
+def get_javascript_levels() -> dict[int, dict[str, Any]]:
+    specs: dict[int, dict[str, Any]] = {
+        1: {
+            "title": "Niveau 1 — Fondations JavaScript modernes (ES6+, portée et fonctions)",
+            "summary": "Maîtriser `let`/`const`, fonctions pures, tableaux (`map`/`filter`/`reduce`) et contrôle des erreurs.",
+            "objectives": [
+                "Distinguer `const` et `let` et éviter la mutation involontaire d'objets",
+                "Manipuler tableaux et objets ES6+ avec `map`, `filter` et destructuration",
+                "Valider explicitement les paramètres et lever des `Error` adaptées",
+            ],
+            "chapters": [
+                {
+                    "title": "`const`, `let`, types primitifs et comparaisons strictes (`===`)",
+                    "summary": "Éviter les conversions implicites trompeuses de JavaScript.",
+                    "explanation": "Utilisez `const` par défaut, `let` uniquement en cas de réaffectation, et `===` pour bannir la coercition implicite de `==`.",
+                    "code": "function isPassingScore(score) {\n  if (typeof score !== 'number' || Number.isNaN(score)) return false;\n  return score >= 70;\n}",
+                    "example_title": "Validation stricte avec typeof et Number.isNaN",
+                    "tip": "Vérifiez toujours `typeof x === 'number' && !Number.isNaN(x)` avant un calcul.",
+                    "exercise_title": "Validateur d'âge ou note en JS pur",
+                    "exercise_prompt": "Écrivez une fonction JavaScript `normalizeScore(raw)` acceptant nombre ou chaîne numérique entre 0 et 100 et levant `RangeError` sinon.",
+                    "starter": "function normalizeScore(raw) {\n  throw new Error('TODO');\n}\n",
+                    "hints": ["Convertissez avec `Number(raw)` puis testez `Number.isFinite(val)`."],
+                    "concepts": ["function", "Number.isFinite", "if", "return"],
+                },
+                {
+                    "title": "Tableaux immuables : `map`, `filter` et `reduce`",
+                    "summary": "Transformer des collections sans boucle impérative ni mutation.",
+                    "explanation": "Contrairement à `.push()` ou `.sort()`, `.map()` et `.filter()` retournent un nouveau tableau sans altérer l'original.",
+                    "code": "const passed = submissions.filter((s) => s.score >= 70).map((s) => s.title);",
+                    "example_title": "Pipeline filtre + projection",
+                    "tip": "Copiez d'abord (`[...items].sort(...)`) avant d'appeler `.sort()` en JavaScript.",
+                    "exercise_title": "Calcul de moyenne des séances validées",
+                    "exercise_prompt": "Écrivez une fonction JS `averageCompleted(items)` qui filtre `item.done === true` et calcule la moyenne (0 si vide).",
+                    "starter": "function averageCompleted(items) {\n  throw new Error('TODO');\n}\n",
+                    "hints": ["Vérifiez `doneItems.length === 0` pour éviter `0 / 0 === NaN`."],
+                    "concepts": ["filter", "reduce", "length", "return"],
+                },
+                {
+                    "title": "Destructuration, valeurs par défaut et opérateur spread (`...`)",
+                    "summary": "Écrire du code ES6 concis et protégé contre `undefined`.",
+                    "explanation": "Utilisez le chaînage optionnel `?.` et `??` (nullish coalescing) pour ne traiter que `null` et `undefined` (pas `0` ni `false`).",
+                    "code": "function formatCourse({ title, level = 1 }) {\n  return `${title} (Niveau ${level})`;\n}",
+                    "example_title": "Destructuration avec défaut sûr",
+                    "tip": "Préférez `??` à `||` pour une valeur numérique pouvant valoir `0`.",
+                    "exercise_title": "Fusion immuable d'options",
+                    "exercise_prompt": "Implémentez `mergeConfig(base, override)` sans muter `base` et avec `??` pour les champs numériques.",
+                    "starter": "function mergeConfig(base, override) {\n  throw new Error('TODO');\n}\n",
+                    "hints": ["Utilisez `{ ...base, ...override }` après contrôle `override ?? {}`."],
+                    "concepts": ["??", "function", "return"],
+                },
+                {
+                    "title": "Gestion d'erreurs explicite avec `try / catch` et `throw`",
+                    "summary": "Transformer JSON ou entrées externes sans plantage silencieux.",
+                    "explanation": "Enveloppez `JSON.parse` dans `try / catch` afin de retourner une erreur claire ou un résultat maîtrisé.",
+                    "code": "function safeParseJson(raw) {\n  try { return { ok: true, data: JSON.parse(raw) }; } catch (err) { return { ok: false, error: err.message }; }\n}",
+                    "example_title": "Parsing JSON défensif",
+                    "tip": "Ne capturez jamais une erreur pour l'ignorer sans retour explicite.",
+                    "exercise_title": "Parseur JSON sécurisé",
+                    "exercise_prompt": "Écrivez `parseCoursePayload(raw)` vérifiant que `raw` est une chaîne non vide puis appelant `JSON.parse` dans `try/catch`.",
+                    "starter": "function parseCoursePayload(raw) {\n  throw new Error('TODO');\n}\n",
+                    "hints": ["Testez `if (typeof raw !== 'string' || !raw.trim())` avant `JSON.parse`."],
+                    "concepts": ["try", "catch", "JSON.parse", "return"],
+                },
+            ],
+            "project_title": "Catalogue JavaScript ES6+ de suivi d'exercices (filtrage immuable & gestion d'erreurs)",
+            "project_brief": "### Contexte\nImplémentez en JavaScript pur (ES6+) un gestionnaire de fiches d'exercices : ajout validé, calcul de statistiques immuable, import/export JSON défensif et vérifications.",
+            "project_deliverables": [
+                "Fonctions pures JS sans mutation d'entrée",
+                "Gestion explicite de `NaN`, tableaux vides et JSON invalide",
+                "Jeu d'assertions de test passant sans erreur",
+            ],
+        },
+        2: {
+            "title": "Niveau 2 — Closures, portée lexicale, DOM & événements navigateur",
+            "summary": "Comprendre closures, `this`, délégation d'événements DOM et gestion sûre du texte utilisateur.",
+            "objectives": [
+                "Expliquer portée lexicale et closures pour encapsuler un état privé",
+                "Manipuler le DOM proprement avec `textContent` (sans `innerHTML` sur entrées utilisateur)",
+                "Utiliser la délégation d'événements pour des interfaces performantes",
+            ],
+            "chapters": [
+                {
+                    "title": "Portée lexicale et closures JavaScript",
+                    "summary": "Créer des fabriques d'état privé sans variables globales.",
+                    "explanation": "Une closure capture les variables de sa fonction englobante même après le retour de celle-ci.",
+                    "code": "function createCounter(min = 0) {\n  let value = min;\n  return { inc: () => ++value, get: () => value };\n}",
+                    "example_title": "Compteur encapsulé par closure",
+                    "tip": "Les closures évitent de polluer `window` avec des variables partagées.",
+                    "exercise_title": "Store local encapsulé par closure",
+                    "exercise_prompt": "Écrivez `createTaskStore()` retournant `{ add, list }` où la liste interne ne peut pas être mutée de l'extérieur.",
+                    "starter": "function createTaskStore() {\n  const tasks = [];\n  return {};\n}\n",
+                    "hints": ["Retournez `[...tasks]` dans `list()` et validez le titre dans `add()`."],
+                    "concepts": ["function", "const", "return"],
+                },
+                {
+                    "title": "Manipulation DOM sûre et prévention XSS (`textContent`)",
+                    "summary": "Rendre des données dynamiques sans jamais injecter de HTML brut.",
+                    "explanation": "Utiliser `.innerHTML = userInput` ouvre une faille XSS immédiate ; `.textContent` échappe automatiquement le contenu.",
+                    "code": "const li = document.createElement('li');\nli.textContent = task.title;",
+                    "example_title": "Création de nœud DOM sans XSS",
+                    "tip": "Bannissez `innerHTML` pour toute donnée saisie ou reçue d'une API.",
+                    "exercise_title": "Rendu sécurisé d'une carte DOM",
+                    "exercise_prompt": "Écrivez une fonction JS construisant un élément `<li>` avec `createElement` et `textContent` sans `innerHTML`.",
+                    "starter": "function renderItem(doc, title) {\n  throw new Error('TODO');\n}\n",
+                    "hints": ["Appelez `doc.createElement('li')` puis `el.textContent = String(title)`."],
+                    "concepts": ["createElement", "textContent", "return"],
+                },
+                {
+                    "title": "Écouteurs, `preventDefault()` et délégation d'événements",
+                    "summary": "Gérer listes dynamiques et formulaires avec un seul écouteur.",
+                    "explanation": "Écoutez le conteneur parent puis inspectez `event.target.closest('button')`.",
+                    "code": "listEl.addEventListener('click', (e) => {\n  const btn = e.target.closest('[data-id]');\n  if (!btn) return;\n});",
+                    "example_title": "Délégation DOM avec closest",
+                    "tip": "Retirez les écouteurs ou utilisez un `AbortController` lors de la destruction d'une vue.",
+                    "exercise_title": "Gestionnaire délégué d'actions",
+                    "exercise_prompt": "Écrivez une fonction JS gérant `click` via `closest('[data-action]')` avec garde si null.",
+                    "starter": "function handleListClick(event, onDelete) {\n  throw new Error('TODO');\n}\n",
+                    "hints": ["Vérifiez `if (!btn) return;` avant de lire `btn.dataset.id`."],
+                    "concepts": ["closest", "if", "return"],
+                },
+                {
+                    "title": "Timers, `debounce` et nettoyage d'effets",
+                    "summary": "Éviter les rafales d'appels pendant la saisie utilisateur.",
+                    "explanation": "`clearTimeout` dans une closure `debounce` retarde l'exécution jusqu'à la fin de la saisie.",
+                    "code": "function debounce(fn, delayMs) {\n  let id = null;\n  return (...args) => { clearTimeout(id); id = setTimeout(() => fn(...args), delayMs); };\n}",
+                    "example_title": "Utilitaire debounce avec closure",
+                    "tip": "Prévoyez une méthode `.cancel()` pour nettoyer au démontage.",
+                    "exercise_title": "Debounce avec annulation explicite",
+                    "exercise_prompt": "Implémentez `debounce(fn, delay)` avec gestion `clearTimeout` et exposition de `cancel`.",
+                    "starter": "function debounce(fn, delay) {\n  throw new Error('TODO');\n}\n",
+                    "hints": ["Attachez `wrapped.cancel = () => clearTimeout(timer)`."],
+                    "concepts": ["setTimeout", "clearTimeout", "return"],
+                },
+            ],
+            "project_title": "Mini-interface JavaScript DOM sécurisée (closure store, délégation & debounce)",
+            "project_brief": "### Contexte\nRéalisez une interface JS vanilla sans framework gérant une liste filtrable avec store par closure, rendu DOM sûr via `textContent` et champ recherche debouncé.",
+            "project_deliverables": [
+                "Store privé par closure sans fuite globale",
+                "Rendu DOM exclusivement via `textContent`",
+                "Délégation d'événements et recherche debouncée",
+            ],
+        },
+        3: {
+            "title": "Niveau 3 — JavaScript asynchrone : Promesses, `async/await` & Fetch",
+            "summary": "Maîtriser event loop, `Promise.all`, `AbortController`, timeouts et erreurs HTTP.",
+            "objectives": [
+                "Écrire des flux asynchrones lisibles avec `async`/`await` et `try/catch`",
+                "Vérifier systématiquement `response.ok` avec `fetch`",
+                "Annuler les requêtes obsolètes avec `AbortController` et gérer les délais",
+            ],
+            "chapters": [
+                {
+                    "title": "Event loop, Promesses et `async/await`",
+                    "summary": "Comprendre file de microtâches et propagation des rejets.",
+                    "explanation": "Une fonction `async` retourne toujours une `Promise`. Utilisez `try/catch` autour d'`await`.",
+                    "code": "async function loadSafe(fn) {\n  try { return { ok: true, data: await fn() }; } catch (err) { return { ok: false, error: err }; }\n}",
+                    "example_title": "Capture asynchrone propre",
+                    "tip": "N'oubliez jamais `await` devant une promesse retournée dans un bloc `try/catch`.",
+                    "exercise_title": "Wrapper asynchrone avec repli sûr",
+                    "exercise_prompt": "Écrivez une fonction `async` exécutant deux tâches en parallèle avec `Promise.all` et gérant l'erreur via `try/catch`.",
+                    "starter": "async function loadBoth(a, b) {\n  throw new Error('TODO');\n}\n",
+                    "hints": ["Utilisez `const [resA, resB] = await Promise.all([a(), b()])`."],
+                    "concepts": ["async", "await", "Promise.all", "try", "catch"],
+                },
+                {
+                    "title": "Client `fetch` sûr avec `response.ok` et timeout",
+                    "summary": "Rappeler que `fetch` ne rejette pas sur HTTP 404 ou 500.",
+                    "explanation": "`fetch` ne lève d'exception que sur panne réseau : il faut tester `if (!response.ok)` explicitement.",
+                    "code": "async function getJson(url, signal) {\n  const res = await fetch(url, { signal });\n  if (!res.ok) throw new Error(`HTTP ${res.status}`);\n  return res.json();\n}",
+                    "example_title": "Vérification HTTP obligatoire sur fetch",
+                    "tip": "Passez toujours un `AbortSignal.timeout(...)` ou un `AbortController` pour borner l'attente.",
+                    "exercise_title": "Client fetch avec timeout AbortController",
+                    "exercise_prompt": "Écrivez `fetchWithTimeout(url, timeoutMs)` vérifiant `res.ok` et nettoyant le timer dans `finally`.",
+                    "starter": "async function fetchWithTimeout(url, timeoutMs) {\n  throw new Error('TODO');\n}\n",
+                    "hints": ["Appelez `controller.abort()` dans `setTimeout` et `clearTimeout` dans `finally`."],
+                    "concepts": ["fetch", "AbortController", "finally", "throw"],
+                },
+                {
+                    "title": "Retry contrôlé avec backoff et arrêt sur erreur 4xx",
+                    "summary": "Réessayer uniquement les pannes transitoires (5xx/réseau), jamais 400/401/422.",
+                    "explanation": "Réessayer une requête 401 ou 422 aggrave le blocage et gaspille le quota.",
+                    "code": "const shouldRetry = (status) => status >= 500 || status === 429;",
+                    "example_title": "Critère de réessai HTTP sain",
+                    "tip": "Bornez toujours le nombre maximum de tentatives (ex. 2 ou 3).",
+                    "exercise_title": "Politique retry sans boucle infinie",
+                    "exercise_prompt": "Écrivez `retryTransient(fn, maxAttempts)` qui réessaie uniquement si `err.status >= 500`.",
+                    "starter": "async function retryTransient(fn, maxAttempts = 3) {\n  throw new Error('TODO');\n}\n",
+                    "hints": ["Bornez la boucle `for (let attempt = 1; attempt <= maxAttempts; attempt++)`."],
+                    "concepts": ["async", "for", "catch", "throw"],
+                },
+                {
+                    "title": "Synchronisation concurrente (`Promise.allSettled`)",
+                    "summary": "Tolérer l'échec d'une source secondaire sans casser toute la page.",
+                    "explanation": "`Promise.allSettled` inspecte individuellement chaque résultat `fulfilled` ou `rejected`.",
+                    "code": "const settled = await Promise.allSettled(tasks);\nconst okValues = settled.filter((r) => r.status === 'fulfilled').map((r) => r.value);",
+                    "example_title": "Agrégation résiliente de widgets",
+                    "tip": "Signalez clairement à l'utilisateur les blocs partiellement indisponibles.",
+                    "exercise_title": "Collecteur allSettled avec rapport d'erreurs",
+                    "exercise_prompt": "Écrivez `partitionResults(promises)` retournant `{ succeeded, failed }` via `Promise.allSettled`.",
+                    "starter": "async function partitionResults(promises) {\n  throw new Error('TODO');\n}\n",
+                    "hints": ["Séparez `r.status === 'fulfilled'` et `r.status === 'rejected'`."],
+                    "concepts": ["Promise.allSettled", "filter", "return"],
+                },
+            ],
+            "project_title": "Client HTTP JavaScript asynchrone résilient (timeout, AbortController & allSettled)",
+            "project_brief": "### Contexte\nConstruisez un module réseau JavaScript ES6 avec `fetch`, validation `res.ok`, annulation via `AbortController`, retry sélectif et tests asynchrones.",
+            "project_deliverables": [
+                "Vérification stricte `response.ok` et timeout dans `finally`",
+                "Retry uniquement sur erreurs transitoires",
+                "Tests couvrant succès, timeout et erreur 401 non réessayée",
+            ],
+        },
+        4: {
+            "title": "Niveau 4 — Modules ESM, architecture propre & tests automatisés JS",
+            "summary": "Découper un projet JavaScript en modules ES testables avec mocks contrôlés.",
+            "objectives": [
+                "Structurer des modules ESM sans dépendances circulaires",
+                "Injecter des dépendances (`fetch`, horloge) pour tester sans réseau réel",
+                "Écrire des suites de tests unitaires couvrant cas limites et erreurs",
+            ],
+            "chapters": [
+                {
+                    "title": "Modules ESM (`import`/`export`) et fonctions pures",
+                    "summary": "Isoler logique métier et effets de bord.",
+                    "explanation": "Gardez la logique métier dans des modules sans accès direct au DOM ni à `localStorage`.",
+                    "code": "export function sortByUrgency(tasks) {\n  return [...tasks].sort((a, b) => a.dueAt.localeCompare(b.dueAt));\n}",
+                    "example_title": "Fonction de tri exportée pure",
+                    "tip": "Préférez les exports nommés aux exports par défaut pour faciliter le refactoring.",
+                    "exercise_title": "Module de tri et filtrage JS",
+                    "exercise_prompt": "Écrivez et exportez une fonction JS pure triant des tâches sans muter le tableau reçu.",
+                    "starter": "export function rankTasks(tasks) {\n  throw new Error('TODO');\n}\n",
+                    "hints": ["Clonez le tableau avant `.sort(...)`."],
+                    "concepts": ["export", "function", "sort", "return"],
+                },
+                {
+                    "title": "Injection de dépendances pour des tests déterministes",
+                    "summary": "Passer `now` ou `httpClient` en paramètre optionnel.",
+                    "explanation": "Tester des délais ou appels HTTP devient simple quand la fonction accepte `{ now = () => new Date() }`.",
+                    "code": "export function isExpired(expiresAt, nowMs = Date.now()) {\n  return Date.parse(expiresAt) <= nowMs;\n}",
+                    "example_title": "Horloge injectable déterministe",
+                    "tip": "Ne figez jamais `new Date()` au cœur d'une fonction critique sans paramètre de référence.",
+                    "exercise_title": "Calcul d'échéance testable",
+                    "exercise_prompt": "Écrivez `isOverdue(dueIso, now = new Date())` gérant `dueIso == null` proprement.",
+                    "starter": "function isOverdue(dueIso, now = new Date()) {\n  throw new Error('TODO');\n}\n",
+                    "hints": ["Retournez `false` si `!dueIso` ou `Number.isNaN(Date.parse(dueIso))`."],
+                    "concepts": ["Date", "isNaN", "return"],
+                },
+                {
+                    "title": "Tests unitaires avec mocks et assertions claires",
+                    "summary": "Vérifier comportement observable et cas d'erreur.",
+                    "explanation": "Chaque fonction publique doit avoir au moins un test nominal, un cas limite et un test d'entrée invalide.",
+                    "code": "if (!Array.isArray(items)) throw new TypeError('Liste requise');",
+                    "example_title": "Contrat vérifié par TypeError",
+                    "tip": "Nettoyez vos mocks entre chaque test.",
+                    "exercise_title": "Garde TypeError + test",
+                    "exercise_prompt": "Écrivez une fonction JS levant `TypeError` sur entrée non tableau et retournant le résumé.",
+                    "starter": "function summarize(items) {\n  throw new Error('TODO');\n}\n",
+                    "hints": ["Vérifiez `if (!Array.isArray(items)) throw new TypeError(...)`."],
+                    "concepts": ["Array.isArray", "TypeError", "throw"],
+                },
+                {
+                    "title": "Audit mémoire et fuites d'abonnements",
+                    "summary": "Prévenir listeners orphelins et timers non nettoyés.",
+                    "explanation": "Tout `setInterval` ou `addEventListener` doit retourner une fonction de nettoyage `unsubscribe`.",
+                    "code": "export function subscribeTick(cb, ms) {\n  const id = setInterval(cb, ms);\n  return () => clearInterval(id);\n}",
+                    "example_title": "Pattern cleanup explicite",
+                    "tip": "Testez toujours l'appel au cleanup dans vos tests unitaires.",
+                    "exercise_title": "Abonnement avec cleanup idempotent",
+                    "exercise_prompt": "Écrivez `startTimer(onTick, ms)` retournant une fonction d'arrêt nettoyant `clearInterval`.",
+                    "starter": "function startTimer(onTick, ms) {\n  throw new Error('TODO');\n}\n",
+                    "hints": ["Stockez `let active = true` et annulez l'intervalle au premier appel."],
+                    "concepts": ["setInterval", "clearInterval", "return"],
+                },
+            ],
+            "project_title": "Bibliothèque JavaScript modulaire ESM avec injection de dépendances & suite de tests",
+            "project_brief": "### Contexte\nAssemblez un mini-package ESM JavaScript organisé en modules purs avec horloge injectable, gestion d'abonnements nettoyables et suite de tests unitaires.",
+            "project_deliverables": [
+                "Modules ESM propres et découplés",
+                "Horloge / client HTTP injectables sans effet de bord caché",
+                "Tests unitaires couvrant cas nominaux, bornes et erreurs",
+            ],
+        },
+        5: {
+            "title": "Niveau 5 — Sécurité navigateur, performance & qualité production JS",
+            "summary": "Prévenir XSS, pollution de prototype, goulots de rendu et sécuriser la communication client-API.",
+            "objectives": [
+                "Neutraliser les vecteurs XSS, URL `javascript:` et pollution de prototype",
+                "Optimiser boucles, structures (`Map`/`Set`) et batching d'opérations coûteuses",
+                "Construire un client front résilient respectant cookies HttpOnly et CSRF/CORS",
+            ],
+            "chapters": [
+                {
+                    "title": "Protection contre la pollution de prototype et clés réservées",
+                    "summary": "Valider les objets JSON dynamiques venus de l'extérieur.",
+                    "explanation": "Rejetez les clés `__proto__`, `constructor` et `prototype` lors de fusions d'objets ou utilisez `Object.create(null)` / `Map`.",
+                    "code": "const FORBIDDEN = new Set(['__proto__', 'constructor', 'prototype']);\nif (FORBIDDEN.has(key)) throw new Error('Clé interdite');",
+                    "example_title": "Dictionnaire sûr avec Set/Map",
+                    "tip": "Préférez `new Map()` aux objets simples pour indexer des clés arbitraires.",
+                    "exercise_title": "Copie sécurisée d'objet JSON",
+                    "exercise_prompt": "Écrivez une fonction JS copiant uniquement les clés sûres d'un objet (en rejetant `__proto__`, `constructor`, `prototype`).",
+                    "starter": "function safeAssign(target, source) {\n  throw new Error('TODO');\n}\n",
+                    "hints": ["Utilisez `Object.keys(source)` et filtrez contre `FORBIDDEN`."],
+                    "concepts": ["Object.keys", "Set", "throw", "return"],
+                },
+                {
+                    "title": "Sanitisation des URL et prévention `javascript:`",
+                    "summary": "Ne jamais injecter une URL utilisateur brute dans un lien `<a href>`.",
+                    "explanation": "Parsez l'URL avec `new URL(raw)` et vérifiez que `protocol` est strictement `'http:'` ou `'https:'`.",
+                    "code": "function safeExternalHref(raw) {\n  const u = new URL(raw);\n  if (u.protocol !== 'https:' && u.protocol !== 'http:') return null;\n  return u.toString();\n}",
+                    "example_title": "Filtrage de schéma d'URL",
+                    "tip": "Ajoutez `rel=\"noopener noreferrer\"` sur tous les liens externes ouvrant un onglet.",
+                    "exercise_title": "Validateur strict de lien externe",
+                    "exercise_prompt": "Écrivez `toSafeHref(raw)` acceptant uniquement `https://` et renvoyant `null` sur `javascript:` ou texte malformé.",
+                    "starter": "function toSafeHref(raw) {\n  throw new Error('TODO');\n}\n",
+                    "hints": ["Encadrez `new URL(raw)` avec `try / catch`."],
+                    "concepts": ["URL", "protocol", "try", "catch"],
+                },
+                {
+                    "title": "Complexité algorithmique avec `Map` et `Set`",
+                    "summary": "Remplacer les recherches imbriquées O(n²) par des index O(1).",
+                    "explanation": "Dans les tableaux de planning ou de cours, indexez par `id` dans une `Map` avant de joindre les données.",
+                    "code": "const byId = new Map(courses.map((c) => [c.id, c]));",
+                    "example_title": "Jointure O(n + m) avec Map",
+                    "tip": "Mesurez sur 5 000 éléments plutôt que de deviner les coûts.",
+                    "exercise_title": "Détecteur de doublons O(n)",
+                    "exercise_prompt": "Écrivez `findDuplicateTitles(items)` en JavaScript en temps O(n) via `Set` après normalisation.",
+                    "starter": "function findDuplicateTitles(items) {\n  throw new Error('TODO');\n}\n",
+                    "hints": ["Stockez `item.trim().toLowerCase()` dans un `new Set()`."],
+                    "concepts": ["Set", "toLowerCase", "return"],
+                },
+                {
+                    "title": "Authentification HttpOnly & architecture zéro secret en localStorage",
+                    "summary": "Protéger la session contre le vol via XSS.",
+                    "explanation": "Ne persistez jamais un JWT d'accès dans `localStorage` ; gardez le jeton court en mémoire et laissez le backend renouveler via cookie HttpOnly avec `credentials: 'include'`.",
+                    "code": "await fetch('/api/v1/auth/refresh', { method: 'POST', credentials: 'include' });",
+                    "example_title": "Renouvellement silencieux sans localStorage",
+                    "tip": "Effacez immédiatement l'état mémoire et le cache requêtes à la déconnexion.",
+                    "exercise_title": "Gestionnaire mémoire de jeton d'accès",
+                    "exercise_prompt": "Écrivez un gestionnaire `createTokenHolder()` gardant le jeton uniquement en closure privée avec méthodes `get`, `set` et `clear`.",
+                    "starter": "function createTokenHolder() {\n  throw new Error('TODO');\n}\n",
+                    "hints": ["Stockez `let token = null;` dans la closure et ne touchez jamais `localStorage`."],
+                    "concepts": ["function", "const", "return"],
+                },
+            ],
+            "project_title": "Couche client JavaScript durcie (sécurité XSS/proto, indexation Map/Set & session mémoire)",
+            "project_brief": "### Contexte\nConcevez un utilitaire front JavaScript durci combinant sanitisation d'URL, fusion sûre anti-prototype-pollution, indexation `Map`/`Set` O(n) et stockage session strictement en mémoire.",
+            "project_deliverables": [
+                "Sanitiseur d'URL et protection `__proto__`",
+                "Algorithmes O(n) via `Map`/`Set`",
+                "Tests unitaires complets sur vecteurs d'attaque",
+            ],
+        },
+    }
+    return _build_track_levels(prefix="js", code_lang="javascript", specs=specs)
+
+
+def get_generic_levels(
+    subject: str,
+    total_levels: int,
+    language_pref: str = "fr",
+) -> dict[int, dict[str, Any]]:
+    topic_key = resolve_topic_key(subject)
+    code_lang = SUBJECT_CODE_LANG.get(topic_key, "markdown")
+    comment_prefix = (
+        "#"
+        if code_lang == "python"
+        else ("--" if code_lang == "sql" else ("" if code_lang == "markdown" else "//"))
+    )
+
+    def _fmt_example(ch_title: str, lvl_num: int, idx: int) -> str:
+        if comment_prefix == "":
+            return (
+                f"Étape 1 ({subject} — Niv. {lvl_num}.{idx}) : définir l'objectif et les hypothèses initiales.\n"
+                f"Étape 2 : appliquer la méthode propre à « {ch_title} » étape par étape.\n"
+                "Étape 3 : vérifier le résultat sur un cas standard et un contre-exemple."
+            )
+        return (
+            f"{comment_prefix} Exemple méthodologique — {subject} (Niveau {lvl_num}, Chapitre {idx})\n"
+            f"{comment_prefix} 1) Valider les données d'entrée\n"
+            f"{comment_prefix} 2) Traiter « {ch_title} »\n"
+            f"{comment_prefix} 3) Vérifier le résultat nominal et le cas limite"
+        )
+
     level_defs: dict[int, tuple[str, str, list[str]]] = {
         1: (
-            f"Niveau 1 — Fondations et premiers programmes en {subject}",
-            f"Acquérir les bases solides de {subject} : concepts clés, syntaxe essentielle, structuration et premiers exercices vérifiés.",
+            f"Niveau 1 — Fondations et concepts essentiels en {subject}",
+            f"Trame méthodologique adaptable en {subject} : vocabulaire exact, bases opératoires et premiers exercices guidés.",
             [
-                f"Comprendre le modèle mental et l’écosystème officiel de {subject}",
-                f"Écrire des unités simples et lisibles en {subject} en gérant les entrées invalides",
-                f"Structurer des données et itérations propres en {subject}",
-                "Expliquer son code et valider un mini-projet concret de niveau débutant",
+                f"Maîtriser les notions fondamentales et le vocabulaire de {subject}",
+                f"Résoudre des exercices simples en {subject} en expliquant chaque étape",
+                "Identifier et vérifier au moins un cas limite ou piège classique",
+                "Valider un mini-projet concret de niveau fondation",
             ],
         ),
         2: (
-            f"Niveau 2 — Modularité, gestion d’erreurs et tests en {subject}",
-            f"Structurer un projet {subject} réutilisable, gérer les erreurs explicitement et automatiser les vérifications.",
+            f"Niveau 2 — Structuration, méthode et cas limites en {subject}",
+            f"Structurer des réalisations réutilisables en {subject}, gérer les erreurs et justifier ses choix.",
             [
-                f"Découper un programme {subject} en modules et interfaces claires",
-                "Traiter les erreurs et cas limites sans comportement silencieux",
-                f"Persister ou échanger des données structurées avec {subject}",
-                "Écrire des tests automatisés couvrant cas nominaux et anomalies",
+                f"Décomposer un problème en {subject} en sous-étapes vérifiables",
+                "Traiter explicitement les anomalies, exceptions ou contre-exemples",
+                "Documenter et tester chaque résultat produit",
             ],
         ),
         3: (
-            f"Niveau 3 — Conception autonome et projet avancé en {subject}",
-            f"Construire une application complète et robuste en {subject}, prête à être évaluée sur critères réels.",
+            f"Niveau 3 — Conception autonome et projet appliqué en {subject}",
+            f"Construire une production complète et vérifiable en {subject} évaluée sur critères réels.",
             [
-                f"Appliquer les idiomes et patrons recommandés en {subject}",
-                "Évaluer la complexité, la maintenabilité et la sécurité du code",
-                "Intégrer documentation, gestion d’état/flux et jeux de tests complets",
+                f"Appliquer les bonnes pratiques reconnues en {subject}",
+                "Analyser la qualité, la robustesse et la maintenabilité",
+                "Soutenir le livrable avec preuves et tests reproductibles",
             ],
         ),
         4: (
-            f"Niveau 4 — Architecture, performance et fiabilité en {subject}",
-            f"Optimiser les goulots d’étranglement, structurer des architectures découplées et auditer la qualité en {subject}.",
+            f"Niveau 4 — Approfondissement, optimisation et fiabilité en {subject}",
+            f"Diagnostiquer les points faibles, optimiser et fiabiliser une réalisation avancée en {subject}.",
             [
-                f"Profiler et optimiser une application {subject} sur des charges réalistes",
-                "Isoler les dépendances et garantir l’évolutivité du code",
-                "Documenter les compromis techniques d’architecture",
+                f"Comparer plusieurs approches en {subject} avec compromis argumentés",
+                "Gérer les cas avancés et contraintes réelles de fiabilité",
+                "Fournir une documentation technique rigoureuse",
             ],
         ),
         5: (
-            f"Niveau 5 — Maîtrise et livrable de niveau production en {subject}",
-            f"Concevoir, tester, sécuriser et documenter un projet complet de référence en {subject}.",
+            f"Niveau 5 — Maîtrise et livrable de référence en {subject}",
+            f"Concevoir, vérifier, sécuriser et justifier un projet complet de référence en {subject}.",
             [
-                f"Concevoir de bout en bout une solution critique en {subject}",
-                "Garantir couverture de tests, observabilité et gestion de pannes",
-                "Soutenir techniquement chaque choix face à une grille exigeante",
+                f"Piloter une réalisation complète et critique en {subject}",
+                "Démontrer sa robustesse par des vérifications exhaustives",
+                "Défendre chaque décision face à une grille d'évaluation exigeante",
             ],
         ),
     }
@@ -1751,28 +2999,35 @@ def get_generic_levels(subject: str, total_levels: int) -> dict[int, dict[str, A
         title, summary, objectives = level_defs[lvl_num]
         chapter_topics = [
             (
-                f"Concepts fondamentaux et environnement ({subject} — Niv. {lvl_num})",
-                f"Poser le modèle mental du niveau {lvl_num} avec la terminologie exacte et un premier exemple fonctionnel.",
+                f"Notions clés et cadre de travail ({subject} — Niv. {lvl_num})",
+                f"Poser le modèle mental du niveau {lvl_num} en {subject} avec la terminologie exacte.",
                 25,
             ),
             (
-                f"Structuration de la logique et cas limites",
-                f"Écrire des blocs clairs et défensifs en {subject} grâce aux retours anticipés et au découpage.",
+                "Méthode de résolution et traitement des cas limites",
+                f"Appliquer une démarche rigoureuse en {subject} sans ignorer les cas d'erreur.",
                 25,
             ),
             (
-                f"Données, abstractions et gestion d'erreurs",
-                f"Manipuler les structures recommandées par la documentation officielle {subject}.",
+                "Structuration, modularité et justification des choix",
+                f"Organiser une production lisible et vérifiable en {subject}.",
                 30,
             ),
             (
-                f"Vérification, tests et bonnes pratiques",
-                f"Valider le fonctionnement sur des cas nominaux et d'erreur avant de passer au projet du niveau {lvl_num}.",
+                "Vérification, revue critique et synthèse pratique",
+                f"Contrôler la qualité d'un travail en {subject} avant d'aborder le projet de palier.",
                 30,
             ),
         ]
         lessons: list[dict[str, Any]] = []
         for idx, (ch_title, ch_summary, mins) in enumerate(chapter_topics, start=1):
+            example_text = _fmt_example(ch_title, lvl_num, idx)
+            starter = (
+                f"Rédigez votre réponse et votre exemple concret en {subject} pour « {ch_title} »."
+                if code_lang == "markdown"
+                else f"{comment_prefix} Votre solution {subject} pour : {ch_title}\n"
+            )
+            ex_type = "open_explanation" if code_lang == "markdown" else "code"
             lessons.append(
                 {
                     "position": idx,
@@ -1780,30 +3035,24 @@ def get_generic_levels(subject: str, total_levels: int) -> dict[int, dict[str, A
                     "summary": ch_summary,
                     "estimated_minutes": mins,
                     "content_markdown": (
-                        f"## Objectif du chapitre {idx}\n\n"
-                        f"{ch_summary}\n\n"
-                        "### Explication pas à pas\n\n"
-                        f"1. **Clarifier le contrat** : définissez toujours les entrées attendues, le résultat exact et les erreurs possibles en **{subject}**.\n"
-                        "2. **Privilégier la lisibilité** : nommez explicitement vos fonctions/variables et isolez chaque responsabilité.\n"
-                        "3. **Tester les cas limites** : entrée vide, valeur nulle ou hors bornes.\n\n"
-                        f"```{code_lang}\n"
-                        f"// Exemple progressif — {subject} (Niveau {lvl_num}, Chapitre {idx})\n"
-                        "// 1) Valider l'entrée dès le début\n"
-                        "// 2) Appliquer la transformation métier\n"
-                        "// 3) Vérifier le résultat attendu sur cas nominal et cas limite\n"
-                        "```\n\n"
-                        "| Point clé | Objectif | Vérification |\n"
-                        "| --- | --- | --- |\n"
-                        "| Clarté | Intention lisible | Nommage explicite |\n"
-                        "| Robustesse | Zéro crash silencieux | Cas limite testé |\n\n"
-                        "> **Bonnes pratiques :** Appuyez-vous systématiquement sur la documentation officielle fournie dans l’onglet **Docs & Vidéos**."
+                        f"## 1. Objectif pédagogique\n\n{ch_summary}\n\n"
+                        f"### 2. Prérequis & intuition\n\nCette trame générique vous guide pour relier théorie et pratique en **{subject}**.\n\n"
+                        f"### 3. Explication pas à pas\n\n"
+                        f"1. **Clarifier le problème** : précisez les données d'entrée et le résultat attendu en **{subject}**.\n"
+                        "2. **Structurer par étapes** : isolez chaque règle ou transformation.\n"
+                        "3. **Vérifier les limites** : testez un cas nominal et un cas d'erreur.\n\n"
+                        f"### 4. Exemple concret commenté\n\n```{code_lang}\n{example_text}\n```\n\n"
+                        "### 5. Cas limites & pièges fréquents\n\n- Négliger les cas invalides ou supposer qu'une lecture suffit sans production vérifiable.\n\n"
+                        "### 6. Bonnes pratiques\n\n- Documentez toujours le *pourquoi* de vos choix et vérifiez vos affirmations avec les ressources officielles.\n\n"
+                        f"### 7. Synthèse à retenir\n\n« {ch_title} » relie théorie, pratique et preuve vérifiable en {subject}.\n\n"
+                        "### 8. Contrôle de compréhension\n\nExpliquez votre démarche étape par étape dans l'exercice ci-dessous."
                     ),
                     "code_examples": [
                         {
-                            "title": f"Gabarit structuré — Chapitre {idx}",
+                            "title": f"Canevas structuré — Chapitre {idx}",
                             "language": code_lang,
-                            "code": f"// {ch_title}\n// Entrée -> Validation -> Traitement -> Sortie vérifiée",
-                            "explanation": f"Illustre l’organisation recommandée pour « {ch_title} ».",
+                            "code": example_text,
+                            "explanation": f"Organise la progression pour « {ch_title} » ({language_pref}).",
                         }
                     ],
                     "exercises": [
@@ -1811,17 +3060,18 @@ def get_generic_levels(subject: str, total_levels: int) -> dict[int, dict[str, A
                             "id": f"gen-{lvl_num}-{idx}-ex1",
                             "title": f"Mise en pratique : {ch_title}",
                             "difficulty": "guide" if idx <= 2 else "pratique",
+                            "exercise_type": ex_type,
                             "instructions_markdown": (
-                                f"Implémentez un cas concret illustrant **{ch_title}** en {subject}. "
-                                "Expliquez votre raisonnement (« parce que… »), montrez votre code et décrivez au moins un cas d'erreur géré."
+                                f"Produisez un exemple concret illustrant **{ch_title}** en {subject}. "
+                                "Justifiez votre choix technique (« parce que… ») et décrivez un cas limite ou une vérification."
                             ),
-                            "starter_code": f"// Votre solution {subject} pour : {ch_title}\n",
+                            "starter_code": starter,
                             "hints": [
-                                f"Indice 1 : Définissez clairement la signature ou structure en {subject}.",
-                                "Indice 2 : Ajoutez un contrôle explicite pour une donnée invalide ou vide.",
-                                "Indice 3 : Précisez le résultat concret obtenu lors de vos tests.",
+                                f"Indice 1 : Définissez clairement le périmètre et l'objectif en {subject}.",
+                                "Indice 2 : Ajoutez un contrôle explicite pour un cas limite.",
+                                "Indice 3 : Indiquez comment vous vérifiez le résultat.",
                             ],
-                            "expected_concepts": [subject.lower(), "test", "erreur", "exemple"],
+                            "expected_concepts": [subject.lower(), "vérification", "limite", "exemple"],
                         }
                     ],
                 }
@@ -1832,20 +3082,20 @@ def get_generic_levels(subject: str, total_levels: int) -> dict[int, dict[str, A
             "summary": summary,
             "objectives": objectives,
             "lessons": lessons,
-            "project_title": f"Projet pratique Niveau {lvl_num} — Application complète en {subject}",
+            "project_title": f"Projet pratique Niveau {lvl_num} — Réalisation complète en {subject}",
             "project_brief": (
                 f"### Contexte du projet Niveau {lvl_num}\n\n"
-                f"Réalisez un mini-projet autonome mobilisant l’ensemble des notions du niveau {lvl_num} en **{subject}**.\n\n"
+                f"Réalisez une production autonome et vérifiable mobilisant les notions du niveau {lvl_num} en **{subject}**.\n\n"
                 "### Exigences de rendu\n"
-                "1. Code source propre et structuré avec gestion explicite des cas d’erreur.\n"
-                "2. Justification écrite de vos choix techniques et de leur raison d’être.\n"
-                "3. Jeu de tests ou scénario de vérification démontrant le cas nominal et au moins un cas limite."
+                "1. Production concrète et structurée avec traitement des cas limites.\n"
+                "2. Justification écrite de vos choix et de leur raison d’être.\n"
+                "3. Preuve de vérification ou scénario de test documenté."
             ),
             "project_deliverables": [
-                f"Code source structuré en {subject}",
+                f"Production concrète structurée en {subject}",
                 "Gestion explicite d'au moins un cas limite / erreur",
-                "Tests ou vérification reproductible avec résultat mesuré",
-                "Explication claire de la démarche technique",
+                "Vérification reproductible avec résultat observé",
+                "Explication claire de la démarche",
             ],
         }
     return levels

@@ -349,4 +349,44 @@ describe('AiCoachPage', () => {
       screen.getByRole('region', { name: 'Importer mon emploi du temps' }),
     ).toBeInTheDocument();
   });
+
+  it('permet de consulter et modifier la mémoire IA et le mode d’exécution simple automatique', async () => {
+    const user = userEvent.setup();
+    renderAiCoachPage();
+
+    await user.click(screen.getByRole('button', { name: 'Mémoire IA' }));
+    expect(
+      screen.getByRole('region', { name: 'Mémoire IA persistante' }),
+    ).toBeInTheDocument();
+
+    const hoursInput = screen.getByLabelText('Heures disponibles / semaine');
+    await user.clear(hoursInput);
+    await user.type(hoursInput, '8');
+    await user.click(screen.getByRole('button', { name: 'Enregistrer la mémoire' }));
+
+    const savedAiState = JSON.parse(
+      window.localStorage.getItem(STORAGE_KEYS.aiState) ?? '{}',
+    );
+    expect(savedAiState.aiMemory.weeklyStudyHours).toBe(8);
+
+    const autoSwitch = screen.getByRole('switch', { name: 'Actions simples automatiques' });
+    expect(autoSwitch).toHaveAttribute('aria-checked', 'false');
+    await user.click(autoSwitch);
+    expect(autoSwitch).toHaveAttribute('aria-checked', 'true');
+
+    // Une action simple explicitement demandée s'exécute directement lorsque l'autonomie simple est activée
+    await user.type(
+      screen.getByLabelText(/Votre message au Copilote/),
+      'Crée une tâche : « Préparer les tests React »',
+    );
+    await user.click(screen.getByRole('button', { name: 'Envoyer au Copilote' }));
+
+    expect(await screen.findByText('Exécutée')).toBeInTheDocument();
+    const afterStudyState = JSON.parse(
+      window.localStorage.getItem(STORAGE_KEYS.studyState) ?? '{}',
+    );
+    expect(afterStudyState.tasks.some((t: { title: string }) => t.title === 'Préparer les tests React')).toBe(
+      true,
+    );
+  });
 });

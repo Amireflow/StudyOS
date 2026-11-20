@@ -65,6 +65,10 @@ export const appRoutes: RouteObject[] = [
         element: <ProjectsPage />,
       },
       {
+        path: 'objectives',
+        element: <ProjectsPage />,
+      },
+      {
         path: 'ai-coach',
         element: <AiCoachPage />,
       },

@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 import hashlib
 import hmac
+import re
 import secrets
 from typing import Any
 from uuid import UUID
@@ -13,10 +14,27 @@ from app.core.errors import AppError
 
 LOCAL_TOKEN_ISSUER = "amireflow-local"
 AUTH_TOKEN_ISSUER = "amireflow-auth"
-SCRYPT_N = 16384
+SCRYPT_N = 32768
 SCRYPT_R = 8
 SCRYPT_P = 1
 SCRYPT_DKLEN = 32
+
+_COMMON_WEAK_PASSWORDS = {
+    "password",
+    "password1",
+    "password123",
+    "12345678",
+    "123456789",
+    "1234567890",
+    "azerty123",
+    "azertyui",
+    "qwerty123",
+    "qwertyui",
+    "admin123",
+    "letmein1",
+    "welcome1",
+    "amireflow",
+}
 
 
 @dataclass(frozen=True)
@@ -24,6 +42,7 @@ class VerifiedTokenClaims:
     user_id: UUID
     issuer: str | None = None
     token_version: int | None = None
+    issued_at: datetime | None = None
 
 
 def get_app_settings(request: Request) -> Settings:
@@ -33,17 +52,36 @@ def get_app_settings(request: Request) -> Settings:
     return get_settings()
 
 
-def hash_password(password: str) -> str:
+def validate_password_policy(password: str) -> str:
+    if len(password) < 8 or len(password) > 128:
+        raise ValueError("Le mot de passe doit contenir entre 8 et 128 caractères.")
+    if password.strip().lower() in _COMMON_WEAK_PASSWORDS:
+        raise ValueError("Ce mot de passe est trop courant. Choisissez une combinaison plus sûre.")
+    has_letter = bool(re.search(r"[A-Za-zÀ-ÿ]", password))
+    has_digit = bool(re.search(r"[0-9]", password))
+    if not (has_letter and has_digit):
+        raise ValueError(
+            "Le mot de passe doit contenir au moins une lettre et un chiffre."
+        )
+    return password
+
+
+def hash_password(password: str, *, scrypt_n: int = SCRYPT_N) -> str:
     salt = secrets.token_bytes(16)
+    maxmem = max(64 * 1024 * 1024, 128 * scrypt_n * SCRYPT_R * 2)
     derived = hashlib.scrypt(
         password.encode("utf-8"),
         salt=salt,
-        n=SCRYPT_N,
+        n=scrypt_n,
         r=SCRYPT_R,
         p=SCRYPT_P,
+        maxmem=maxmem,
         dklen=SCRYPT_DKLEN,
     )
-    return f"scrypt${SCRYPT_N}${SCRYPT_R}${SCRYPT_P}${salt.hex()}${derived.hex()}"
+    return f"scrypt${scrypt_n}${SCRYPT_R}${SCRYPT_P}${salt.hex()}${derived.hex()}"
+
+
+_DUMMY_PASSWORD_HASH = hash_password("StudyOS_Dummy_ConstantTime_918273!")
 
 
 def verify_password(password: str, stored_hash: str) -> bool:
@@ -62,15 +100,29 @@ def verify_password(password: str, stored_hash: str) -> bool:
     if not expected_dk:
         return False
 
+    maxmem = max(64 * 1024 * 1024, 128 * n_val * r_val * 2)
     derived = hashlib.scrypt(
         password.encode("utf-8"),
         salt=salt,
         n=n_val,
         r=r_val,
         p=p_val,
+        maxmem=maxmem,
         dklen=len(expected_dk),
     )
     return hmac.compare_digest(derived, expected_dk)
+
+
+def verify_password_constant_time(password: str, stored_hash: str | None) -> bool:
+    """Égalise le coût scrypt même lorsqu'aucun compte ne correspond (anti-énumération)."""
+    if not stored_hash:
+        verify_password(password, _DUMMY_PASSWORD_HASH)
+        return False
+    return verify_password(password, stored_hash)
+
+
+def hash_refresh_token(raw_token: str) -> str:
+    return hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
 
 
 def create_local_access_token(
@@ -95,20 +147,28 @@ def create_access_token(
     *,
     token_version: int = 1,
     email: str | None = None,
-    expires_in_seconds: int = 604800,
+    expires_in_seconds: int | None = None,
 ) -> str:
     now = datetime.now(timezone.utc)
+    ttl = int(expires_in_seconds or settings.access_token_ttl_seconds or 900)
     payload: dict[str, Any] = {
         "sub": str(user_id),
         "iss": AUTH_TOKEN_ISSUER,
         "aud": settings.auth_audience,
         "tv": int(token_version),
         "iat": int(now.timestamp()),
-        "exp": int((now + timedelta(seconds=expires_in_seconds)).timestamp()),
+        "exp": int((now + timedelta(seconds=ttl)).timestamp()),
     }
     if email:
         payload["email"] = email
     return jwt.encode(payload, settings.app_secret_key, algorithm="HS256")
+
+
+def _extract_issued_at(payload: dict[str, Any]) -> datetime | None:
+    raw_iat = payload.get("iat")
+    if isinstance(raw_iat, (int, float)) and not isinstance(raw_iat, bool):
+        return datetime.fromtimestamp(float(raw_iat), tz=timezone.utc)
+    return None
 
 
 def decode_bearer_token(
@@ -151,6 +211,7 @@ def decode_bearer_token(
                 },
             )
             issuer = str(payload.get("iss") or "")
+            issued_at = _extract_issued_at(payload)
             if issuer == AUTH_TOKEN_ISSUER:
                 raw_tv = payload.get("tv")
                 if isinstance(raw_tv, bool) or not isinstance(raw_tv, int) or raw_tv < 1:
@@ -159,11 +220,13 @@ def decode_bearer_token(
                     user_id=UUID(str(payload["sub"])),
                     issuer=AUTH_TOKEN_ISSUER,
                     token_version=raw_tv,
+                    issued_at=issued_at,
                 )
             if issuer == LOCAL_TOKEN_ISSUER and settings.app_env == "local":
                 return VerifiedTokenClaims(
                     user_id=UUID(str(payload["sub"])),
                     issuer=LOCAL_TOKEN_ISSUER,
+                    issued_at=issued_at,
                 )
             raise ValueError("Émetteur de jeton non autorisé.")
         except (InvalidTokenError, ValueError, KeyError) as exc:
@@ -195,6 +258,7 @@ def decode_bearer_token(
             return VerifiedTokenClaims(
                 user_id=UUID(str(payload["sub"])),
                 issuer=str(payload.get("iss") or "") or None,
+                issued_at=_extract_issued_at(payload),
             )
         except (PyJWKClientError, InvalidTokenError, ValueError, KeyError) as exc:
             raise AppError(
@@ -215,41 +279,63 @@ def verify_bearer_token(
 
 
 def _assert_account_session_valid(request: Request, claims: VerifiedTokenClaims) -> None:
-    if claims.issuer != AUTH_TOKEN_ISSUER:
+    if claims.issuer in ("dev", LOCAL_TOKEN_ISSUER):
         return
 
     session_factory = getattr(request.app.state, "session_factory", None)
     if session_factory is not None:
-        from app.models.tables import UserAccountTable
+        from app.models.tables import AuthTokenRevocationTable, UserAccountTable
 
         with session_factory() as db:
-            row = db.get(UserAccountTable, claims.user_id)
-            if (
-                row is None
-                or not row.is_active
-                or row.token_version != claims.token_version
-            ):
-                raise AppError(
-                    401,
-                    "UNAUTHORIZED",
-                    "Session expirée ou révoquée. Veuillez vous reconnecter.",
-                )
+            if claims.issuer == AUTH_TOKEN_ISSUER:
+                row = db.get(UserAccountTable, claims.user_id)
+                if (
+                    row is None
+                    or not row.is_active
+                    or row.token_version != claims.token_version
+                ):
+                    raise AppError(
+                        401,
+                        "UNAUTHORIZED",
+                        "Session expirée ou révoquée. Veuillez vous reconnecter.",
+                    )
+            else:
+                rev = db.get(AuthTokenRevocationTable, claims.user_id)
+                if rev is not None and (
+                    claims.issued_at is None or claims.issued_at <= rev.revoked_before
+                ):
+                    raise AppError(
+                        401,
+                        "UNAUTHORIZED",
+                        "Session expirée ou révoquée. Veuillez vous reconnecter.",
+                    )
         return
 
     store = getattr(request.app.state, "store", None)
     if store is not None:
         with store.lock:
-            user = getattr(store, "users", {}).get(claims.user_id)
-            if (
-                user is None
-                or not getattr(user, "is_active", False)
-                or getattr(user, "token_version", None) != claims.token_version
-            ):
-                raise AppError(
-                    401,
-                    "UNAUTHORIZED",
-                    "Session expirée ou révoquée. Veuillez vous reconnecter.",
-                )
+            if claims.issuer == AUTH_TOKEN_ISSUER:
+                user = getattr(store, "users", {}).get(claims.user_id)
+                if (
+                    user is None
+                    or not getattr(user, "is_active", False)
+                    or getattr(user, "token_version", None) != claims.token_version
+                ):
+                    raise AppError(
+                        401,
+                        "UNAUTHORIZED",
+                        "Session expirée ou révoquée. Veuillez vous reconnecter.",
+                    )
+            else:
+                rev_before = getattr(store, "auth_token_revocations", {}).get(claims.user_id)
+                if rev_before is not None and (
+                    claims.issued_at is None or claims.issued_at <= rev_before
+                ):
+                    raise AppError(
+                        401,
+                        "UNAUTHORIZED",
+                        "Session expirée ou révoquée. Veuillez vous reconnecter.",
+                    )
         return
 
     raise AppError(
@@ -281,4 +367,5 @@ def get_current_user_id(
     jwks_client = getattr(request.app.state, "jwks_client", None)
     claims = decode_bearer_token(token.strip(), settings, jwks_client=jwks_client)
     _assert_account_session_valid(request, claims)
+    request.state.token_claims = claims
     return claims.user_id

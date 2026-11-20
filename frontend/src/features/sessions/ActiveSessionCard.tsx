@@ -7,11 +7,11 @@ import {
 } from '@hugeicons/core-free-icons';
 import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
-import { FormField, InlineConfirm, Textarea } from '../../components/ui/FormFields';
+import { FormField, InlineConfirm, Input, Select, Textarea } from '../../components/ui/FormFields';
 import { Icon } from '../../components/ui/Icon';
 import { formatTimeFr } from '../../lib/date';
 import { extractFieldErrors } from '../../lib/validation';
-import type { StudySession } from '../../types/domain';
+import type { SessionFinishExtra, StudySession } from '../../types/domain';
 import { finishSessionSchema } from './sessionSchema';
 import { formatElapsedTimer } from './sessionUtils';
 
@@ -20,7 +20,7 @@ export interface ActiveSessionCardProps {
   linkedTaskTitle: string | null;
   linkedProjectName?: string;
   linkedSkillName?: string;
-  onFinish: (session: StudySession, result: string) => void;
+  onFinish: (session: StudySession, result: string, extra?: SessionFinishExtra) => void;
   onCancel: (session: StudySession) => void;
 }
 
@@ -33,6 +33,11 @@ export function ActiveSessionCard({
   onCancel,
 }: ActiveSessionCardProps) {
   const [result, setResult] = useState('');
+  const [actualActivity, setActualActivity] = useState('');
+  const [outcomeStatus, setOutcomeStatus] = useState<'completed' | 'partial' | 'blocked'>('completed');
+  const [deliverableSummary, setDeliverableSummary] = useState('');
+  const [blockers, setBlockers] = useState('');
+  const [nextStep, setNextStep] = useState('');
   const [error, setError] = useState<string | undefined>(undefined);
   const [nowMs, setNowMs] = useState(() => Date.now());
 
@@ -52,7 +57,27 @@ export function ActiveSessionCard({
       return;
     }
     setError(undefined);
-    onFinish(session, parsed.data.result);
+    const hasExtra = Boolean(
+      actualActivity.trim() ||
+        deliverableSummary.trim() ||
+        blockers.trim() ||
+        nextStep.trim() ||
+        outcomeStatus !== 'completed',
+    );
+    onFinish(
+      session,
+      parsed.data.result,
+      hasExtra
+        ? {
+            plannedActivity: session.plannedActivity ?? undefined,
+            actualActivity: actualActivity.trim() || undefined,
+            outcomeStatus,
+            deliverableSummary: deliverableSummary.trim() || undefined,
+            blockers: blockers.trim() || undefined,
+            nextStep: nextStep.trim() || undefined,
+          }
+        : undefined,
+    );
   };
 
   return (
@@ -147,6 +172,65 @@ export function ActiveSessionCard({
             }}
           />
         </FormField>
+
+        <details className="rounded-lg bg-zinc-50/90 p-3 text-xs dark:bg-zinc-800/60">
+          <summary className="cursor-pointer font-medium text-zinc-700 dark:text-zinc-300">
+            Activité réelle, difficultés et preuve (facultatif)
+          </summary>
+          <div className="mt-3 grid gap-3 sm:grid-cols-2">
+            <FormField id={`finish-actual-${session.id}`} label="Activité réellement effectuée">
+              <Input
+                id={`finish-actual-${session.id}`}
+                value={actualActivity}
+                placeholder="Ex. Composants maîtrisés, blocage sur useEffect"
+                onChange={(e) => setActualActivity(e.target.value)}
+              />
+            </FormField>
+
+            <FormField id={`finish-outcome-${session.id}`} label="Statut du résultat">
+              <Select
+                id={`finish-outcome-${session.id}`}
+                value={outcomeStatus}
+                onChange={(e) =>
+                  setOutcomeStatus(e.target.value as 'completed' | 'partial' | 'blocked')
+                }
+              >
+                <option value="completed">Objectif de séance atteint</option>
+                <option value="partial">Avancement partiel</option>
+                <option value="blocked">Bloqué / reprise nécessaire</option>
+              </Select>
+            </FormField>
+
+            <FormField id={`finish-deliverable-${session.id}`} label="Preuve ou livrable produit">
+              <Input
+                id={`finish-deliverable-${session.id}`}
+                value={deliverableSummary}
+                placeholder="Ex. Composant ContactForm.tsx et tests Vitest"
+                onChange={(e) => setDeliverableSummary(e.target.value)}
+              />
+            </FormField>
+
+            <FormField id={`finish-blockers-${session.id}`} label="Difficultés rencontrées">
+              <Input
+                id={`finish-blockers-${session.id}`}
+                value={blockers}
+                placeholder="Ex. Dépendances useEffect"
+                onChange={(e) => setBlockers(e.target.value)}
+              />
+            </FormField>
+
+            <div className="sm:col-span-2">
+              <FormField id={`finish-next-${session.id}`} label="Prochaine étape recommandée">
+                <Input
+                  id={`finish-next-${session.id}`}
+                  value={nextStep}
+                  placeholder="Ex. Refaire 2 exercices ciblés sur useEffect"
+                  onChange={(e) => setNextStep(e.target.value)}
+                />
+              </FormField>
+            </div>
+          </div>
+        </details>
 
         <div className="flex justify-end">
           <Button type="submit" variant="primary" size="sm">

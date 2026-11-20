@@ -20,8 +20,9 @@ import {
 import { Link } from 'react-router-dom';
 import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
-import { InlineConfirm } from '../../components/ui/FormFields';
+import { InlineConfirm, Input } from '../../components/ui/FormFields';
 import { Icon, type IconSvgElement } from '../../components/ui/Icon';
+import { ScrollArea } from '../../components/ui/ScrollArea';
 import { EmptyState, ErrorState, LoadingState } from '../../components/ui/StateFeedback';
 import { cn } from '../../lib/cn';
 import { formatDateTimeFr, getMondayOfWeek } from '../../lib/date';
@@ -196,11 +197,13 @@ export function AiCoachPage() {
     messages,
     proposals,
     reports,
+    aiMemory,
     isLoading,
     error,
     mutationError,
     clearMutationError,
     retry,
+    updateAiMemory,
     createConversation,
     deleteConversation,
     sendMessage,
@@ -218,8 +221,53 @@ export function AiCoachPage() {
   const [mobileView, setMobileView] = useState<MobileView>('chat');
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [isToolsOpen, setIsToolsOpen] = useState(false);
+  const [isMemoryOpen, setIsMemoryOpen] = useState(false);
+  const [memoryHoursDraft, setMemoryHoursDraft] = useState(
+    aiMemory.weeklyStudyHours !== null ? String(aiMemory.weeklyStudyHours) : '',
+  );
+  const [memoryConstraintsDraft, setMemoryConstraintsDraft] = useState(
+    aiMemory.constraints.join(', '),
+  );
+  const [memoryGoalsDraft, setMemoryGoalsDraft] = useState(aiMemory.longTermGoals.join(', '));
+  const [isSavingMemory, setIsSavingMemory] = useState(false);
   const [isTimetableImportOpen, setIsTimetableImportOpen] = useState(false);
   const [isSending, setIsSending] = useState(false);
+
+  useEffect(() => {
+    setMemoryHoursDraft(aiMemory.weeklyStudyHours !== null ? String(aiMemory.weeklyStudyHours) : '');
+    setMemoryConstraintsDraft(aiMemory.constraints.join(', '));
+    setMemoryGoalsDraft(aiMemory.longTermGoals.join(', '));
+  }, [aiMemory.weeklyStudyHours, aiMemory.constraints, aiMemory.longTermGoals]);
+
+  async function handleToggleAutoSimple() {
+    await updateAiMemory({ autoExecuteSimpleActions: !aiMemory.autoExecuteSimpleActions });
+  }
+
+  async function handleSaveMemory(event: FormEvent) {
+    event.preventDefault();
+    setIsSavingMemory(true);
+    try {
+      const parsedHours =
+        memoryHoursDraft.trim() === ''
+          ? null
+          : Math.max(0, Math.min(120, Number(memoryHoursDraft.trim())));
+      const constraints = memoryConstraintsDraft
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean);
+      const longTermGoals = memoryGoalsDraft
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean);
+      await updateAiMemory({
+        weeklyStudyHours: Number.isNaN(parsedHours as number) ? null : parsedHours,
+        constraints,
+        longTermGoals,
+      });
+    } finally {
+      setIsSavingMemory(false);
+    }
+  }
   const currentWeekMonday = useMemo(() => getMondayOfWeek(new Date()), []);
   const [pendingUserPrompt, setPendingUserPrompt] = useState<string | null>(null);
   const [thinkingStepIndex, setThinkingStepIndex] = useState(0);
@@ -460,6 +508,22 @@ export function AiCoachPage() {
 
           <Button
             type="button"
+            variant={isMemoryOpen ? 'primary' : 'secondary'}
+            size="sm"
+            className="shrink-0"
+            aria-expanded={isMemoryOpen}
+            onClick={() => {
+              setIsMemoryOpen((prev) => !prev);
+              setIsHistoryOpen(false);
+              setIsToolsOpen(false);
+            }}
+          >
+            <Icon icon={SparklesIcon} size={15} />
+            Mémoire IA
+          </Button>
+
+          <Button
+            type="button"
             variant={isToolsOpen ? 'primary' : 'ghost'}
             size="sm"
             className="shrink-0"
@@ -467,6 +531,7 @@ export function AiCoachPage() {
             onClick={() => {
               setIsToolsOpen((prev) => !prev);
               setIsHistoryOpen(false);
+              setIsMemoryOpen(false);
             }}
           >
             <Icon icon={SlidersHorizontalIcon} size={15} />
@@ -595,6 +660,110 @@ export function AiCoachPage() {
         </section>
       )}
 
+      {isMemoryOpen && (
+        <section
+          aria-label="Mémoire IA persistante"
+          className="rounded-2xl bg-white p-4 dark:bg-zinc-900"
+        >
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+                Mémoire personnelle & préférences d’autonomie
+              </h2>
+              <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                Informations conservées pour personnaliser chaque planification sans tout redemander.
+              </p>
+            </div>
+            <Button type="button" variant="ghost" size="sm" onClick={() => setIsMemoryOpen(false)}>
+              Fermer
+            </Button>
+          </div>
+
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl bg-zinc-50 px-3 py-2.5 dark:bg-zinc-800/70">
+            <div className="space-y-0.5">
+              <p className="text-xs font-semibold text-zinc-900 dark:text-zinc-100">
+                Exécuter directement les actions simples demandées
+              </p>
+              <p className="text-[11px] text-zinc-600 dark:text-zinc-400">
+                Les créations multi-étapes, suppressions et validations de compétences restent toujours soumises à confirmation.
+              </p>
+            </div>
+            <Button
+              type="button"
+              variant={aiMemory.autoExecuteSimpleActions ? 'primary' : 'secondary'}
+              size="sm"
+              role="switch"
+              aria-checked={aiMemory.autoExecuteSimpleActions}
+              aria-label="Actions simples automatiques"
+              onClick={() => void handleToggleAutoSimple()}
+            >
+              {aiMemory.autoExecuteSimpleActions ? 'Activé' : 'Désactivé'}
+            </Button>
+          </div>
+
+          <form onSubmit={(e) => void handleSaveMemory(e)} className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <div>
+              <label
+                htmlFor="memory-weekly-hours"
+                className="mb-1 block text-xs font-medium text-zinc-700 dark:text-zinc-300"
+              >
+                Heures disponibles / semaine
+              </label>
+              <Input
+                id="memory-weekly-hours"
+                type="number"
+                min={0}
+                max={120}
+                placeholder="Ex : 8"
+                value={memoryHoursDraft}
+                onChange={(e) => setMemoryHoursDraft(e.target.value)}
+              />
+            </div>
+
+            <div>
+              <label
+                htmlFor="memory-constraints"
+                className="mb-1 block text-xs font-medium text-zinc-700 dark:text-zinc-300"
+              >
+                Contraintes (séparées par virgule)
+              </label>
+              <Input
+                id="memory-constraints"
+                placeholder="Ex : Pas le dimanche, Cours L3 matin"
+                value={memoryConstraintsDraft}
+                onChange={(e) => setMemoryConstraintsDraft(e.target.value)}
+              />
+            </div>
+
+            <div>
+              <label
+                htmlFor="memory-goals"
+                className="mb-1 block text-xs font-medium text-zinc-700 dark:text-zinc-300"
+              >
+                Objectifs long terme
+              </label>
+              <Input
+                id="memory-goals"
+                placeholder="Ex : Stage Fullstack React & Python"
+                value={memoryGoalsDraft}
+                onChange={(e) => setMemoryGoalsDraft(e.target.value)}
+              />
+            </div>
+
+            <div className="flex flex-wrap items-center justify-between gap-2 sm:col-span-3">
+              <div className="text-[11px] text-zinc-500 dark:text-zinc-400">
+                {aiMemory.recentDecisions.length > 0
+                  ? `Dernière décision mémorisée : ${aiMemory.recentDecisions[0]?.summary ?? ''}`
+                  : 'Aucune décision stratégique récente enregistrée.'}
+              </div>
+              <Button type="submit" variant="primary" size="sm" isLoading={isSavingMemory}>
+                Enregistrer la mémoire
+              </Button>
+            </div>
+          </form>
+        </section>
+      )}
+
       {isTimetableImportOpen && (
         <TimetableImportPanel
           weekStart={currentWeekMonday}
@@ -679,12 +848,12 @@ export function AiCoachPage() {
             mobileView === 'chat' ? 'flex' : 'hidden lg:flex',
           )}
         >
-          <div
+          <ScrollArea
             className={cn(
-              'flex-1 space-y-4 p-3.5 sm:space-y-5 sm:p-6',
-              (messages.length > 0 || isSending) &&
-                'max-h-[48dvh] overflow-y-auto sm:max-h-[60dvh]',
+              'flex-1',
+              (messages.length > 0 || isSending) && 'max-h-[48dvh] sm:max-h-[60dvh]',
             )}
+            viewportClassName="space-y-4 p-3.5 sm:space-y-5 sm:p-6"
           >
             {messages.length === 0 && !isSending ? (
               <div className="py-2 sm:py-6">
@@ -850,7 +1019,7 @@ export function AiCoachPage() {
                 <div ref={messagesEndRef} />
               </div>
             )}
-          </div>
+          </ScrollArea>
 
           {/* Barre mobile d'accès rapide aux validations */}
           {pendingProposalsCount > 0 && (

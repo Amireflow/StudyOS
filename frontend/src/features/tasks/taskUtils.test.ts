@@ -114,13 +114,22 @@ describe('taskUtils', () => {
     });
   });
 
-  it('trie les tâches par priorité décroissante puis par échéance croissante', () => {
+  it('trie les tâches par urgence (retard en premier, puis priorité décroissante et échéance croissante)', () => {
     const tLow = makeTask({ id: 'low', priority: 'low', dueAt: '2026-11-18T12:00:00.000Z' });
     const tCrit = makeTask({ id: 'crit', priority: 'critical', dueAt: null });
     const tHighLater = makeTask({ id: 'high2', priority: 'high', dueAt: '2026-11-22T12:00:00.000Z' });
     const tHighSoon = makeTask({ id: 'high1', priority: 'high', dueAt: '2026-11-20T12:00:00.000Z' });
 
-    const sorted = sortTasksByUrgency([tLow, tHighLater, tCrit, tHighSoon]);
-    expect(sorted.map((t) => t.id)).toEqual(['crit', 'high1', 'high2', 'low']);
+    const beforeDue = sortTasksByUrgency(
+      [tLow, tHighLater, tCrit, tHighSoon],
+      new Date('2026-11-17T12:00:00.000Z'),
+    );
+    expect(beforeDue.map((t) => t.id)).toEqual(['crit', 'high1', 'high2', 'low']);
+
+    const afterLowOverdue = sortTasksByUrgency(
+      [tLow, tHighLater, tCrit, tHighSoon],
+      new Date('2026-11-20T12:00:00.000Z'),
+    );
+    expect(afterLowOverdue.map((t) => t.id)).toEqual(['low', 'crit', 'high1', 'high2']);
   });
 });
