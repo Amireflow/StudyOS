@@ -495,6 +495,12 @@ export function AiProviderSettingsCard() {
                 </option>
               ))}
             </Select>
+            {provider === 'openai_compatible' &&
+              normalizeClientBaseUrl(provider, baseUrl) === 'https://api.openai.com/v1' && (
+                <p className="pt-1 text-xs text-zinc-500 dark:text-zinc-400">
+                  Recommandé : GPT-6.2 Sol pour le meilleur équilibre. GPT-6.2 Astra convient aux analyses les plus exigeantes, avec un coût supérieur.
+                </p>
+              )}
           </FormField>
         </div>
       )}
