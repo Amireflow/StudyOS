@@ -319,12 +319,14 @@ def get_course_service(
     course_repo: SqlCourseRepository = Depends(get_course_repository),
     skill_repo: SqlSkillRepository = Depends(get_skill_repository),
     profile_service: ProfileService = Depends(get_profile_service),
+    ai_memory_repo: SqlAiMemoryRepository = Depends(get_ai_memory_repository),
     settings: Settings = Depends(get_app_settings),
 ) -> CourseService:
     return CourseService(
         repo=course_repo,
         skill_repo=skill_repo,
         profile_service=profile_service,
+        ai_memory_repo=ai_memory_repo,
         settings=settings,
     )
 
