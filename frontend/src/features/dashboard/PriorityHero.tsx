@@ -117,7 +117,6 @@ export function PriorityHero({
             >
               Priorité principale
             </h2>
-            <p className="text-xs text-zinc-500 dark:text-zinc-400">Cap du jour</p>
           </div>
         </div>
 
@@ -245,7 +244,7 @@ export function PriorityHero({
       ) : activePriorityTitle ? (
         <div className="rounded-2xl bg-teal-50/70 p-4 sm:p-5 dark:bg-teal-950/35">
           <div className="space-y-2">
-            <p className="text-lg font-semibold tracking-tight text-zinc-900 sm:text-xl dark:text-zinc-50">
+            <p className="line-clamp-2 text-lg font-semibold tracking-tight text-zinc-900 sm:text-xl dark:text-zinc-50">
               {activePriorityTitle}
             </p>
 

@@ -2,13 +2,14 @@ from datetime import datetime
 from typing import Any, TypeVar
 from uuid import UUID
 from pydantic import BaseModel
-from sqlalchemy import select, update
+from sqlalchemy import delete, select, update
 from sqlalchemy.orm import Session
 from app.models.tables import (
     LearningModuleTable,
     LearningPathTable,
     LessonTable,
     ProjectTable,
+    SkillAssessmentTable,
     SkillEvidenceTable,
     SkillTable,
     StudySessionTable,
@@ -17,6 +18,9 @@ from app.models.tables import (
 from app.schemas.common import (
     LearningStatus,
     ProjectStatus,
+    SkillAssessmentStatus,
+    SkillAssessmentType,
+    SkillEvaluatorType,
     SkillEvidenceType,
     TaskPriority,
 )
@@ -82,6 +86,45 @@ class SkillEvidenceRecord(BaseModel):
     reference_url: str | None = None
     result: str | None = None
     observed_at: datetime
+    created_at: datetime
+    updated_at: datetime
+
+
+class SkillAssessmentRecord(BaseModel):
+    id: UUID
+    user_id: UUID
+    skill_id: UUID
+    path_id: UUID | None = None
+    module_id: UUID | None = None
+    lesson_id: UUID | None = None
+    assessment_type: SkillAssessmentType = SkillAssessmentType.practical_exercise
+    starting_level: int
+    target_level: int
+    proposed_level: int | None = None
+    status: SkillAssessmentStatus = SkillAssessmentStatus.pending
+    prompt_title: str
+    prompt_instructions: str
+    hints: list[str] = []
+    hints_revealed_count: int = 0
+    submission_text: str | None = None
+    submission_code: str | None = None
+    submission_reference_url: str | None = None
+    evidence_ids: list[str] = []
+    criteria: list[dict[str, Any]] = []
+    score: int | None = None
+    passed: bool | None = None
+    feedback: str | None = None
+    mastered_points: list[str] = []
+    gaps_identified: list[str] = []
+    remediation_recommendation: str | None = None
+    external_verification_warning: str | None = None
+    evaluator_type: SkillEvaluatorType = SkillEvaluatorType.pedagogical_engine
+    evaluator_name: str | None = None
+    decision_reason: str | None = None
+    applied_level_delta: int | None = None
+    submitted_at: datetime | None = None
+    evaluated_at: datetime | None = None
+    validated_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -173,6 +216,47 @@ def _to_evidence_record(row: SkillEvidenceTable) -> SkillEvidenceRecord:
     )
 
 
+def _to_assessment_record(row: SkillAssessmentTable) -> SkillAssessmentRecord:
+    return SkillAssessmentRecord(
+        id=row.id,
+        user_id=row.user_id,
+        skill_id=row.skill_id,
+        path_id=row.path_id,
+        module_id=row.module_id,
+        lesson_id=row.lesson_id,
+        assessment_type=SkillAssessmentType(row.assessment_type),
+        starting_level=row.starting_level,
+        target_level=row.target_level,
+        proposed_level=row.proposed_level,
+        status=SkillAssessmentStatus(row.status),
+        prompt_title=row.prompt_title,
+        prompt_instructions=row.prompt_instructions,
+        hints=list(row.hints or []),
+        hints_revealed_count=row.hints_revealed_count,
+        submission_text=row.submission_text,
+        submission_code=row.submission_code,
+        submission_reference_url=row.submission_reference_url,
+        evidence_ids=list(row.evidence_ids or []),
+        criteria=[dict(item) for item in (row.criteria or [])],
+        score=row.score,
+        passed=row.passed,
+        feedback=row.feedback,
+        mastered_points=list(row.mastered_points or []),
+        gaps_identified=list(row.gaps_identified or []),
+        remediation_recommendation=row.remediation_recommendation,
+        external_verification_warning=row.external_verification_warning,
+        evaluator_type=SkillEvaluatorType(row.evaluator_type),
+        evaluator_name=row.evaluator_name,
+        decision_reason=row.decision_reason,
+        applied_level_delta=row.applied_level_delta,
+        submitted_at=row.submitted_at,
+        evaluated_at=row.evaluated_at,
+        validated_at=row.validated_at,
+        created_at=row.created_at,
+        updated_at=row.updated_at,
+    )
+
+
 def _to_project_record(row: ProjectTable) -> ProjectRecord:
     return ProjectRecord(
         id=row.id,
@@ -245,7 +329,50 @@ class SqlLearningRepository:
         return _to_path_record(row)
 
     def delete_path(self, user_id: UUID, path_id: UUID) -> bool:
-        return _delete_owned_row(self._db, LearningPathTable, path_id, user_id)
+        modules = self.list_modules(user_id, path_id=path_id)
+        module_ids = [module.id for module in modules]
+        lesson_ids = [
+            lesson.id
+            for module_id in module_ids
+            for lesson in self.list_lessons(user_id, module_id=module_id)
+        ]
+        self._db.execute(
+            update(SkillAssessmentTable)
+            .where(SkillAssessmentTable.user_id == user_id, SkillAssessmentTable.path_id == path_id)
+            .values(path_id=None)
+        )
+        if module_ids:
+            self._db.execute(
+                update(SkillAssessmentTable)
+                .where(
+                    SkillAssessmentTable.user_id == user_id,
+                    SkillAssessmentTable.module_id.in_(module_ids),
+                )
+                .values(module_id=None)
+            )
+        if lesson_ids:
+            self._db.execute(
+                update(SkillAssessmentTable)
+                .where(
+                    SkillAssessmentTable.user_id == user_id,
+                    SkillAssessmentTable.lesson_id.in_(lesson_ids),
+                )
+                .values(lesson_id=None)
+            )
+            self._db.execute(
+                delete(LessonTable).where(
+                    LessonTable.user_id == user_id, LessonTable.id.in_(lesson_ids)
+                )
+            )
+        if module_ids:
+            self._db.execute(
+                delete(LearningModuleTable).where(
+                    LearningModuleTable.user_id == user_id,
+                    LearningModuleTable.id.in_(module_ids),
+                )
+            )
+        deleted = _delete_owned_row(self._db, LearningPathTable, path_id, user_id)
+        return deleted
 
     def list_modules(
         self,
@@ -270,6 +397,28 @@ class SqlLearningRepository:
         return _to_module_record(row)
 
     def delete_module(self, user_id: UUID, module_id: UUID) -> bool:
+        lesson_ids = [
+            lesson.id for lesson in self.list_lessons(user_id, module_id=module_id)
+        ]
+        self._db.execute(
+            update(SkillAssessmentTable)
+            .where(SkillAssessmentTable.user_id == user_id, SkillAssessmentTable.module_id == module_id)
+            .values(module_id=None)
+        )
+        if lesson_ids:
+            self._db.execute(
+                update(SkillAssessmentTable)
+                .where(
+                    SkillAssessmentTable.user_id == user_id,
+                    SkillAssessmentTable.lesson_id.in_(lesson_ids),
+                )
+                .values(lesson_id=None)
+            )
+            self._db.execute(
+                delete(LessonTable).where(
+                    LessonTable.user_id == user_id, LessonTable.id.in_(lesson_ids)
+                )
+            )
         return _delete_owned_row(self._db, LearningModuleTable, module_id, user_id)
 
     def list_lessons(
@@ -295,6 +444,11 @@ class SqlLearningRepository:
         return _to_lesson_record(row)
 
     def delete_lesson(self, user_id: UUID, lesson_id: UUID) -> bool:
+        self._db.execute(
+            update(SkillAssessmentTable)
+            .where(SkillAssessmentTable.user_id == user_id, SkillAssessmentTable.lesson_id == lesson_id)
+            .values(lesson_id=None)
+        )
         return _delete_owned_row(self._db, LessonTable, lesson_id, user_id)
 
     def detach_modules(self, user_id: UUID, module_ids: list[UUID]) -> None:
@@ -310,6 +464,11 @@ class SqlLearningRepository:
             .where(StudySessionTable.user_id == user_id, StudySessionTable.module_id.in_(module_ids))
             .values(module_id=None)
         )
+        self._db.execute(
+            update(SkillAssessmentTable)
+            .where(SkillAssessmentTable.user_id == user_id, SkillAssessmentTable.module_id.in_(module_ids))
+            .values(module_id=None)
+        )
         self._db.commit()
 
     def detach_lessons(self, user_id: UUID, lesson_ids: list[UUID]) -> None:
@@ -318,6 +477,11 @@ class SqlLearningRepository:
         self._db.execute(
             update(StudySessionTable)
             .where(StudySessionTable.user_id == user_id, StudySessionTable.lesson_id.in_(lesson_ids))
+            .values(lesson_id=None)
+        )
+        self._db.execute(
+            update(SkillAssessmentTable)
+            .where(SkillAssessmentTable.user_id == user_id, SkillAssessmentTable.lesson_id.in_(lesson_ids))
             .values(lesson_id=None)
         )
         self._db.commit()
@@ -344,15 +508,29 @@ class SqlSkillRepository:
         return _to_skill_record(row)
 
     def delete_skill(self, user_id: UUID, skill_id: UUID) -> bool:
-        deleted = _delete_owned_row(self._db, SkillTable, skill_id, user_id)
-        if deleted:
-            self._db.execute(
-                update(StudySessionTable)
-                .where(StudySessionTable.user_id == user_id, StudySessionTable.skill_id == skill_id)
-                .values(skill_id=None)
+        row = _get_owned_row(self._db, SkillTable, skill_id, user_id)
+        if row is None:
+            return False
+        self._db.execute(
+            delete(SkillAssessmentTable).where(
+                SkillAssessmentTable.user_id == user_id,
+                SkillAssessmentTable.skill_id == skill_id,
             )
-            self._db.commit()
-        return deleted
+        )
+        self._db.execute(
+            delete(SkillEvidenceTable).where(
+                SkillEvidenceTable.user_id == user_id,
+                SkillEvidenceTable.skill_id == skill_id,
+            )
+        )
+        self._db.execute(
+            update(StudySessionTable)
+            .where(StudySessionTable.user_id == user_id, StudySessionTable.skill_id == skill_id)
+            .values(skill_id=None)
+        )
+        self._db.delete(row)
+        self._db.commit()
+        return True
 
     def list_evidence(
         self,
@@ -378,6 +556,72 @@ class SqlSkillRepository:
 
     def delete_evidence(self, user_id: UUID, evidence_id: UUID) -> bool:
         return _delete_owned_row(self._db, SkillEvidenceTable, evidence_id, user_id)
+
+    def list_assessments(
+        self,
+        user_id: UUID,
+        *,
+        skill_id: UUID | None = None,
+        status: SkillAssessmentStatus | None = None,
+        path_id: UUID | None = None,
+        module_id: UUID | None = None,
+        lesson_id: UUID | None = None,
+    ) -> list[SkillAssessmentRecord]:
+        stmt = select(SkillAssessmentTable).where(SkillAssessmentTable.user_id == user_id)
+        if skill_id is not None:
+            stmt = stmt.where(SkillAssessmentTable.skill_id == skill_id)
+        if status is not None:
+            stmt = stmt.where(SkillAssessmentTable.status == status.value)
+        if path_id is not None:
+            stmt = stmt.where(SkillAssessmentTable.path_id == path_id)
+        if module_id is not None:
+            stmt = stmt.where(SkillAssessmentTable.module_id == module_id)
+        if lesson_id is not None:
+            stmt = stmt.where(SkillAssessmentTable.lesson_id == lesson_id)
+        rows = self._db.scalars(stmt).all()
+        return [_to_assessment_record(row) for row in rows]
+
+    def get_assessment(self, user_id: UUID, assessment_id: UUID) -> SkillAssessmentRecord | None:
+        row = _get_owned_row(self._db, SkillAssessmentTable, assessment_id, user_id)
+        return _to_assessment_record(row) if row else None
+
+    def save_assessment(self, record: SkillAssessmentRecord) -> SkillAssessmentRecord:
+        data = record.model_dump()
+        data["assessment_type"] = record.assessment_type.value
+        data["status"] = record.status.value
+        data["evaluator_type"] = record.evaluator_type.value
+        row = _upsert_owned_row(self._db, SkillAssessmentTable, record.id, record.user_id, data)
+        return _to_assessment_record(row)
+
+    def approve_assessment_and_update_skill(
+        self,
+        assessment_record: SkillAssessmentRecord,
+        skill_record: SkillRecord,
+    ) -> tuple[SkillAssessmentRecord, SkillRecord]:
+        """Valide l'évaluation et met à jour le niveau de la compétence de manière atomique."""
+        assessment_row = _get_owned_row(
+            self._db, SkillAssessmentTable, assessment_record.id, assessment_record.user_id
+        )
+        skill_row = _get_owned_row(
+            self._db, SkillTable, skill_record.id, skill_record.user_id
+        )
+        if assessment_row is None or skill_row is None:
+            raise ValueError("Impossible de synchroniser une évaluation ou compétence inexistante.")
+
+        assessment_data = assessment_record.model_dump()
+        assessment_data["assessment_type"] = assessment_record.assessment_type.value
+        assessment_data["status"] = assessment_record.status.value
+        assessment_data["evaluator_type"] = assessment_record.evaluator_type.value
+        for key, value in assessment_data.items():
+            setattr(assessment_row, key, value)
+
+        for key, value in skill_record.model_dump().items():
+            setattr(skill_row, key, value)
+
+        self._db.commit()
+        self._db.refresh(assessment_row)
+        self._db.refresh(skill_row)
+        return _to_assessment_record(assessment_row), _to_skill_record(skill_row)
 
 
 class SqlProjectRepository:

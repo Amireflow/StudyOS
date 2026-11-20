@@ -11,23 +11,34 @@ import {
 } from 'react';
 import type { ScheduleEventFormValues } from '../features/schedule/scheduleSchema';
 import { buildDuplicatedWeekEvents, getEventsForWeek } from '../features/schedule/scheduleUtils';
+import {
+  DAY_LABELS_FR,
+  detectClientTimetableAnomalies,
+  parseLocalTimetableFile,
+  SUBTYPE_LABELS_FR,
+} from '../features/schedule/timetableClientParser';
 import type { ManualSessionValues, StartSessionValues } from '../features/sessions/sessionSchema';
 import type { TaskFormValues } from '../features/tasks/taskSchema';
 import { ApiError } from '../lib/api-client';
 import {
   addDays,
   dateInputToDueIso,
+  getMondayOfWeek,
   localDateAndTimeToIso,
   toLocalDateKey,
 } from '../lib/date';
 import { generateId, readFromStorage, STORAGE_KEYS, writeToStorage } from '../lib/storage';
 import {
+  analyzeTimetableFileApi,
   cancelSessionApi,
+  cancelTimetableImportApi,
+  confirmTimetableImportApi,
   createScheduleEventApi,
   createTaskApi,
   deleteScheduleEventApi,
   deleteSessionApi,
   deleteTaskApi,
+  deleteTimetableImportSourceApi,
   duplicateWeekApi,
   fetchProfileApi,
   fetchScheduleEventsApi,
@@ -40,8 +51,17 @@ import {
   updateScheduleEventApi,
   updateTaskApi,
 } from '../lib/studyApi';
-import type { ScheduleEvent, StudySession, Task, TaskStatus } from '../types/domain';
+import type {
+  ExtractedCourseRow,
+  ScheduleEvent,
+  StudySession,
+  Task,
+  TaskStatus,
+  TimetableImport,
+  TimetableImportConfirmResult,
+} from '../types/domain';
 import { useAuth } from './AuthContext';
+import { useTheme, type ThemePreference } from './ThemeContext';
 
 const LOCAL_USER_ID = 'local-user';
 
@@ -324,6 +344,20 @@ export interface StudyStoreContextValue extends StudyState {
   duplicateWeekEvents: (
     weekStart: Date,
   ) => Promise<{ createdCount: number; skippedCount: number } | null>;
+  analyzeTimetableFile: (file: File) => Promise<TimetableImport | null>;
+  confirmTimetableImport: (
+    importRecord: TimetableImport,
+    options: {
+      courses: ExtractedCourseRow[];
+      validFrom?: string | null;
+      validUntil?: string | null;
+      targetWeekStart?: string;
+      recurrenceWeeks?: number;
+      replaceExistingImported?: boolean;
+    },
+  ) => Promise<TimetableImportConfirmResult | null>;
+  cancelTimetableImport: (importId: string) => Promise<boolean>;
+  deleteTimetableImportSource: (importId: string) => Promise<boolean>;
   loadDemoData: () => void;
   clearAllData: () => void;
 }
@@ -332,6 +366,7 @@ const StudyStoreContext = createContext<StudyStoreContextValue | null>(null);
 
 export function StudyStoreProvider({ children }: { children: ReactNode }) {
   const { session, logout, updateSessionDisplayName } = useAuth();
+  const { theme, setTheme } = useTheme();
   const queryClient = useQueryClient();
 
   const isApiMode = session?.mode === 'api' && Boolean(session.accessToken);
@@ -344,16 +379,70 @@ export function StudyStoreProvider({ children }: { children: ReactNode }) {
   const [mutationError, setMutationError] = useState<string | null>(null);
   const scheduleEventsRef = useRef(localState.scheduleEvents);
   scheduleEventsRef.current = localState.scheduleEvents;
+  const themeSyncRef = useRef<{
+    userId: string;
+    pendingTarget: ThemePreference | null;
+    syncedTheme: ThemePreference;
+  } | null>(null);
 
   useEffect(() => {
-    writeToStorage(STORAGE_KEYS.studyState, localState);
-  }, [localState]);
+    if (!isApiMode) {
+      writeToStorage(STORAGE_KEYS.studyState, localState);
+    }
+  }, [isApiMode, localState]);
 
   const profileQuery = useQuery({
     queryKey: ['profile', userIdKey],
     queryFn: () => fetchProfileApi(accessToken),
     enabled: isApiMode,
   });
+
+  useEffect(() => {
+    if (!isApiMode || !profileQuery.isSuccess || !profileQuery.data) {
+      return;
+    }
+    const rawServerTheme = profileQuery.data.preferences?.theme;
+    const serverTheme: ThemePreference =
+      rawServerTheme === 'light' || rawServerTheme === 'dark' || rawServerTheme === 'system'
+        ? rawServerTheme
+        : 'system';
+
+    const current = themeSyncRef.current;
+    if (!current || current.userId !== userIdKey) {
+      themeSyncRef.current = {
+        userId: userIdKey,
+        pendingTarget: theme !== serverTheme ? serverTheme : null,
+        syncedTheme: serverTheme,
+      };
+      if (theme !== serverTheme) {
+        setTheme(serverTheme);
+      }
+      return;
+    }
+
+    if (current.pendingTarget !== null) {
+      if (theme === current.pendingTarget) {
+        current.pendingTarget = null;
+        current.syncedTheme = theme;
+      }
+      return;
+    }
+
+    if (theme !== current.syncedTheme) {
+      current.syncedTheme = theme;
+      const mergedPreferences = {
+        ...(profileQuery.data.preferences ?? {}),
+        theme,
+      };
+      void updateProfileApi(accessToken, { preferences: mergedPreferences })
+        .then((updated) => {
+          queryClient.setQueryData(['profile', userIdKey], updated);
+        })
+        .catch(() => {
+          // Ne bloque pas l'interface si la sauvegarde réseau du thème échoue.
+        });
+    }
+  }, [isApiMode, profileQuery.isSuccess, profileQuery.data, userIdKey, theme, setTheme, accessToken, queryClient]);
 
   const tasksQuery = useQuery({
     queryKey: ['tasks', userIdKey],
@@ -817,6 +906,200 @@ export function StudyStoreProvider({ children }: { children: ReactNode }) {
       return { createdCount: created.length, skippedCount };
     };
 
+    const analyzeTimetableFile = async (file: File): Promise<TimetableImport | null> => {
+      if (isApiMode) {
+        const result = await runApiMutation(
+          () => analyzeTimetableFileApi(accessToken, file),
+          [],
+        );
+        return result.ok ? result.data : null;
+      }
+
+      setMutationError(null);
+      try {
+        return await parseLocalTimetableFile(file, scheduleEventsRef.current, LOCAL_USER_ID);
+      } catch (err) {
+        setMutationError(
+          err instanceof Error ? err.message : 'Impossible d’analyser ce document.',
+        );
+        return null;
+      }
+    };
+
+    const confirmTimetableImport = async (
+      importRecord: TimetableImport,
+      options: {
+        courses: ExtractedCourseRow[];
+        validFrom?: string | null;
+        validUntil?: string | null;
+        targetWeekStart?: string;
+        recurrenceWeeks?: number;
+        replaceExistingImported?: boolean;
+      },
+    ): Promise<TimetableImportConfirmResult | null> => {
+      if (isApiMode) {
+        const result = await runApiMutation(
+          () =>
+            confirmTimetableImportApi(accessToken, importRecord.id, {
+              courses: options.courses,
+              validFrom: options.validFrom ?? importRecord.validFrom,
+              validUntil: options.validUntil ?? importRecord.validUntil,
+              targetWeekStart: options.targetWeekStart ?? null,
+              recurrenceWeeks: options.recurrenceWeeks ?? 1,
+              replaceExistingImported: options.replaceExistingImported ?? false,
+            }),
+          ['schedule'],
+        );
+        return result.ok ? result.data : null;
+      }
+
+      setMutationError(null);
+      const activeCourses = options.courses.filter((c) => !c.ignored);
+      if (activeCourses.length === 0) {
+        setMutationError('Aucun cours actif à enregistrer.');
+        return null;
+      }
+
+      const anomalies = detectClientTimetableAnomalies(
+        options.courses,
+        scheduleEventsRef.current,
+        options.targetWeekStart,
+      );
+      const blocking = anomalies.filter((a) => a.severity === 'error');
+      if (blocking.length > 0) {
+        setMutationError(`Impossible de valider : ${blocking[0].message}`);
+        return null;
+      }
+
+      const baseMonday = options.targetWeekStart
+        ? getMondayOfWeek(new Date(`${options.targetWeekStart}T12:00:00`))
+        : getMondayOfWeek(new Date());
+      const recurrenceWeeks = Math.max(1, Math.min(options.recurrenceWeeks ?? 1, 24));
+      const nowIso = new Date().toISOString();
+
+      let baseEvents = [...scheduleEventsRef.current];
+      let replacedCount = 0;
+      if (options.replaceExistingImported) {
+        const kept = baseEvents.filter((ev) => ev.source !== 'timetable_import');
+        replacedCount = baseEvents.length - kept.length;
+        baseEvents = kept;
+      }
+
+      const existingKeys = new Set(
+        baseEvents.map(
+          (ev) =>
+            `${ev.title.replace(/^\[(TD|TP|Examen|Cours)\]\s*/i, '').trim().toLowerCase()}|${ev.startsAt}|${ev.endsAt}`,
+        ),
+      );
+
+      const createdEvents: ScheduleEvent[] = [];
+      let skippedDuplicatesCount = 0;
+
+      for (let w = 0; w < recurrenceWeeks; w += 1) {
+        const weekMonday = addDays(baseMonday, w * 7);
+        for (const row of activeCourses) {
+          if (row.dayOfWeek === null || !row.startTime || !row.endTime) {
+            continue;
+          }
+          const courseDate = toLocalDateKey(addDays(weekMonday, row.dayOfWeek));
+          const startsAt = localDateAndTimeToIso(courseDate, row.startTime);
+          const endsAt = localDateAndTimeToIso(courseDate, row.endTime);
+          const cleanSubject = row.subject.trim();
+          const normKey = `${cleanSubject.toLowerCase()}|${startsAt}|${endsAt}`;
+
+          if (existingKeys.has(normKey)) {
+            skippedDuplicatesCount += 1;
+            continue;
+          }
+          existingKeys.add(normKey);
+
+          const prefix =
+            row.sessionType !== 'cours' && row.sessionType !== 'autre'
+              ? `[${SUBTYPE_LABELS_FR[row.sessionType]}] `
+              : '';
+          const title = `${prefix}${cleanSubject}`.slice(0, 140);
+
+          createdEvents.push({
+            id: generateId(),
+            userId: LOCAL_USER_ID,
+            title,
+            type: 'course',
+            startsAt,
+            endsAt,
+            notes: null,
+            source: 'timetable_import',
+            importId: importRecord.id,
+            sessionSubtype: row.sessionType,
+            teacher: row.teacher,
+            room: row.room,
+            groupName: row.groupName,
+            createdAt: nowIso,
+            updatedAt: nowIso,
+          });
+        }
+      }
+
+      setLocalState((prev) => {
+        const current = options.replaceExistingImported
+          ? prev.scheduleEvents.filter((ev) => ev.source !== 'timetable_import')
+          : prev.scheduleEvents;
+        return {
+          ...prev,
+          scheduleEvents: [...current, ...createdEvents],
+        };
+      });
+
+      const updatedImport: TimetableImport = {
+        ...importRecord,
+        status: 'validated',
+        validFrom: options.validFrom ?? importRecord.validFrom,
+        validUntil: options.validUntil ?? importRecord.validUntil,
+        extractedCourses: options.courses.map((c) => ({
+          ...c,
+          dayLabel: c.dayOfWeek !== null ? DAY_LABELS_FR[c.dayOfWeek] : null,
+        })),
+        anomalies,
+        blockingAnomaliesCount: 0,
+        createdEventsCount: createdEvents.length,
+        skippedDuplicatesCount,
+        replacedEventsCount: replacedCount,
+        updatedAt: nowIso,
+        validatedAt: nowIso,
+      };
+
+      return {
+        importRecord: updatedImport,
+        createdEvents,
+        createdCount: createdEvents.length,
+        skippedDuplicatesCount,
+        replacedCount,
+      };
+    };
+
+    const cancelTimetableImport = async (importId: string): Promise<boolean> => {
+      if (isApiMode) {
+        const result = await runApiMutation(
+          () => cancelTimetableImportApi(accessToken, importId),
+          [],
+        );
+        return result.ok;
+      }
+      setMutationError(null);
+      return true;
+    };
+
+    const deleteTimetableImportSource = async (importId: string): Promise<boolean> => {
+      if (isApiMode) {
+        const result = await runApiMutation(
+          () => deleteTimetableImportSourceApi(accessToken, importId),
+          [],
+        );
+        return result.ok;
+      }
+      setMutationError(null);
+      return true;
+    };
+
     const loadDemoData = () => {
       setLocalState(buildDemoState());
     };
@@ -841,6 +1124,10 @@ export function StudyStoreProvider({ children }: { children: ReactNode }) {
       updateScheduleEvent,
       deleteScheduleEvent,
       duplicateWeekEvents,
+      analyzeTimetableFile,
+      confirmTimetableImport,
+      cancelTimetableImport,
+      deleteTimetableImportSource,
       loadDemoData,
       clearAllData,
     };

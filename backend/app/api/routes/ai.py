@@ -11,14 +11,57 @@ from app.schemas.ai import (
     AiConversationDetailResponse,
     AiConversationResponse,
     AiMessageCreate,
+    AiProviderConfigResponse,
+    AiProviderConfigUpdate,
     AiReportResponse,
     AiToolSpec,
     AiTurnResponse,
+    FetchProviderModelsRequest,
+    FetchProviderModelsResponse,
     RejectProposalRequest,
+    UpdateProposalRequest,
 )
 from app.schemas.common import AiReportType, ProposalStatus
 
 router = APIRouter(prefix="/ai", tags=["Copilote IA"])
+
+
+@router.get(
+    "/provider/config",
+    response_model=AiProviderConfigResponse,
+    summary="Consulter la configuration active du fournisseur IA (clé masquée)",
+)
+def get_ai_provider_config(
+    user_id: UUID = Depends(get_current_user_id),
+    orchestrator: AIOrchestrator = Depends(get_ai_orchestrator),
+) -> AiProviderConfigResponse:
+    return orchestrator.get_provider_config(user_id)
+
+
+@router.put(
+    "/provider/config",
+    response_model=AiProviderConfigResponse,
+    summary="Enregistrer le fournisseur IA, la clé API et le modèle côté serveur",
+)
+def update_ai_provider_config(
+    payload: AiProviderConfigUpdate,
+    user_id: UUID = Depends(get_current_user_id),
+    orchestrator: AIOrchestrator = Depends(get_ai_orchestrator),
+) -> AiProviderConfigResponse:
+    return orchestrator.update_provider_config(user_id, payload)
+
+
+@router.post(
+    "/provider/models",
+    response_model=FetchProviderModelsResponse,
+    summary="Récupérer la liste des modèles disponibles pour le fournisseur et la clé API",
+)
+def fetch_ai_provider_models(
+    payload: FetchProviderModelsRequest,
+    user_id: UUID = Depends(get_current_user_id),
+    orchestrator: AIOrchestrator = Depends(get_ai_orchestrator),
+) -> FetchProviderModelsResponse:
+    return orchestrator.fetch_available_models(user_id, payload)
 
 
 @router.get(
@@ -125,6 +168,20 @@ def get_proposal(
     orchestrator: AIOrchestrator = Depends(get_ai_orchestrator),
 ) -> AiActionProposalResponse:
     return orchestrator.get_proposal(user_id, proposal_id)
+
+
+@router.patch(
+    "/proposals/{proposal_id}",
+    response_model=AiActionProposalResponse,
+    summary="Modifier ou recalculer une proposition d'action IA avant validation",
+)
+def update_proposal(
+    proposal_id: UUID,
+    payload: UpdateProposalRequest,
+    user_id: UUID = Depends(get_current_user_id),
+    orchestrator: AIOrchestrator = Depends(get_ai_orchestrator),
+) -> AiActionProposalResponse:
+    return orchestrator.update_proposal(user_id, proposal_id, payload)
 
 
 @router.post(

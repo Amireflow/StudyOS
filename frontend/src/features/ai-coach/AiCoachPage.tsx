@@ -5,6 +5,7 @@ import {
   ArrowUp02Icon,
   BookOpen01Icon,
   Calendar03Icon,
+  CheckmarkCircle02Icon,
   CheckmarkSquare02Icon,
   File02Icon,
   HistoryIcon,
@@ -12,6 +13,7 @@ import {
   Settings02Icon,
   ShieldCheckIcon,
   SlidersHorizontalIcon,
+  SparklesIcon,
   Target02Icon,
   Timer02Icon,
 } from '@hugeicons/core-free-icons';
@@ -22,9 +24,10 @@ import { InlineConfirm } from '../../components/ui/FormFields';
 import { Icon, type IconSvgElement } from '../../components/ui/Icon';
 import { EmptyState, ErrorState, LoadingState } from '../../components/ui/StateFeedback';
 import { cn } from '../../lib/cn';
-import { formatDateTimeFr } from '../../lib/date';
+import { formatDateTimeFr, getMondayOfWeek } from '../../lib/date';
 import { useAiStore } from '../../state/AiStoreContext';
 import type { AiContextScope } from '../../types/domain';
+import { TimetableImportPanel } from '../schedule/TimetableImportPanel';
 import { MarkdownContent } from './MarkdownContent';
 import { ProposalCard } from './ProposalCard';
 
@@ -86,7 +89,103 @@ const STARTER_PROMPTS: Array<{
     prompt: 'Quelle compétence devrais-je renforcer cette semaine selon mon avancement ?',
     icon: BookOpen01Icon,
   },
+  {
+    title: 'Apprendre une compétence',
+    subtitle: 'Analyser la faisabilité et planifier sans conflit',
+    prompt: 'Je voudrais apprendre le développement avec React.',
+    icon: Target02Icon,
+  },
 ];
+
+const THINKING_STEPS: Array<{ label: string; detail: string }> = [
+  {
+    label: 'Analyse de votre demande',
+    detail: 'Lecture de votre objectif et identification de l’intention pédagogique…',
+  },
+  {
+    label: 'Consultation de votre contexte',
+    detail: 'Croisement avec vos tâches, votre emploi du temps et vos compétences…',
+  },
+  {
+    label: 'Vérification stratégique & verrou pédagogique',
+    detail: 'Contrôle des conflits horaires, de la priorité active et des preuves…',
+  },
+  {
+    label: 'Rédaction de la réponse & propositions',
+    detail: 'Structuration de la synthèse et préparation des actions à valider…',
+  },
+];
+
+function StreamingAssistantContent({
+  content,
+  isStreaming,
+  onComplete,
+}: {
+  content: string;
+  isStreaming: boolean;
+  onComplete: () => void;
+}) {
+  const [revealedCount, setRevealedCount] = useState(() => (isStreaming ? 0 : content.length));
+
+  useEffect(() => {
+    if (!isStreaming) {
+      setRevealedCount(content.length);
+      return;
+    }
+
+    const total = content.length;
+    if (total === 0) {
+      onComplete();
+      return;
+    }
+
+    const stepChars = Math.max(18, Math.ceil(total / 28));
+    let current = Math.min(total, stepChars);
+    setRevealedCount(current);
+
+    const timer = window.setInterval(() => {
+      current = Math.min(total, current + stepChars);
+      while (current < total && !/\s/.test(content[current])) {
+        current += 1;
+      }
+      setRevealedCount(current);
+      if (current >= total) {
+        window.clearInterval(timer);
+        onComplete();
+      }
+    }, 24);
+
+    return () => {
+      window.clearInterval(timer);
+    };
+  }, [content, isStreaming, onComplete]);
+
+  if (!isStreaming || revealedCount >= content.length) {
+    return <MarkdownContent content={content} />;
+  }
+
+  return (
+    <div className="space-y-2">
+      <MarkdownContent content={content.slice(0, revealedCount)} />
+      <div className="flex items-center justify-between gap-2 pt-0.5">
+        <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-teal-700 dark:text-teal-400">
+          <span className="h-1.5 w-1.5 animate-ping rounded-full bg-teal-600 dark:bg-teal-400" />
+          Rédaction en cours…
+        </span>
+        <button
+          type="button"
+          onClick={() => {
+            setRevealedCount(content.length);
+            onComplete();
+          }}
+          className="text-[11px] font-medium text-zinc-500 underline hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200"
+        >
+          Afficher tout
+        </button>
+      </div>
+    </div>
+  );
+}
 
 export function AiCoachPage() {
   const {
@@ -105,6 +204,7 @@ export function AiCoachPage() {
     createConversation,
     deleteConversation,
     sendMessage,
+    updateProposal,
     acceptProposal,
     rejectProposal,
     generateDailyBriefing,
@@ -118,12 +218,20 @@ export function AiCoachPage() {
   const [mobileView, setMobileView] = useState<MobileView>('chat');
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [isToolsOpen, setIsToolsOpen] = useState(false);
+  const [isTimetableImportOpen, setIsTimetableImportOpen] = useState(false);
   const [isSending, setIsSending] = useState(false);
+  const currentWeekMonday = useMemo(() => getMondayOfWeek(new Date()), []);
+  const [pendingUserPrompt, setPendingUserPrompt] = useState<string | null>(null);
+  const [thinkingStepIndex, setThinkingStepIndex] = useState(0);
+  const [thinkingElapsedSec, setThinkingElapsedSec] = useState(0);
+  const [streamingMessageId, setStreamingMessageId] = useState<string | null>(null);
   const [isGeneratingBriefing, setIsGeneratingBriefing] = useState(false);
   const [isGeneratingWeekly, setIsGeneratingWeekly] = useState(false);
 
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
+  const awaitingStreamAfterSendRef = useRef(false);
+  const lastKnownAssistantIdRef = useRef<string | null>(null);
 
   const pendingProposalsCount = useMemo(
     () => proposals.filter((item) => item.status === 'pending').length,
@@ -141,22 +249,72 @@ export function AiCoachPage() {
   );
 
   useEffect(() => {
-    if (messages.length > 0) {
+    if (!isSending) {
+      setThinkingStepIndex(0);
+      setThinkingElapsedSec(0);
+      return;
+    }
+
+    const startMs = Date.now();
+    const interval = window.setInterval(() => {
+      const elapsedMs = Date.now() - startMs;
+      setThinkingElapsedSec(Math.floor(elapsedMs / 1000));
+      if (elapsedMs >= 6500) {
+        setThinkingStepIndex(3);
+      } else if (elapsedMs >= 3600) {
+        setThinkingStepIndex(2);
+      } else if (elapsedMs >= 1500) {
+        setThinkingStepIndex(1);
+      }
+    }, 300);
+
+    return () => {
+      window.clearInterval(interval);
+    };
+  }, [isSending]);
+
+  useEffect(() => {
+    const lastAssistant = [...messages].reverse().find((m) => m.role === 'assistant') ?? null;
+    if (
+      awaitingStreamAfterSendRef.current &&
+      lastAssistant &&
+      lastAssistant.id !== lastKnownAssistantIdRef.current
+    ) {
+      awaitingStreamAfterSendRef.current = false;
+      lastKnownAssistantIdRef.current = lastAssistant.id;
+      if (import.meta.env.MODE !== 'test') {
+        setStreamingMessageId(lastAssistant.id);
+      }
+    } else if (lastAssistant) {
+      lastKnownAssistantIdRef.current = lastAssistant.id;
+    }
+  }, [messages]);
+
+  useEffect(() => {
+    if (messages.length > 0 || isSending) {
       messagesEndRef.current?.scrollIntoView?.({ behavior: 'smooth' });
     }
-  }, [activeConversationId, messages.length]);
+  }, [activeConversationId, isSending, messages.length, thinkingStepIndex]);
 
   async function submitPrompt() {
     const trimmed = promptText.trim();
     if (!trimmed || isSending) return;
+    const prevAssistant = [...messages].reverse().find((m) => m.role === 'assistant') ?? null;
+    lastKnownAssistantIdRef.current = prevAssistant?.id ?? null;
+    awaitingStreamAfterSendRef.current = true;
+    setPendingUserPrompt(trimmed);
+    setPromptText('');
     setIsSending(true);
     try {
       const ok = await sendMessage(trimmed, [selectedScope]);
       if (ok) {
-        setPromptText('');
         setRailTab('proposals');
+      } else {
+        awaitingStreamAfterSendRef.current = false;
+        setPromptText(trimmed);
       }
     } finally {
+      setPendingUserPrompt(null);
       setIsSending(false);
     }
   }
@@ -195,6 +353,7 @@ export function AiCoachPage() {
       const ok = await generateDailyBriefing();
       if (ok) {
         setRailTab('reports');
+        setMobileView('rail');
       }
     } finally {
       setIsGeneratingBriefing(false);
@@ -208,6 +367,7 @@ export function AiCoachPage() {
       const ok = await generateWeeklyReview();
       if (ok) {
         setRailTab('reports');
+        setMobileView('rail');
       }
     } finally {
       setIsGeneratingWeekly(false);
@@ -223,31 +383,45 @@ export function AiCoachPage() {
   }
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-3 sm:space-y-5">
       {/* En-tête studio */}
-      <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <header className="flex flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0">
           <div className="flex items-center gap-2.5">
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-teal-700 text-white dark:bg-teal-600">
-              <Icon icon={AiChat02Icon} size={18} />
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-teal-700 text-white sm:h-9 sm:w-9 dark:bg-teal-600">
+              <Icon icon={AiChat02Icon} size={17} />
             </div>
             <div className="min-w-0">
-              <h1 className="text-xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-100">
+              <h1 className="text-lg font-semibold tracking-tight text-zinc-900 sm:text-xl dark:text-zinc-100">
                 Copilote
               </h1>
-              <p className="truncate text-xs text-zinc-500 dark:text-zinc-400">
-                {activeConversation ? activeConversation.title : 'Planification, arbitrage et synthèses'}
-              </p>
+              {activeConversation && (
+                <p className="truncate text-xs text-zinc-500 dark:text-zinc-400">
+                  {activeConversation.title}
+                </p>
+              )}
             </div>
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="no-scrollbar flex items-center gap-1.5 overflow-x-auto pb-0.5 sm:flex-wrap sm:overflow-visible sm:pb-0">
+          <Button
+            type="button"
+            variant="primary"
+            size="sm"
+            className="shrink-0"
+            onClick={() => void handleNewConversation()}
+          >
+            <Icon icon={MessageAdd01Icon} size={15} />
+            Nouvelle conversation
+          </Button>
+
           {conversations.length > 0 && (
             <Button
               type="button"
               variant={isHistoryOpen ? 'primary' : 'secondary'}
               size="sm"
+              className="shrink-0"
               aria-label="Historique des conversations"
               aria-expanded={isHistoryOpen}
               onClick={() => {
@@ -264,6 +438,7 @@ export function AiCoachPage() {
             type="button"
             variant="secondary"
             size="sm"
+            className="shrink-0"
             isLoading={isGeneratingBriefing}
             onClick={() => void handleGenerateBriefing()}
           >
@@ -275,6 +450,7 @@ export function AiCoachPage() {
             type="button"
             variant="secondary"
             size="sm"
+            className="shrink-0"
             isLoading={isGeneratingWeekly}
             onClick={() => void handleGenerateWeekly()}
           >
@@ -286,6 +462,7 @@ export function AiCoachPage() {
             type="button"
             variant={isToolsOpen ? 'primary' : 'ghost'}
             size="sm"
+            className="shrink-0"
             aria-expanded={isToolsOpen}
             onClick={() => {
               setIsToolsOpen((prev) => !prev);
@@ -294,16 +471,6 @@ export function AiCoachPage() {
           >
             <Icon icon={SlidersHorizontalIcon} size={15} />
             Outils ({tools.length})
-          </Button>
-
-          <Button
-            type="button"
-            variant="primary"
-            size="sm"
-            onClick={() => void handleNewConversation()}
-          >
-            <Icon icon={MessageAdd01Icon} size={15} />
-            Nouvelle conversation
           </Button>
         </div>
       </header>
@@ -428,6 +595,21 @@ export function AiCoachPage() {
         </section>
       )}
 
+      {isTimetableImportOpen && (
+        <TimetableImportPanel
+          weekStart={currentWeekMonday}
+          onClose={() => setIsTimetableImportOpen(false)}
+          onImportCancelled={() => setIsTimetableImportOpen(false)}
+          onImportSuccess={(result) => {
+            setIsTimetableImportOpen(false);
+            void sendMessage(
+              `J’ai importé et validé mon emploi du temps (${result.createdCount} cours enregistrés). Analyse mes cours et mes créneaux disponibles.`,
+              ['schedule', 'today', 'tasks'],
+            );
+          }}
+        />
+      )}
+
       {/* Sélecteur mobile (3 onglets) */}
       <nav
         aria-label="Vues mobiles du copilote"
@@ -437,7 +619,7 @@ export function AiCoachPage() {
           type="button"
           onClick={() => setMobileView('chat')}
           className={cn(
-            'rounded-xl px-3 py-2 text-xs font-semibold transition-colors',
+            'rounded-xl px-2.5 py-1.5 text-xs font-semibold transition-colors',
             mobileView === 'chat'
               ? 'bg-white text-zinc-900 dark:bg-zinc-800 dark:text-zinc-100'
               : 'text-zinc-600 dark:text-zinc-400',
@@ -452,7 +634,7 @@ export function AiCoachPage() {
             setMobileView('rail');
           }}
           className={cn(
-            'flex items-center justify-center gap-1.5 rounded-xl px-3 py-2 text-xs font-semibold transition-colors',
+            'flex items-center justify-center gap-1.5 rounded-xl px-2.5 py-1.5 text-xs font-semibold transition-colors',
             mobileView === 'rail' && railTab === 'proposals'
               ? 'bg-white text-zinc-900 dark:bg-zinc-800 dark:text-zinc-100'
               : 'text-zinc-600 dark:text-zinc-400',
@@ -472,7 +654,7 @@ export function AiCoachPage() {
             setMobileView('rail');
           }}
           className={cn(
-            'flex items-center justify-center gap-1.5 rounded-xl px-3 py-2 text-xs font-semibold transition-colors',
+            'flex items-center justify-center gap-1.5 rounded-xl px-2.5 py-1.5 text-xs font-semibold transition-colors',
             mobileView === 'rail' && railTab === 'reports'
               ? 'bg-white text-zinc-900 dark:bg-zinc-800 dark:text-zinc-100'
               : 'text-zinc-600 dark:text-zinc-400',
@@ -488,7 +670,7 @@ export function AiCoachPage() {
       </nav>
 
       {/* Studio 2 colonnes : flux de conversation + panneau latéral unique */}
-      <div className="grid grid-cols-1 gap-5 lg:grid-cols-12 lg:items-start">
+      <div className="grid grid-cols-1 gap-4 sm:gap-5 lg:grid-cols-12 lg:items-start">
         {/* Colonne gauche : fil de discussion & compositeur */}
         <section
           aria-label="Fil de discussion du copilote"
@@ -497,36 +679,34 @@ export function AiCoachPage() {
             mobileView === 'chat' ? 'flex' : 'hidden lg:flex',
           )}
         >
-          <div className="flex-1 space-y-5 p-4 sm:p-6">
-            {messages.length === 0 ? (
-              <div className="py-4 sm:py-6">
+          <div
+            className={cn(
+              'flex-1 space-y-4 p-3.5 sm:space-y-5 sm:p-6',
+              (messages.length > 0 || isSending) &&
+                'max-h-[48dvh] overflow-y-auto sm:max-h-[60dvh]',
+            )}
+          >
+            {messages.length === 0 && !isSending ? (
+              <div className="py-2 sm:py-6">
                 <div className="max-w-lg">
-                  <h2 className="text-lg font-semibold tracking-tight text-zinc-900 dark:text-zinc-100">
+                  <h2 className="text-base font-semibold tracking-tight text-zinc-900 sm:text-lg dark:text-zinc-100">
                     Que souhaitez-vous organiser ?
                   </h2>
-                  <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
-                    Décrivez votre objectif du moment ou démarrez avec une demande rapide.
-                  </p>
                 </div>
 
-                <div className="mt-5 grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+                <div className="mt-3 grid grid-cols-1 gap-2 sm:mt-4 sm:grid-cols-2">
                   {STARTER_PROMPTS.map((item) => (
                     <button
                       key={item.title}
                       type="button"
                       onClick={() => handleUseStarterPrompt(item.prompt)}
-                      className="flex items-start gap-3 rounded-2xl bg-zinc-50 p-3.5 text-left transition-colors hover:bg-zinc-100 dark:bg-zinc-800/70 dark:hover:bg-zinc-800"
+                      className="flex items-center gap-2.5 rounded-2xl bg-zinc-50 p-2.5 text-left transition-colors hover:bg-zinc-100 sm:gap-3 sm:p-3 dark:bg-zinc-800/70 dark:hover:bg-zinc-800"
                     >
                       <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-white text-teal-700 dark:bg-zinc-900 dark:text-teal-400">
                         <Icon icon={item.icon} size={16} />
                       </span>
-                      <span className="min-w-0">
-                        <span className="block text-sm font-semibold text-zinc-900 dark:text-zinc-100">
-                          {item.title}
-                        </span>
-                        <span className="mt-0.5 block text-xs text-zinc-500 dark:text-zinc-400">
-                          {item.subtitle}
-                        </span>
+                      <span className="truncate text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+                        {item.title}
                       </span>
                     </button>
                   ))}
@@ -557,13 +737,19 @@ export function AiCoachPage() {
                         <Icon icon={AiChat02Icon} size={15} />
                       </div>
                       <div className="min-w-0 flex-1 space-y-2.5">
-                        <MarkdownContent content={message.content} />
+                        <StreamingAssistantContent
+                          content={message.content}
+                          isStreaming={streamingMessageId === message.id}
+                          onComplete={() =>
+                            setStreamingMessageId((prev) => (prev === message.id ? null : prev))
+                          }
+                        />
 
                         {hasMissingData && (
                           <div className="flex items-start gap-2 rounded-xl bg-amber-50/90 px-3 py-2 text-xs leading-relaxed text-amber-900 dark:bg-amber-950/35 dark:text-amber-200">
                             <Icon icon={Alert02Icon} size={15} className="mt-0.5 shrink-0" />
                             <div>
-                              <span className="font-semibold">Indication AI-06 — Données partielles :</span>{' '}
+                              <span className="font-semibold">Indication AI-06 : Données partielles :</span>{' '}
                               {(message.metadata.missingData?.length ?? 0) > 0
                                 ? message.metadata.missingData?.join(' • ')
                                 : 'Réponse calculée à titre estimatif à partir des données disponibles.'}
@@ -578,6 +764,89 @@ export function AiCoachPage() {
                     </div>
                   );
                 })}
+
+                {isSending &&
+                  pendingUserPrompt &&
+                  !messages.some((m) => m.role === 'user' && m.content === pendingUserPrompt) && (
+                    <div className="flex justify-end">
+                      <div className="max-w-[85%] rounded-2xl bg-zinc-900 px-4 py-3 text-sm leading-relaxed text-white dark:bg-zinc-100 dark:text-zinc-900">
+                        <p className="whitespace-pre-wrap">{pendingUserPrompt}</p>
+                      </div>
+                    </div>
+                  )}
+
+                {isSending && (
+                  <div
+                    role="status"
+                    aria-live="polite"
+                    aria-label="Le Copilote réfléchit"
+                    className="flex items-start gap-3"
+                  >
+                    <div className="relative mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-xl bg-teal-600 text-white dark:bg-teal-500 dark:text-zinc-950">
+                      <span className="absolute inset-0 animate-ping rounded-xl bg-teal-400/35" />
+                      <Icon icon={SparklesIcon} size={14} className="relative" />
+                    </div>
+
+                    <div className="min-w-0 flex-1 space-y-3 rounded-2xl bg-zinc-50/95 p-4 dark:bg-zinc-800/70">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <span className="inline-flex items-center gap-1">
+                            <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-teal-600 [animation-delay:-0.25s] dark:bg-teal-400" />
+                            <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-teal-600 [animation-delay:-0.12s] dark:bg-teal-400" />
+                            <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-teal-600 dark:bg-teal-400" />
+                          </span>
+                          <span className="text-xs font-semibold text-zinc-900 dark:text-zinc-100">
+                            {THINKING_STEPS[thinkingStepIndex].label}
+                          </span>
+                        </div>
+                        {thinkingElapsedSec >= 1 && (
+                          <span className="rounded-lg bg-white px-2 py-0.5 text-[11px] font-medium tabular-nums text-zinc-500 dark:bg-zinc-900 dark:text-zinc-400">
+                            {thinkingElapsedSec} s
+                          </span>
+                        )}
+                      </div>
+
+                      <p className="text-xs leading-relaxed text-zinc-600 dark:text-zinc-300">
+                        {THINKING_STEPS[thinkingStepIndex].detail}
+                      </p>
+
+                      <div className="grid grid-cols-1 gap-1.5 pt-0.5 sm:grid-cols-2">
+                        {THINKING_STEPS.map((step, index) => {
+                          const isDone = index < thinkingStepIndex;
+                          const isCurrent = index === thinkingStepIndex;
+                          return (
+                            <div
+                              key={step.label}
+                              className={cn(
+                                'flex items-center gap-2 rounded-xl px-2.5 py-1.5 text-[11px] transition-colors',
+                                isCurrent
+                                  ? 'bg-teal-50/90 font-semibold text-teal-900 dark:bg-teal-950/50 dark:text-teal-200'
+                                  : isDone
+                                    ? 'bg-white/70 font-medium text-emerald-700 dark:bg-zinc-900/60 dark:text-emerald-400'
+                                    : 'text-zinc-400 dark:text-zinc-500',
+                              )}
+                            >
+                              {isDone ? (
+                                <Icon icon={CheckmarkCircle02Icon} size={13} className="shrink-0" />
+                              ) : isCurrent ? (
+                                <span className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-teal-600 dark:bg-teal-400" />
+                              ) : (
+                                <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-zinc-300 dark:bg-zinc-600" />
+                              )}
+                              <span className="truncate">{step.label}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      <div className="space-y-1.5 pt-1" aria-hidden="true">
+                        <div className="h-2 w-4/5 animate-pulse rounded-full bg-zinc-200/80 dark:bg-zinc-700/70" />
+                        <div className="h-2 w-3/5 animate-pulse rounded-full bg-zinc-200/60 dark:bg-zinc-700/50" />
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 <div ref={messagesEndRef} />
               </div>
             )}
@@ -606,8 +875,8 @@ export function AiCoachPage() {
           )}
 
           {/* Compositeur intégré */}
-          <form onSubmit={handleFormSubmit} className="p-4 pt-2 sm:px-6 sm:pb-6">
-            <div className="rounded-2xl bg-zinc-50 p-3 transition-colors focus-within:bg-zinc-100/90 dark:bg-zinc-800/70 dark:focus-within:bg-zinc-800">
+          <form onSubmit={handleFormSubmit} className="p-3 pt-1.5 sm:px-6 sm:pb-6">
+            <div className="rounded-2xl bg-zinc-50 p-2.5 transition-colors focus-within:bg-zinc-100/90 sm:p-3 dark:bg-zinc-800/70 dark:focus-within:bg-zinc-800">
               <label htmlFor="copilot-prompt" className="sr-only">
                 Votre message au Copilote
               </label>
@@ -622,13 +891,13 @@ export function AiCoachPage() {
                 className="w-full resize-none bg-transparent text-sm text-zinc-900 placeholder:text-zinc-400 focus:outline-none dark:text-zinc-100 dark:placeholder:text-zinc-500"
               />
 
-              <div className="mt-2.5 flex flex-wrap items-center justify-between gap-2">
-                <div className="flex flex-wrap items-center gap-2">
+              <div className="mt-2 flex items-center justify-between gap-2">
+                <div className="no-scrollbar flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto">
                   <select
                     aria-label="Périmètre du contexte transmis"
                     value={selectedScope}
                     onChange={(e) => setSelectedScope(e.target.value as AiContextScope)}
-                    className="h-8 rounded-xl bg-white px-2.5 text-xs font-medium text-zinc-700 focus-visible:outline-2 focus-visible:outline-teal-600 dark:bg-zinc-900 dark:text-zinc-200"
+                    className="h-8 shrink-0 rounded-xl bg-white px-2.5 text-xs font-medium text-zinc-700 focus-visible:outline-2 focus-visible:outline-teal-600 dark:bg-zinc-900 dark:text-zinc-200"
                   >
                     {SCOPE_OPTIONS.map((scope) => (
                       <option key={scope.value} value={scope.value}>
@@ -637,9 +906,23 @@ export function AiCoachPage() {
                     ))}
                   </select>
 
+                  <button
+                    type="button"
+                    onClick={() => setIsTimetableImportOpen((prev) => !prev)}
+                    className={cn(
+                      'inline-flex h-8 shrink-0 items-center gap-1.5 rounded-xl px-2.5 text-xs font-medium transition-colors',
+                      isTimetableImportOpen
+                        ? 'bg-teal-700 text-white dark:bg-teal-500 dark:text-zinc-950'
+                        : 'bg-white text-zinc-600 hover:text-zinc-900 dark:bg-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100',
+                    )}
+                  >
+                    <Icon icon={Calendar03Icon} size={14} />
+                    Emploi du temps
+                  </button>
+
                   <Link
                     to="/settings"
-                    className="inline-flex h-8 items-center gap-1.5 rounded-xl bg-white px-2.5 text-xs font-medium text-zinc-600 transition-colors hover:text-zinc-900 dark:bg-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
+                    className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-xl bg-white px-2.5 text-xs font-medium text-zinc-600 transition-colors hover:text-zinc-900 dark:bg-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
                   >
                     <Icon icon={Settings02Icon} size={14} />
                     Consignes
@@ -653,7 +936,7 @@ export function AiCoachPage() {
                   aria-label="Envoyer au Copilote"
                   isLoading={isSending}
                   disabled={!promptText.trim() || isSending}
-                  className="h-8 w-8 rounded-xl px-0"
+                  className="h-8 w-8 shrink-0 rounded-xl px-0"
                 >
                   {!isSending && <Icon icon={ArrowUp02Icon} size={16} />}
                 </Button>
@@ -743,7 +1026,6 @@ export function AiCoachPage() {
                 <EmptyState
                   icon={<Icon icon={CheckmarkSquare02Icon} size={18} className="text-zinc-500 dark:text-zinc-400" />}
                   title="Aucune action dans cette vue"
-                  description="Les actions suggérées par le Copilote attendent toujours votre validation ici."
                 />
               ) : (
                 <div className="space-y-3">
@@ -753,6 +1035,7 @@ export function AiCoachPage() {
                       proposal={proposal}
                       onAccept={acceptProposal}
                       onReject={rejectProposal}
+                      onUpdate={updateProposal}
                     />
                   ))}
                 </div>
@@ -764,7 +1047,6 @@ export function AiCoachPage() {
                 <EmptyState
                   icon={<Icon icon={File02Icon} size={18} className="text-zinc-500 dark:text-zinc-400" />}
                   title="Aucune synthèse générée"
-                  description="Utilisez Briefing du jour ou Bilan hebdo en haut de l’écran pour créer un rapport."
                 />
               ) : (
                 reports.map((report) => {

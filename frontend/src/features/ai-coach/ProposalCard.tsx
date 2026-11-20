@@ -6,16 +6,24 @@ import {
   CancelCircleIcon,
   CheckmarkCircle02Icon,
   CheckmarkSquare02Icon,
+  Mortarboard02Icon,
   PencilEdit02Icon,
   Timer02Icon,
 } from '@hugeicons/core-free-icons';
+import { Link } from 'react-router-dom';
 import { Badge, type BadgeVariant } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
 import { FormField, Input, Select } from '../../components/ui/FormFields';
 import { Icon, type IconSvgElement } from '../../components/ui/Icon';
 import { cn } from '../../lib/cn';
 import { formatDateTimeFr, formatTimeFr } from '../../lib/date';
-import type { AiActionProposal, ProposalStatus, TaskPriority } from '../../types/domain';
+import type {
+  AiActionProposal,
+  ProposalStatus,
+  ProposedActivitySlot,
+  StrategicDecision,
+  TaskPriority,
+} from '../../types/domain';
 import { TASK_PRIORITY_META } from '../tasks/taskUtils';
 
 const ACTION_META: Record<string, { label: string; icon: IconSvgElement }> = {
@@ -23,7 +31,19 @@ const ACTION_META: Record<string, { label: string; icon: IconSvgElement }> = {
   park_task: { label: 'Mise au parking', icon: Timer02Icon },
   create_schedule_event: { label: 'Créneau planning', icon: Calendar03Icon },
   add_skill_evidence: { label: 'Preuve de compétence', icon: Award02Icon },
-  update_skill_level: { label: 'Niveau de compétence', icon: Award02Icon },
+  propose_skill_assessment: { label: 'Évaluation de compétence', icon: Award02Icon },
+  recommend_skill_progression: { label: 'Validation de progression', icon: Award02Icon },
+  plan_strategic_activity: { label: 'Planification stratégique', icon: Calendar03Icon },
+  create_course: { label: 'Nouveau cours complet', icon: Mortarboard02Icon },
+};
+
+const STRATEGIC_DECISION_META: Record<
+  StrategicDecision,
+  { label: string; variant: BadgeVariant }
+> = {
+  ACCEPTABLE: { label: 'Acceptable', variant: 'success' },
+  ACCEPTABLE_WITH_CONDITIONS: { label: 'Sous conditions', variant: 'warning' },
+  NOT_RECOMMENDED: { label: 'Non recommandée (Parking)', variant: 'danger' },
 };
 
 const PROPOSAL_STATUS_META: Record<ProposalStatus, { label: string; variant: BadgeVariant }> = {
@@ -35,26 +55,22 @@ const PROPOSAL_STATUS_META: Record<ProposalStatus, { label: string; variant: Bad
   failed: { label: 'Échec', variant: 'danger' },
 };
 
-const SKILL_LEVEL_OPTIONS = [
-  { value: '0', label: '0 — Non évalué' },
-  { value: '1', label: '1 — Découverte' },
-  { value: '2', label: '2 — Notions' },
-  { value: '3', label: '3 — Autonome' },
-  { value: '4', label: '4 — Solide' },
-  { value: '5', label: '5 — Maîtrise' },
-];
-
 interface ProposalCardProps {
   proposal: AiActionProposal;
   onAccept: (proposalId: string, payloadOverrides?: Record<string, unknown>) => Promise<boolean>;
   onReject: (proposalId: string) => Promise<boolean>;
+  onUpdate?: (
+    proposalId: string,
+    payloadOverrides: Record<string, unknown>,
+    recalculateSlots?: boolean,
+  ) => Promise<boolean>;
 }
 
 function isTaskPriority(value: unknown): value is TaskPriority {
   return value === 'low' || value === 'normal' || value === 'high' || value === 'critical';
 }
 
-export function ProposalCard({ proposal, onAccept, onReject }: ProposalCardProps) {
+export function ProposalCard({ proposal, onAccept, onReject, onUpdate }: ProposalCardProps) {
   const payload = proposal.payload ?? {};
   const actionMeta = ACTION_META[proposal.actionType] ?? {
     label: 'Action suggérée',
@@ -63,25 +79,35 @@ export function ProposalCard({ proposal, onAccept, onReject }: ProposalCardProps
   const statusMeta = PROPOSAL_STATUS_META[proposal.status];
 
   const isPending = proposal.status === 'pending';
+  const isStrategicPlan = proposal.actionType === 'plan_strategic_activity';
+  const isCourseCreate = proposal.actionType === 'create_course';
   const supportsTitleEdit =
-    proposal.actionType === 'create_task' || proposal.actionType === 'create_schedule_event';
+    proposal.actionType === 'create_task' ||
+    proposal.actionType === 'create_schedule_event' ||
+    isCourseCreate;
   const supportsPriorityEdit = proposal.actionType === 'create_task';
-  const supportsSkillLevelEdit = proposal.actionType === 'update_skill_level';
-  const supportsAdjustment = supportsTitleEdit || supportsSkillLevelEdit;
+  const supportsAdjustment = supportsTitleEdit || isStrategicPlan;
 
-  const initialTitle =
-    typeof payload.title === 'string' && payload.title.trim() ? payload.title : proposal.title;
+  const initialTitle = isStrategicPlan
+    ? typeof payload.activity_title === 'string' && payload.activity_title.trim()
+      ? payload.activity_title
+      : proposal.title
+    : typeof payload.title === 'string' && payload.title.trim()
+      ? payload.title
+      : proposal.title;
   const initialPriority: TaskPriority = isTaskPriority(payload.priority)
     ? payload.priority
     : 'normal';
-  const initialLevel =
-    typeof payload.current_level === 'number' ? String(payload.current_level) : '1';
+  const initialGoal = typeof payload.goal === 'string' ? payload.goal : '';
+  const initialFreq =
+    typeof payload.frequency_per_week === 'number' ? payload.frequency_per_week : 2;
 
   const [isEditing, setIsEditing] = useState(false);
   const [adjustedTitle, setAdjustedTitle] = useState(initialTitle);
   const [adjustedPriority, setAdjustedPriority] = useState<TaskPriority>(initialPriority);
-  const [adjustedLevel, setAdjustedLevel] = useState(initialLevel);
-  const [pendingSubmit, setPendingSubmit] = useState<'accept' | 'reject' | null>(null);
+  const [adjustedGoal, setAdjustedGoal] = useState(initialGoal);
+  const [adjustedFreq, setAdjustedFreq] = useState(initialFreq);
+  const [pendingSubmit, setPendingSubmit] = useState<'accept' | 'reject' | 'update' | null>(null);
 
   const priorityMeta = isTaskPriority(payload.priority)
     ? TASK_PRIORITY_META[payload.priority]
@@ -89,18 +115,55 @@ export function ProposalCard({ proposal, onAccept, onReject }: ProposalCardProps
   const startsAt = typeof payload.starts_at === 'string' ? payload.starts_at : null;
   const endsAt = typeof payload.ends_at === 'string' ? payload.ends_at : null;
   const skillName = typeof payload.skill_name === 'string' ? payload.skill_name : null;
-  const previousLevel = typeof payload.previous_level === 'number' ? payload.previous_level : null;
-  const nextLevel = typeof payload.current_level === 'number' ? payload.current_level : null;
+  const previousLevel =
+    typeof payload.previous_level === 'number'
+      ? payload.previous_level
+      : typeof payload.current_level === 'number'
+        ? payload.current_level
+        : null;
+  const nextLevel =
+    typeof payload.proposed_level === 'number'
+      ? payload.proposed_level
+      : typeof payload.target_level === 'number'
+        ? payload.target_level
+        : null;
   const parkedTaskTitle = typeof payload.task_title === 'string' ? payload.task_title : null;
   const hasConflict = Boolean(payload.has_conflict);
   const conflictingTitles = Array.isArray(payload.conflicting_titles)
     ? payload.conflicting_titles.filter((item): item is string => typeof item === 'string')
     : [];
 
+  const strategicDecision =
+    typeof payload.decision === 'string' && payload.decision in STRATEGIC_DECISION_META
+      ? STRATEGIC_DECISION_META[payload.decision as StrategicDecision]
+      : null;
+  const isParkOnly = Boolean(payload.park_only);
+  const strategicConditions = Array.isArray(payload.conditions)
+    ? payload.conditions.filter((item): item is string => typeof item === 'string')
+    : [];
+  const proposedSlots = Array.isArray(payload.proposed_slots)
+    ? (payload.proposed_slots as ProposedActivitySlot[])
+    : [];
+  const strategicWeeks =
+    typeof payload.estimated_weeks === 'number' ? payload.estimated_weeks : null;
+  const courseSubject = typeof payload.subject === 'string' ? payload.subject : null;
+  const courseTotalLevels =
+    typeof payload.total_levels === 'number' ? payload.total_levels : null;
+  const courseLanguage = typeof payload.language === 'string' ? payload.language : null;
+  const executedCourseId =
+    proposal.executionResult && typeof proposal.executionResult.course_id === 'string'
+      ? proposal.executionResult.course_id
+      : null;
+  const executionConfirmation =
+    proposal.executionResult && typeof proposal.executionResult.confirmation === 'string'
+      ? proposal.executionResult.confirmation
+      : null;
+
   function openAdjustment() {
     setAdjustedTitle(initialTitle);
     setAdjustedPriority(initialPriority);
-    setAdjustedLevel(initialLevel);
+    setAdjustedGoal(initialGoal);
+    setAdjustedFreq(initialFreq);
     setIsEditing(true);
   }
 
@@ -108,7 +171,25 @@ export function ProposalCard({ proposal, onAccept, onReject }: ProposalCardProps
     setIsEditing(false);
     setAdjustedTitle(initialTitle);
     setAdjustedPriority(initialPriority);
-    setAdjustedLevel(initialLevel);
+    setAdjustedGoal(initialGoal);
+    setAdjustedFreq(initialFreq);
+  }
+
+  async function handleSaveModification() {
+    if (!onUpdate || !isStrategicPlan) return;
+    setPendingSubmit('update');
+    try {
+      const overrides: Record<string, unknown> = {};
+      if (adjustedTitle.trim()) overrides.activity_title = adjustedTitle.trim();
+      if (adjustedGoal.trim()) overrides.goal = adjustedGoal.trim();
+      if (!isParkOnly) overrides.frequency_per_week = adjustedFreq;
+      const ok = await onUpdate(proposal.id, overrides, !isParkOnly && adjustedFreq !== initialFreq);
+      if (ok) {
+        setIsEditing(false);
+      }
+    } finally {
+      setPendingSubmit(null);
+    }
   }
 
   async function handleAccept() {
@@ -117,14 +198,16 @@ export function ProposalCard({ proposal, onAccept, onReject }: ProposalCardProps
       let overrides: Record<string, unknown> | undefined;
       if (isEditing) {
         overrides = {};
-        if (supportsTitleEdit && adjustedTitle.trim()) {
-          overrides.title = adjustedTitle.trim();
-        }
-        if (supportsPriorityEdit) {
-          overrides.priority = adjustedPriority;
-        }
-        if (supportsSkillLevelEdit) {
-          overrides.current_level = Number(adjustedLevel);
+        if (isStrategicPlan) {
+          if (adjustedTitle.trim()) overrides.activity_title = adjustedTitle.trim();
+          if (adjustedGoal.trim()) overrides.goal = adjustedGoal.trim();
+        } else {
+          if (supportsTitleEdit && adjustedTitle.trim()) {
+            overrides.title = adjustedTitle.trim();
+          }
+          if (supportsPriorityEdit) {
+            overrides.priority = adjustedPriority;
+          }
         }
       }
       const ok = await onAccept(proposal.id, overrides);
@@ -174,7 +257,11 @@ export function ProposalCard({ proposal, onAccept, onReject }: ProposalCardProps
         </p>
       )}
 
-      {(priorityMeta || (startsAt && endsAt) || skillName || parkedTaskTitle) && (
+      {(priorityMeta ||
+        (startsAt && endsAt) ||
+        skillName ||
+        parkedTaskTitle ||
+        (isCourseCreate && courseSubject)) && (
         <div className="mt-2.5 flex flex-wrap items-center gap-2 text-xs text-zinc-600 dark:text-zinc-400">
           {priorityMeta && (
             <Badge variant={priorityMeta.badgeVariant}>Priorité : {priorityMeta.label}</Badge>
@@ -198,6 +285,17 @@ export function ProposalCard({ proposal, onAccept, onReject }: ProposalCardProps
               Tâche : {parkedTaskTitle}
             </span>
           )}
+          {isCourseCreate && courseSubject && (
+            <>
+              <Badge variant="primary">{courseSubject}</Badge>
+              {courseTotalLevels !== null && (
+                <Badge variant="neutral">{courseTotalLevels} niveaux</Badge>
+              )}
+              {courseLanguage && (
+                <Badge variant="neutral">{courseLanguage.toUpperCase()}</Badge>
+              )}
+            </>
+          )}
         </div>
       )}
 
@@ -211,6 +309,78 @@ export function ProposalCard({ proposal, onAccept, onReject }: ProposalCardProps
         </div>
       )}
 
+      {isStrategicPlan && (
+        <div className="mt-3 space-y-2.5 rounded-xl bg-white/90 p-3 text-xs dark:bg-zinc-900/90">
+          <div className="flex flex-wrap items-center gap-2">
+            {strategicDecision && (
+              <Badge variant={strategicDecision.variant}>{strategicDecision.label}</Badge>
+            )}
+            {strategicWeeks !== null && (
+              <span className="text-zinc-500 dark:text-zinc-400">
+                Horizon estimé : {strategicWeeks} semaine{strategicWeeks > 1 ? 's' : ''}
+              </span>
+            )}
+          </div>
+
+          {initialGoal && (
+            <p className="text-zinc-700 dark:text-zinc-300">
+              <strong className="font-semibold">Objectif :</strong> {initialGoal}
+            </p>
+          )}
+
+          {proposedSlots.length > 0 && (
+            <ul className="space-y-1">
+              {proposedSlots.map((slot, sIdx) => (
+                <li
+                  key={`${slot.local_date}-${slot.local_start_time}-${sIdx}`}
+                  className="inline-flex w-full items-center justify-between gap-2 rounded-lg bg-zinc-50 px-2.5 py-1.5 text-[11px] font-medium text-zinc-700 dark:bg-zinc-800 dark:text-zinc-200"
+                >
+                  <span>
+                    {slot.day_label} ({slot.local_date})
+                  </span>
+                  <span className="tabular-nums text-teal-700 dark:text-teal-300">
+                    {slot.local_start_time}–{slot.local_end_time} ({slot.duration_minutes} min)
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          {strategicConditions.length > 0 && (
+            <div className="rounded-lg bg-amber-50/80 px-2.5 py-2 text-[11px] text-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
+              <p className="font-semibold">Conditions / alertes stratégiques :</p>
+              <ul className="mt-0.5 list-inside list-disc">
+                {strategicConditions.map((cond, cIdx) => (
+                  <li key={cIdx}>{cond}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {isPending && (
+            <p className="text-[11px] italic text-zinc-500 dark:text-zinc-400">
+              Cette proposition ne sera pas enregistrée tant que tu ne l’auras pas validée.
+            </p>
+          )}
+        </div>
+      )}
+
+      {proposal.status === 'executed' && (executionConfirmation || executedCourseId) && (
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl bg-emerald-50 px-3 py-2 text-xs text-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-200">
+          <span>
+            {executionConfirmation ?? 'Cours créé avec le Niveau 1 débloqué.'}
+          </span>
+          {executedCourseId && (
+            <Link
+              to={`/courses/${executedCourseId}`}
+              className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-2.5 py-1 text-[11px] font-medium text-white transition-colors hover:bg-emerald-700 dark:bg-emerald-500 dark:text-zinc-950 dark:hover:bg-emerald-400"
+            >
+              Ouvrir le cours
+            </Link>
+          )}
+        </div>
+      )}
+
       {proposal.status === 'failed' && proposal.errorMessage && (
         <div className="mt-3 rounded-xl bg-rose-50 px-3 py-2 text-xs text-rose-800 dark:bg-rose-950/40 dark:text-rose-200">
           {proposal.errorMessage}
@@ -219,9 +389,13 @@ export function ProposalCard({ proposal, onAccept, onReject }: ProposalCardProps
 
       {isPending && isEditing && (
         <div className="mt-3 space-y-3 rounded-xl bg-white p-3 dark:bg-zinc-900">
-          {supportsTitleEdit && (
+          {(supportsTitleEdit || isStrategicPlan) && (
             <FormField
-              label="Ajuster le titre avant validation"
+              label={
+                isStrategicPlan
+                  ? 'Modifier le titre de l’activité'
+                  : 'Ajuster le titre avant validation'
+              }
               id={`proposal-title-${proposal.id}`}
             >
               <Input
@@ -230,6 +404,51 @@ export function ProposalCard({ proposal, onAccept, onReject }: ProposalCardProps
                 onChange={(e) => setAdjustedTitle(e.target.value)}
               />
             </FormField>
+          )}
+
+          {isStrategicPlan && (
+            <>
+              <FormField
+                label="Modifier l’objectif mesurable"
+                id={`proposal-goal-${proposal.id}`}
+              >
+                <Input
+                  id={`proposal-goal-${proposal.id}`}
+                  value={adjustedGoal}
+                  onChange={(e) => setAdjustedGoal(e.target.value)}
+                />
+              </FormField>
+
+              {!isParkOnly && (
+                <FormField
+                  label="Fréquence hebdomadaire"
+                  id={`proposal-freq-${proposal.id}`}
+                >
+                  <Select
+                    id={`proposal-freq-${proposal.id}`}
+                    value={String(adjustedFreq)}
+                    onChange={(e) => setAdjustedFreq(Number(e.target.value))}
+                  >
+                    <option value="1">1 séance / semaine</option>
+                    <option value="2">2 séances / semaine</option>
+                    <option value="3">3 séances / semaine</option>
+                  </Select>
+                </FormField>
+              )}
+
+              {onUpdate && (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  isLoading={pendingSubmit === 'update'}
+                  disabled={pendingSubmit !== null}
+                  onClick={() => void handleSaveModification()}
+                >
+                  Recalculer & enregistrer la modification
+                </Button>
+              )}
+            </>
           )}
 
           {supportsPriorityEdit && (
@@ -249,25 +468,6 @@ export function ProposalCard({ proposal, onAccept, onReject }: ProposalCardProps
               </Select>
             </FormField>
           )}
-
-          {supportsSkillLevelEdit && (
-            <FormField
-              label="Niveau validé (0 à 5)"
-              id={`proposal-level-${proposal.id}`}
-            >
-              <Select
-                id={`proposal-level-${proposal.id}`}
-                value={adjustedLevel}
-                onChange={(e) => setAdjustedLevel(e.target.value)}
-              >
-                {SKILL_LEVEL_OPTIONS.map((opt) => (
-                  <option key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </option>
-                ))}
-              </Select>
-            </FormField>
-          )}
         </div>
       )}
 
@@ -282,7 +482,11 @@ export function ProposalCard({ proposal, onAccept, onReject }: ProposalCardProps
             onClick={() => void handleAccept()}
           >
             <Icon icon={CheckmarkCircle02Icon} size={15} />
-            Valider et exécuter
+            {isStrategicPlan
+              ? isParkOnly
+                ? 'Placer au Parking'
+                : 'Accepter et programmer'
+              : 'Valider et exécuter'}
           </Button>
 
           {supportsAdjustment && !isEditing && (
@@ -294,7 +498,7 @@ export function ProposalCard({ proposal, onAccept, onReject }: ProposalCardProps
               onClick={openAdjustment}
             >
               <Icon icon={PencilEdit02Icon} size={15} />
-              Ajuster
+              {isStrategicPlan ? 'Modifier la proposition' : 'Ajuster'}
             </Button>
           )}
 
@@ -320,7 +524,7 @@ export function ProposalCard({ proposal, onAccept, onReject }: ProposalCardProps
             className="text-rose-700 hover:bg-rose-50 hover:text-rose-800 dark:text-rose-400 dark:hover:bg-rose-950/40 dark:hover:text-rose-300"
           >
             <Icon icon={CancelCircleIcon} size={15} />
-            Rejeter
+            {isStrategicPlan ? 'Refuser' : 'Rejeter'}
           </Button>
         </div>
       )}

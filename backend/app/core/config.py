@@ -28,6 +28,8 @@ class Settings(BaseSettings):
     ai_timeout_seconds: float = 20.0
     ai_max_message_chars: int = 2000
     ai_rate_limit_per_minute: int = 30
+    timetable_import_max_bytes: int = 10 * 1024 * 1024
+    timetable_import_rate_limit_per_minute: int = 15
 
     @property
     def cors_origins(self) -> list[str]:

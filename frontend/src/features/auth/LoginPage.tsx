@@ -4,7 +4,7 @@ import { Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { z } from 'zod';
 import { Button } from '../../components/ui/Button';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/Card';
-import { FormField, Input } from '../../components/ui/FormFields';
+import { FormField, Input, Select } from '../../components/ui/FormFields';
 import { Icon } from '../../components/ui/Icon';
 import { ErrorState, SuccessBanner } from '../../components/ui/StateFeedback';
 import { ThemeToggleButton } from '../../components/ui/ThemeToggle';
@@ -12,31 +12,59 @@ import { isSupabaseConfigured } from '../../lib/env';
 import { extractFieldErrors } from '../../lib/validation';
 import { useAuth } from '../../state/AuthContext';
 
-const localLoginSchema = z.object({
+const TIMEZONE_OPTIONS = [
+  { value: 'Africa/Dakar', label: 'Africa/Dakar (UTC+0)' },
+  { value: 'Europe/Paris', label: 'Europe/Paris (UTC+1 / UTC+2)' },
+  { value: 'UTC', label: 'UTC' },
+  { value: 'Africa/Casablanca', label: 'Africa/Casablanca' },
+  { value: 'America/Montreal', label: 'America/Montreal' },
+  { value: 'America/New_York', label: 'America/New_York' },
+] as const;
+
+const loginSchema = z.object({
   email: z.string().trim().email('Saisissez une adresse e-mail valide.'),
-  displayName: z
-    .string()
-    .trim()
-    .max(100, 'Le nom ne doit pas dépasser 100 caractères.')
-    .optional()
-    .or(z.literal('')),
+  password: z.string().min(1, 'Saisissez votre mot de passe.'),
 });
+
+const registerSchema = z
+  .object({
+    displayName: z
+      .string()
+      .trim()
+      .min(2, 'Le nom d’affichage doit contenir au moins 2 caractères.')
+      .max(100, 'Le nom ne doit pas dépasser 100 caractères.'),
+    email: z.string().trim().email('Saisissez une adresse e-mail valide.'),
+    timezone: z.string().trim().min(1, 'Veuillez choisir un fuseau horaire.'),
+    password: z
+      .string()
+      .min(8, 'Le mot de passe doit contenir au moins 8 caractères.')
+      .max(128, 'Le mot de passe ne doit pas dépasser 128 caractères.'),
+    confirmPassword: z.string().min(1, 'Confirmez votre mot de passe.'),
+  })
+  .refine((data) => data.password === data.confirmPassword, {
+    message: 'Les mots de passe ne correspondent pas.',
+    path: ['confirmPassword'],
+  });
 
 const supabaseLoginSchema = z.object({
   email: z.string().trim().email('Saisissez une adresse e-mail valide.'),
   password: z.string().min(6, 'Le mot de passe doit contenir au moins 6 caractères.'),
 });
 
+type LoginTab = 'login' | 'register' | 'supabase';
+type FieldName = 'email' | 'password' | 'confirmPassword' | 'displayName' | 'timezone';
+
 /**
- * Écran de connexion (AUTH-01, AUTH-02) :
- * propose la connexion cloud Supabase (si configurée), la connexion locale FastAPI (JWT)
- * ou l'utilisation hors serveur en mode local.
+ * Écran d'authentification multi-comptes (AUTH-01, AUTH-02) :
+ * permet à chaque utilisateur de créer son compte isolé ou de se connecter
+ * avec ses propres données et paramètres, ou d'utiliser Supabase Cloud / le mode local.
  */
 export function LoginPage() {
   const {
     isAuthenticated,
     authMessage,
-    loginLocalServer,
+    registerAccount,
+    loginAccount,
     loginSupabase,
     enterLocalDemoMode,
     clearAuthMessage,
@@ -46,30 +74,40 @@ export function LoginPage() {
   const location = useLocation();
   const redirectTarget = (location.state as { from?: string } | null)?.from || '/';
 
-  const [email, setEmail] = useState('etudiant@amireflow.local');
-  const [displayName, setDisplayName] = useState('');
+  const [activeTab, setActiveTab] = useState<LoginTab>('login');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [authMethod, setAuthMethod] = useState<'backend_jwt' | 'supabase'>('backend_jwt');
-  const [fieldErrors, setFieldErrors] = useState<{
-    email?: string;
-    displayName?: string;
-    password?: string;
-  }>({});
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [displayName, setDisplayName] = useState('');
+  const [timezone, setTimezone] = useState('Africa/Dakar');
+  const [fieldErrors, setFieldErrors] = useState<Partial<Record<FieldName, string>>>({});
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   if (isAuthenticated) {
-    return <Navigate to={redirectTarget} replace />;
+    return <Navigate to={activeTab === 'register' ? '/' : redirectTarget} replace />;
   }
 
-  const useSupabasePasswordAuth = isSupabaseConfigured && authMethod === 'supabase';
+  const switchTab = (nextTab: LoginTab) => {
+    setActiveTab(nextTab);
+    setFieldErrors({});
+    setSubmitError(null);
+    setPassword('');
+    setConfirmPassword('');
+  };
+
+  const clearFieldError = (field: FieldName) => {
+    if (fieldErrors[field]) {
+      setFieldErrors((prev) => ({ ...prev, [field]: undefined }));
+    }
+  };
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setSubmitError(null);
     clearAuthMessage();
 
-    if (useSupabasePasswordAuth) {
+    if (activeTab === 'supabase' && isSupabaseConfigured) {
       const parsed = supabaseLoginSchema.safeParse({ email, password });
       if (!parsed.success) {
         setFieldErrors(extractFieldErrors<'email' | 'password'>(parsed.error));
@@ -90,16 +128,50 @@ export function LoginPage() {
       return;
     }
 
-    const parsed = localLoginSchema.safeParse({ email, displayName });
+    if (activeTab === 'register') {
+      const parsed = registerSchema.safeParse({
+        displayName,
+        email,
+        timezone,
+        password,
+        confirmPassword,
+      });
+      if (!parsed.success) {
+        setFieldErrors(extractFieldErrors<FieldName>(parsed.error));
+        return;
+      }
+      setFieldErrors({});
+      setIsSubmitting(true);
+      try {
+        await registerAccount({
+          displayName: parsed.data.displayName,
+          email: parsed.data.email,
+          timezone: parsed.data.timezone,
+          password: parsed.data.password,
+        });
+        navigate(redirectTarget, { replace: true });
+      } catch (err) {
+        setSubmitError(
+          err instanceof Error
+            ? err.message
+            : 'Impossible de créer le compte pour le moment.',
+        );
+      } finally {
+        setIsSubmitting(false);
+      }
+      return;
+    }
+
+    const parsed = loginSchema.safeParse({ email, password });
     if (!parsed.success) {
-      setFieldErrors(extractFieldErrors<'email' | 'displayName'>(parsed.error));
+      setFieldErrors(extractFieldErrors<'email' | 'password'>(parsed.error));
       return;
     }
 
     setFieldErrors({});
     setIsSubmitting(true);
     try {
-      await loginLocalServer(parsed.data.email, parsed.data.displayName || undefined);
+      await loginAccount(parsed.data.email, parsed.data.password);
       navigate(redirectTarget, { replace: true });
     } catch (err) {
       setSubmitError(
@@ -128,103 +200,178 @@ export function LoginPage() {
         </div>
 
         {authMessage && <SuccessBanner message={authMessage} onDismiss={clearAuthMessage} />}
-        {submitError && <ErrorState title="Connexion impossible" message={submitError} />}
+        {submitError && <ErrorState title="Authentification impossible" message={submitError} />}
 
         <Card>
-          <CardHeader>
-            <CardTitle>Connexion</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {isSupabaseConfigured && (
-              <div className="grid grid-cols-2 gap-1.5 rounded-xl bg-zinc-100/80 p-1 text-xs dark:bg-zinc-800/80">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setAuthMethod('backend_jwt');
-                    setFieldErrors({});
-                    setSubmitError(null);
-                  }}
-                  className={
-                    authMethod === 'backend_jwt'
-                      ? 'rounded-lg bg-white px-2.5 py-1.5 font-semibold text-zinc-900 dark:bg-zinc-900 dark:text-zinc-50'
-                      : 'rounded-lg px-2.5 py-1.5 font-medium text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100'
-                  }
-                >
-                  API Backend (JWT)
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setAuthMethod('supabase');
-                    setFieldErrors({});
-                    setSubmitError(null);
-                  }}
-                  className={
-                    authMethod === 'supabase'
-                      ? 'rounded-lg bg-white px-2.5 py-1.5 font-semibold text-zinc-900 dark:bg-zinc-900 dark:text-zinc-50'
-                      : 'rounded-lg px-2.5 py-1.5 font-medium text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100'
-                  }
-                >
-                  Supabase Cloud
-                </button>
-              </div>
-            )}
+          <CardHeader className="space-y-3">
+            <CardTitle>
+              {activeTab === 'register' ? 'Créer un compte' : 'Connexion'}
+            </CardTitle>
 
-            <form onSubmit={handleSubmit} noValidate className="space-y-4">
+            <div
+              role="tablist"
+              aria-label="Mode d’authentification"
+              className="grid grid-cols-2 gap-1.5 rounded-xl bg-zinc-100/80 p-1 text-xs dark:bg-zinc-800/80"
+            >
+              <button
+                type="button"
+                role="tab"
+                aria-selected={activeTab !== 'register'}
+                onClick={() => switchTab('login')}
+                className={
+                  activeTab !== 'register'
+                    ? 'rounded-lg bg-white px-2.5 py-1.5 font-semibold text-zinc-900 dark:bg-zinc-900 dark:text-zinc-50'
+                    : 'rounded-lg px-2.5 py-1.5 font-medium text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100'
+                }
+              >
+                Se connecter
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={activeTab === 'register'}
+                onClick={() => switchTab('register')}
+                className={
+                  activeTab === 'register'
+                    ? 'rounded-lg bg-white px-2.5 py-1.5 font-semibold text-zinc-900 dark:bg-zinc-900 dark:text-zinc-50'
+                    : 'rounded-lg px-2.5 py-1.5 font-medium text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100'
+                }
+              >
+                Créer un compte
+              </button>
+            </div>
+          </CardHeader>
+
+          <CardContent className="space-y-4">
+            <form onSubmit={handleSubmit} noValidate className="space-y-3.5">
+              {activeTab === 'register' && (
+                <FormField
+                  id="register-display-name"
+                  label="Nom d’affichage"
+                  required
+                  error={fieldErrors.displayName}
+                >
+                  <Input
+                    id="register-display-name"
+                    autoComplete="name"
+                    value={displayName}
+                    hasError={Boolean(fieldErrors.displayName)}
+                    placeholder="Ex. Khadim"
+                    onChange={(e) => {
+                      setDisplayName(e.target.value);
+                      clearFieldError('displayName');
+                    }}
+                  />
+                </FormField>
+              )}
+
               <FormField id="login-email" label="Adresse e-mail" required error={fieldErrors.email}>
                 <Input
                   id="login-email"
                   type="email"
+                  autoComplete="email"
                   value={email}
                   hasError={Boolean(fieldErrors.email)}
-                  placeholder="etudiant@amireflow.local"
+                  placeholder="etudiant@exemple.com"
                   onChange={(e) => {
                     setEmail(e.target.value);
-                    if (fieldErrors.email) {
-                      setFieldErrors((prev) => ({ ...prev, email: undefined }));
-                    }
+                    clearFieldError('email');
                   }}
                 />
               </FormField>
 
-              {useSupabasePasswordAuth ? (
+              {activeTab === 'register' && (
                 <FormField
-                  id="login-password"
-                  label="Mot de passe"
+                  id="register-timezone"
+                  label="Fuseau horaire"
                   required
-                  error={fieldErrors.password}
+                  error={fieldErrors.timezone}
                 >
-                  <Input
-                    id="login-password"
-                    type="password"
-                    value={password}
-                    hasError={Boolean(fieldErrors.password)}
-                    onChange={(e) => setPassword(e.target.value)}
-                  />
+                  <Select
+                    id="register-timezone"
+                    value={timezone}
+                    hasError={Boolean(fieldErrors.timezone)}
+                    onChange={(e) => {
+                      setTimezone(e.target.value);
+                      clearFieldError('timezone');
+                    }}
+                  >
+                    {TIMEZONE_OPTIONS.map((opt) => (
+                      <option key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </option>
+                    ))}
+                  </Select>
                 </FormField>
-              ) : (
+              )}
+
+              <FormField
+                id="login-password"
+                label="Mot de passe"
+                required
+                error={fieldErrors.password}
+              >
+                <Input
+                  id="login-password"
+                  type="password"
+                  autoComplete={activeTab === 'register' ? 'new-password' : 'current-password'}
+                  value={password}
+                  hasError={Boolean(fieldErrors.password)}
+                  placeholder={activeTab === 'register' ? 'Au moins 8 caractères' : 'Votre mot de passe'}
+                  onChange={(e) => {
+                    setPassword(e.target.value);
+                    clearFieldError('password');
+                  }}
+                />
+              </FormField>
+
+              {activeTab === 'register' && (
                 <FormField
-                  id="login-display-name"
-                  label="Nom d’affichage (facultatif)"
-                  error={fieldErrors.displayName}
+                  id="register-confirm-password"
+                  label="Confirmer le mot de passe"
+                  required
+                  error={fieldErrors.confirmPassword}
                 >
                   <Input
-                    id="login-display-name"
-                    value={displayName}
-                    hasError={Boolean(fieldErrors.displayName)}
-                    placeholder="Ex. Khadim"
-                    onChange={(e) => setDisplayName(e.target.value)}
+                    id="register-confirm-password"
+                    type="password"
+                    autoComplete="new-password"
+                    value={confirmPassword}
+                    hasError={Boolean(fieldErrors.confirmPassword)}
+                    placeholder="Saisissez à nouveau le mot de passe"
+                    onChange={(e) => {
+                      setConfirmPassword(e.target.value);
+                      clearFieldError('confirmPassword');
+                    }}
                   />
                 </FormField>
               )}
 
               <Button type="submit" variant="primary" className="w-full" isLoading={isSubmitting}>
                 <Icon icon={CloudServerIcon} size={16} />
-                {useSupabasePasswordAuth ? 'Se connecter via Supabase' : 'Se connecter au backend'}
+                {activeTab === 'register'
+                  ? 'Créer mon compte'
+                  : activeTab === 'supabase'
+                    ? 'Se connecter via Supabase'
+                    : 'Se connecter'}
               </Button>
             </form>
 
-            <div className="pt-2">
+            {isSupabaseConfigured && activeTab !== 'register' && (
+              <div className="text-center">
+                <button
+                  type="button"
+                  onClick={() => switchTab(activeTab === 'supabase' ? 'login' : 'supabase')}
+                  className="text-xs font-medium text-teal-700 hover:underline dark:text-teal-400"
+                >
+                  {activeTab === 'supabase'
+                    ? 'Utiliser un compte Study OS (e-mail et mot de passe)'
+                    : 'Ou se connecter avec Supabase Cloud'}
+                </button>
+              </div>
+            )}
+
+            <div className="pt-1">
               <Button
                 variant="secondary"
                 className="w-full"

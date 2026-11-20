@@ -84,3 +84,50 @@ export function computeSessionSummary(sessions: StudySession[]): SessionSummary 
     cancelledCount,
   };
 }
+
+export const SESSION_CATEGORY_TONE: Record<string, { bar: string; dot: string }> = {
+  Cours: {
+    bar: 'bg-teal-600 dark:bg-teal-400',
+    dot: 'bg-teal-600 dark:bg-teal-400',
+  },
+  Apprentissage: {
+    bar: 'bg-emerald-600 dark:bg-emerald-400',
+    dot: 'bg-emerald-600 dark:bg-emerald-400',
+  },
+  Exercices: {
+    bar: 'bg-sky-600 dark:bg-sky-400',
+    dot: 'bg-sky-600 dark:bg-sky-400',
+  },
+  Projet: {
+    bar: 'bg-amber-500 dark:bg-amber-400',
+    dot: 'bg-amber-500 dark:bg-amber-400',
+  },
+  Révision: {
+    bar: 'bg-cyan-600 dark:bg-cyan-400',
+    dot: 'bg-cyan-600 dark:bg-cyan-400',
+  },
+  Autre: {
+    bar: 'bg-zinc-400 dark:bg-zinc-500',
+    dot: 'bg-zinc-400 dark:bg-zinc-500',
+  },
+};
+
+export function getSessionCategoryTone(category: string): { bar: string; dot: string } {
+  return SESSION_CATEGORY_TONE[category] ?? SESSION_CATEGORY_TONE.Autre;
+}
+
+export function formatElapsedTimer(startedAtIso: string, nowMs = Date.now()): string {
+  const startMs = new Date(startedAtIso).getTime();
+  if (Number.isNaN(startMs)) {
+    return '00:00';
+  }
+  const totalSeconds = Math.max(0, Math.floor((nowMs - startMs) / 1000));
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+
+  if (hours > 0) {
+    return `${hours}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+  }
+  return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+}

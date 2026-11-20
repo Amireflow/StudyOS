@@ -117,3 +117,68 @@ FOR ALL
 TO authenticated
 USING ((select auth.uid()) = user_id)
 WITH CHECK ((select auth.uid()) = user_id);
+
+-- Verrou pédagogique : évaluations des compétences
+ALTER TABLE skill_assessments ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "skill_assessments_owner_all"
+ON skill_assessments
+FOR ALL
+TO authenticated
+USING ((select auth.uid()) = user_id)
+WITH CHECK ((select auth.uid()) = user_id);
+
+-- Import intelligent de l'emploi du temps
+ALTER TABLE timetable_imports ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "timetable_imports_owner_all"
+ON timetable_imports
+FOR ALL
+TO authenticated
+USING ((select auth.uid()) = user_id)
+WITH CHECK ((select auth.uid()) = user_id);
+
+-- Module Cours intelligent
+ALTER TABLE courses ENABLE ROW LEVEL SECURITY;
+ALTER TABLE course_levels ENABLE ROW LEVEL SECURITY;
+ALTER TABLE course_lessons ENABLE ROW LEVEL SECURITY;
+ALTER TABLE course_resources ENABLE ROW LEVEL SECURITY;
+ALTER TABLE course_submissions ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "courses_owner_all"
+ON courses
+FOR ALL
+TO authenticated
+USING ((select auth.uid()) = user_id)
+WITH CHECK ((select auth.uid()) = user_id);
+
+CREATE POLICY "course_levels_owner_all"
+ON course_levels
+FOR ALL
+TO authenticated
+USING ((select auth.uid()) = user_id)
+WITH CHECK ((select auth.uid()) = user_id);
+
+CREATE POLICY "course_lessons_owner_all"
+ON course_lessons
+FOR ALL
+TO authenticated
+USING ((select auth.uid()) = user_id)
+WITH CHECK ((select auth.uid()) = user_id);
+
+CREATE POLICY "course_resources_owner_all"
+ON course_resources
+FOR ALL
+TO authenticated
+USING ((select auth.uid()) = user_id)
+WITH CHECK ((select auth.uid()) = user_id);
+
+CREATE POLICY "course_submissions_owner_all"
+ON course_submissions
+FOR ALL
+TO authenticated
+USING ((select auth.uid()) = user_id)
+WITH CHECK ((select auth.uid()) = user_id);
+
+-- Comptes utilisateurs : accès direct bloqué aux clients authenticated (réservé au backend / service_role)
+ALTER TABLE users ENABLE ROW LEVEL SECURITY;

@@ -80,6 +80,43 @@ class ScheduleEventType(StrEnum):
     other = "other"
 
 
+class ScheduleEventSource(StrEnum):
+    manual = "manual"
+    timetable_import = "timetable_import"
+    ai_proposal = "ai_proposal"
+
+
+class TimetableFileFormat(StrEnum):
+    pdf = "pdf"
+    image = "image"
+    excel = "excel"
+    word = "word"
+
+
+class TimetableImportStatus(StrEnum):
+    pending_review = "pending_review"
+    validated = "validated"
+    cancelled = "cancelled"
+
+
+class CourseSessionSubtype(StrEnum):
+    cours = "cours"
+    td = "td"
+    tp = "tp"
+    examen = "examen"
+    autre = "autre"
+
+
+class TimetableAnomalyType(StrEnum):
+    missing_time = "missing_time"
+    invalid_duration = "invalid_duration"
+    missing_subject = "missing_subject"
+    duplicate_course = "duplicate_course"
+    overlap_conflict = "overlap_conflict"
+    existing_calendar_conflict = "existing_calendar_conflict"
+    uncertain_extraction = "uncertain_extraction"
+
+
 class SessionStatus(StrEnum):
     in_progress = "in_progress"
     completed = "completed"
@@ -100,6 +137,31 @@ class SkillEvidenceType(StrEnum):
     assessment = "assessment"
     deliverable = "deliverable"
     other = "other"
+
+
+class SkillAssessmentStatus(StrEnum):
+    pending = "pending"
+    submitted = "submitted"
+    evaluated = "evaluated"
+    approved = "approved"
+    rejected = "rejected"
+    cancelled = "cancelled"
+
+
+class SkillAssessmentType(StrEnum):
+    quiz = "quiz"
+    practical_exercise = "practical_exercise"
+    code_review = "code_review"
+    explanation = "explanation"
+    deliverable = "deliverable"
+    mixed = "mixed"
+
+
+class SkillEvaluatorType(StrEnum):
+    pedagogical_engine = "pedagogical_engine"
+    ai_copilot = "ai_copilot"
+    self_rubric = "self_rubric"
+    hybrid = "hybrid"
 
 
 class ProjectStatus(StrEnum):
@@ -130,7 +192,60 @@ class AiActionType(StrEnum):
     park_task = "park_task"
     create_schedule_event = "create_schedule_event"
     add_skill_evidence = "add_skill_evidence"
-    update_skill_level = "update_skill_level"
+    propose_skill_assessment = "propose_skill_assessment"
+    recommend_skill_progression = "recommend_skill_progression"
+    plan_strategic_activity = "plan_strategic_activity"
+    create_course = "create_course"
+
+
+class CourseLanguage(StrEnum):
+    fr = "fr"
+    en = "en"
+    bilingual = "bilingual"
+
+
+class CourseStatus(StrEnum):
+    draft = "draft"
+    active = "active"
+    paused = "paused"
+    completed = "completed"
+
+
+class CourseLevelStatus(StrEnum):
+    locked = "locked"
+    unlocked = "unlocked"
+    in_progress = "in_progress"
+    validated = "validated"
+
+
+class CourseLessonStatus(StrEnum):
+    not_started = "not_started"
+    in_progress = "in_progress"
+    completed = "completed"
+
+
+class CourseResourceType(StrEnum):
+    documentation = "documentation"
+    video = "video"
+    article = "article"
+    book = "book"
+    interactive = "interactive"
+
+
+class CourseSubmissionKind(StrEnum):
+    exercise = "exercise"
+    project = "project"
+
+
+class CourseSubmissionStatus(StrEnum):
+    submitted = "submitted"
+    evaluated = "evaluated"
+
+
+class StrategicDecision(StrEnum):
+    acceptable = "ACCEPTABLE"
+    acceptable_with_conditions = "ACCEPTABLE_WITH_CONDITIONS"
+    not_recommended = "NOT_RECOMMENDED"
 
 
 class AiReportType(StrEnum):

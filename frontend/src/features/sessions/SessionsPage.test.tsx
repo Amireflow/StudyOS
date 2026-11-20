@@ -1,7 +1,7 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import { AppProviders } from '../../app/providers';
 import { SessionsPage } from './SessionsPage';
 
@@ -16,6 +16,10 @@ function renderSessionsPage() {
 }
 
 describe('SessionsPage', () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+  });
+
   it('permet de démarrer puis clôturer une séance avec un résultat obligatoire (SESSION-02)', async () => {
     const user = userEvent.setup();
     renderSessionsPage();
@@ -84,5 +88,42 @@ describe('SessionsPage', () => {
     await user.click(screen.getByRole('button', { name: 'Enregistrer la séance' }));
     expect(screen.getByTestId('sessions-completed-count')).toHaveTextContent('1');
     expect(screen.getByTestId('sessions-total-time')).toHaveTextContent('1 h 30');
+  });
+
+  it('propose des raccourcis de durée, filtre par catégorie et affiche le minuteur en direct', async () => {
+    const user = userEvent.setup();
+    renderSessionsPage();
+
+    // Séance manuelle 1 : Projet, raccourci 1 h 30
+    await user.click(screen.getByRole('button', { name: 'Enregistrer une séance passée' }));
+    await user.type(screen.getByLabelText(/Titre de la séance/), 'Architecture API');
+    await user.selectOptions(screen.getByLabelText(/Catégorie/), 'Projet');
+    await user.click(screen.getByRole('button', { name: '1 h 30' }));
+    expect(screen.getByText('Durée calculée : 1 h 30')).toBeInTheDocument();
+    await user.type(screen.getByLabelText(/Résultat ou note de fin/), 'Schémas validés.');
+    await user.click(screen.getByRole('button', { name: 'Enregistrer la séance' }));
+
+    // Séance manuelle 2 : Cours, raccourci 45 min
+    await user.click(screen.getByRole('button', { name: 'Enregistrer une séance passée' }));
+    await user.type(screen.getByLabelText(/Titre de la séance/), 'Lecture algorithmes');
+    await user.selectOptions(screen.getByLabelText(/Catégorie/), 'Cours');
+    await user.click(screen.getByRole('button', { name: '45 min' }));
+    await user.type(screen.getByLabelText(/Résultat ou note de fin/), 'Arbres équilibrés revus.');
+    await user.click(screen.getByRole('button', { name: 'Enregistrer la séance' }));
+
+    // Filtrage par pilule de catégorie
+    await user.click(screen.getByRole('button', { name: 'Projet' }));
+    expect(screen.getByText('Architecture API')).toBeInTheDocument();
+    expect(screen.queryByText('Lecture algorithmes')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Toutes' }));
+    expect(screen.getByText('Lecture algorithmes')).toBeInTheDocument();
+
+    // Démarrage d'une séance active avec minuteur en direct
+    await user.click(screen.getAllByRole('button', { name: 'Démarrer une séance' })[0]);
+    await user.type(screen.getByLabelText(/Titre de la séance/), 'Session Focus');
+    await user.click(screen.getByRole('button', { name: 'Lancer la séance' }));
+
+    expect(screen.getByTestId('active-session-timer')).toHaveTextContent(/^\d+:\d{2}$/);
   });
 });

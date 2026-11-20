@@ -4,11 +4,14 @@ from typing import Any
 from uuid import UUID
 from pydantic import BaseModel, Field
 from app.schemas.common import (
+    ScheduleEventSource,
     ScheduleEventType,
     SessionStatus,
     TaskPriority,
     TaskSource,
     TaskStatus,
+    TimetableFileFormat,
+    TimetableImportStatus,
 )
 
 
@@ -50,8 +53,38 @@ class ScheduleEventRecord(BaseModel):
     starts_at: datetime
     ends_at: datetime
     notes: str | None = None
+    source: ScheduleEventSource = ScheduleEventSource.manual
+    import_id: UUID | None = None
+    session_subtype: str | None = None
+    teacher: str | None = None
+    room: str | None = None
+    group_name: str | None = None
     created_at: datetime
     updated_at: datetime
+
+
+class TimetableImportRecord(BaseModel):
+    id: UUID
+    user_id: UUID
+    filename: str
+    file_format: TimetableFileFormat
+    mime_type: str
+    file_size_bytes: int
+    file_sha256: str
+    source_preview_text: str | None = None
+    source_deleted: bool = False
+    status: TimetableImportStatus = TimetableImportStatus.pending_review
+    valid_from: str | None = None
+    valid_until: str | None = None
+    extracted_courses: list[dict[str, Any]] = Field(default_factory=list)
+    anomalies: list[dict[str, Any]] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    created_events_count: int = 0
+    skipped_duplicates_count: int = 0
+    replaced_events_count: int = 0
+    created_at: datetime
+    updated_at: datetime
+    validated_at: datetime | None = None
 
 
 class SessionRecord(BaseModel):
@@ -77,9 +110,11 @@ class InMemoryStore:
 
     def __init__(self) -> None:
         self.lock = RLock()
+        self.users: dict[UUID, Any] = {}
         self.profiles: dict[UUID, ProfileRecord] = {}
         self.tasks: dict[UUID, TaskRecord] = {}
         self.schedule_events: dict[UUID, ScheduleEventRecord] = {}
+        self.timetable_imports: dict[UUID, TimetableImportRecord] = {}
         self.sessions: dict[UUID, SessionRecord] = {}
 
 
@@ -174,6 +209,52 @@ class ScheduleRepository:
                 return False
             del self._store.schedule_events[event_id]
             return True
+
+    def delete_imported_events(
+        self,
+        user_id: UUID,
+        *,
+        range_start: datetime | None = None,
+        range_end: datetime | None = None,
+    ) -> int:
+        with self._store.lock:
+            to_delete: list[UUID] = []
+            for eid, rec in self._store.schedule_events.items():
+                if rec.user_id != user_id:
+                    continue
+                if rec.source != ScheduleEventSource.timetable_import and rec.import_id is None:
+                    continue
+                if range_start is not None and rec.starts_at < range_start:
+                    continue
+                if range_end is not None and rec.starts_at > range_end:
+                    continue
+                to_delete.append(eid)
+            for eid in to_delete:
+                del self._store.schedule_events[eid]
+            return len(to_delete)
+
+    def list_imports_by_user(self, user_id: UUID) -> list[TimetableImportRecord]:
+        with self._store.lock:
+            items = [
+                record.model_copy(deep=True)
+                for record in self._store.timetable_imports.values()
+                if record.user_id == user_id
+            ]
+            items.sort(key=lambda item: item.created_at, reverse=True)
+            return items
+
+    def get_import(self, user_id: UUID, import_id: UUID) -> TimetableImportRecord | None:
+        with self._store.lock:
+            record = self._store.timetable_imports.get(import_id)
+            if record is None or record.user_id != user_id:
+                return None
+            return record.model_copy(deep=True)
+
+    def save_import(self, record: TimetableImportRecord) -> TimetableImportRecord:
+        with self._store.lock:
+            stored = record.model_copy(deep=True)
+            self._store.timetable_imports[record.id] = stored
+            return stored.model_copy(deep=True)
 
 
 class SessionRepository:

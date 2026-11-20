@@ -78,4 +78,45 @@ describe('ProjectsPage', () => {
     const studyStored = JSON.parse(window.localStorage.getItem(STORAGE_KEYS.studyState) ?? '{}');
     expect(studyStored.activePriorityProjectId).toBeTruthy();
   });
+
+  it('convertit la prochaine action en tâche liée, filtre par recherche/statut et bascule entre Liste et Tableau', async () => {
+    const user = userEvent.setup();
+    renderProjectsPage();
+
+    await user.click(screen.getByRole('button', { name: 'Nouveau projet' }));
+    await user.type(screen.getByLabelText(/Nom du projet/), 'Refonte API');
+    await user.type(screen.getByLabelText(/Objectif mesurable/), '100% des endpoints couverts');
+    await user.type(
+      screen.getByLabelText(/Prochaine action concrète/),
+      'Écrire les tests Pytest des projets',
+    );
+    await user.click(screen.getByRole('button', { name: '+14 j' }));
+    await user.click(screen.getByRole('button', { name: 'Créer le projet' }));
+
+    // Conversion 1-clic de la prochaine action en tâche liée
+    await user.click(
+      screen.getByRole('button', {
+        name: 'Convertir la prochaine action de Refonte API en tâche',
+      }),
+    );
+    expect(screen.getByText('Tâche liée')).toBeInTheDocument();
+
+    const studyStored = JSON.parse(window.localStorage.getItem(STORAGE_KEYS.studyState) ?? '{}');
+    expect(studyStored.tasks).toHaveLength(1);
+    expect(studyStored.tasks[0].title).toBe('Écrire les tests Pytest des projets');
+
+    // Bascule en vue Tableau puis retour Liste
+    await user.click(screen.getByRole('button', { name: 'Tableau' }));
+    expect(screen.getByRole('heading', { name: 'Planifiés' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Liste' }));
+
+    // Recherche sans résultat puis réinitialisation
+    await user.type(screen.getByLabelText('Rechercher un projet'), 'Inexistant');
+    expect(
+      screen.getByText('Aucun projet ne correspond aux filtres'),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Réinitialiser les filtres' }));
+    expect(screen.getByRole('article', { name: 'Refonte API' })).toBeInTheDocument();
+  });
 });

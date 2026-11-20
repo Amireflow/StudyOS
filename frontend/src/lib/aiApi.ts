@@ -4,6 +4,10 @@ import type {
   AiConversation,
   AiMessage,
   AiMessageRole,
+  AiProviderCatalogItem,
+  AiProviderConfig,
+  AiProviderKind,
+  AiProviderModel,
   AiReport,
   AiReportType,
   AiToolSpec,
@@ -246,6 +250,23 @@ export async function fetchProposalsApi(accessToken: string): Promise<AiActionPr
   return dtos.map(mapProposal);
 }
 
+export async function updateProposalApi(
+  accessToken: string,
+  proposalId: string,
+  payloadOverrides: Record<string, unknown>,
+  recalculateSlots = false,
+): Promise<AiActionProposal> {
+  const dto = await apiRequest<ApiAiProposal>(`/ai/proposals/${proposalId}`, {
+    method: 'PATCH',
+    accessToken,
+    body: {
+      payload_overrides: payloadOverrides,
+      recalculate_slots: recalculateSlots,
+    },
+  });
+  return mapProposal(dto);
+}
+
 export async function acceptProposalApi(
   accessToken: string,
   proposalId: string,
@@ -291,4 +312,138 @@ export async function generateWeeklyReviewApi(accessToken: string): Promise<AiRe
 export async function fetchReportsApi(accessToken: string): Promise<AiReport[]> {
   const dtos = await apiRequest<ApiAiReport[]>('/ai/reports', { accessToken });
   return dtos.map(mapReport);
+}
+
+interface ApiAiProviderCatalogItem {
+  id: AiProviderKind;
+  label: string;
+  console_url: string | null;
+  default_base_url: string;
+  requires_api_key: boolean;
+}
+
+interface ApiAiProviderModelInfo {
+  id: string;
+  label: string;
+  owned_by: string | null;
+  context_window: number | null;
+}
+
+interface ApiAiProviderConfig {
+  provider: AiProviderKind;
+  base_url: string;
+  model: string;
+  has_api_key: boolean;
+  api_key_preview: string | null;
+  source: 'user' | 'server_env' | 'default';
+  available_providers: ApiAiProviderCatalogItem[];
+}
+
+interface ApiFetchProviderModelsResponse {
+  provider: AiProviderKind;
+  base_url: string;
+  models: ApiAiProviderModelInfo[];
+  count: number;
+}
+
+function mapProviderCatalogItem(dto: ApiAiProviderCatalogItem): AiProviderCatalogItem {
+  return {
+    id: dto.id,
+    label: dto.label,
+    consoleUrl: dto.console_url,
+    defaultBaseUrl: dto.default_base_url,
+    requiresApiKey: dto.requires_api_key,
+  };
+}
+
+function mapProviderModel(dto: ApiAiProviderModelInfo): AiProviderModel {
+  return {
+    id: dto.id,
+    label: dto.label,
+    ownedBy: dto.owned_by ?? null,
+    contextWindow: dto.context_window ?? null,
+  };
+}
+
+function mapProviderConfig(dto: ApiAiProviderConfig): AiProviderConfig {
+  const provider: AiProviderKind =
+    dto?.provider === 'river' ||
+    dto?.provider === 'openai_compatible' ||
+    dto?.provider === 'gemini' ||
+    dto?.provider === 'local'
+      ? dto.provider
+      : 'local';
+  return {
+    provider,
+    baseUrl: typeof dto?.base_url === 'string' ? dto.base_url : '',
+    model: typeof dto?.model === 'string' && dto.model ? dto.model : 'local-coach-v1',
+    hasApiKey: Boolean(dto?.has_api_key),
+    apiKeyPreview: typeof dto?.api_key_preview === 'string' ? dto.api_key_preview : null,
+    source:
+      dto?.source === 'user' || dto?.source === 'server_env' || dto?.source === 'default'
+        ? dto.source
+        : 'default',
+    availableProviders: Array.isArray(dto?.available_providers)
+      ? dto.available_providers.map(mapProviderCatalogItem)
+      : [],
+  };
+}
+
+export async function fetchAiProviderConfigApi(accessToken: string): Promise<AiProviderConfig> {
+  const dto = await apiRequest<ApiAiProviderConfig>('/ai/provider/config', { accessToken });
+  return mapProviderConfig(dto);
+}
+
+export async function updateAiProviderConfigApi(
+  accessToken: string,
+  payload: {
+    provider: AiProviderKind;
+    baseUrl?: string | null;
+    model?: string | null;
+    apiKey?: string | null;
+    clearApiKey?: boolean;
+  },
+): Promise<AiProviderConfig> {
+  const dto = await apiRequest<ApiAiProviderConfig>('/ai/provider/config', {
+    method: 'PUT',
+    accessToken,
+    body: {
+      provider: payload.provider,
+      base_url: payload.baseUrl?.trim() || null,
+      model: payload.model?.trim() || null,
+      api_key: payload.apiKey?.trim() || null,
+      clear_api_key: Boolean(payload.clearApiKey),
+    },
+  });
+  return mapProviderConfig(dto);
+}
+
+export async function fetchAiProviderModelsApi(
+  accessToken: string,
+  payload: {
+    provider: AiProviderKind;
+    apiKey?: string | null;
+    baseUrl?: string | null;
+  },
+): Promise<{
+  provider: AiProviderKind;
+  baseUrl: string;
+  models: AiProviderModel[];
+  count: number;
+}> {
+  const dto = await apiRequest<ApiFetchProviderModelsResponse>('/ai/provider/models', {
+    method: 'POST',
+    accessToken,
+    body: {
+      provider: payload.provider,
+      api_key: payload.apiKey?.trim() || null,
+      base_url: payload.baseUrl?.trim() || null,
+    },
+  });
+  return {
+    provider: dto.provider,
+    baseUrl: dto.base_url,
+    models: (dto.models ?? []).map(mapProviderModel),
+    count: dto.count,
+  };
 }

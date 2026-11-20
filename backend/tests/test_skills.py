@@ -1,7 +1,7 @@
 from fastapi.testclient import TestClient
 
 
-def test_skills_scale_assessed_timestamp_evidence_and_isolation(
+def test_skills_scale_pedagogical_lock_evidence_and_isolation(
     client: TestClient,
     user_a_headers: dict[str, str],
     user_b_headers: dict[str, str],
@@ -14,6 +14,15 @@ def test_skills_scale_assessed_timestamp_evidence_and_isolation(
     )
     assert bad_skill.status_code == 422
 
+    # Création directe avec current_level > 0 refusée par le verrou pédagogique
+    locked_create = client.post(
+        "/api/v1/skills",
+        json={"name": "Rust", "domain": "Systèmes", "current_level": 2},
+        headers=user_a_headers,
+    )
+    assert locked_create.status_code == 422
+    assert locked_create.json()["error"]["code"] == "SKILL_INITIAL_LEVEL_LOCKED"
+
     # Niveau initial 0 -> last_assessed_at None
     s0 = client.post(
         "/api/v1/skills",
@@ -22,24 +31,24 @@ def test_skills_scale_assessed_timestamp_evidence_and_isolation(
     )
     assert s0.status_code == 201
     skill_id = s0.json()["id"]
+    assert s0.json()["current_level"] == 0
     assert s0.json()["last_assessed_at"] is None
 
-    # Mise à jour vers niveau 3 -> last_assessed_at renseigné
-    s3 = client.patch(
+    # Tentative de modification directe vers niveau 3 -> refusée (403 SKILL_ASSESSMENT_REQUIRED)
+    direct_patch = client.patch(
         f"/api/v1/skills/{skill_id}",
         json={"current_level": 3},
         headers=user_a_headers,
     )
-    assert s3.status_code == 200
-    assert s3.json()["current_level"] == 3
-    assert s3.json()["last_assessed_at"] is not None
+    assert direct_patch.status_code == 403
+    assert direct_patch.json()["error"]["code"] == "SKILL_ASSESSMENT_REQUIRED"
 
     # URL de preuve non http(s) -> 422
     bad_ev = client.post(
         f"/api/v1/skills/{skill_id}/evidence",
         json={
             "type": "code",
-            "description": "Dépôt GitHub typé",
+            "description": "Dépôt GitHub typé avec validation stricte",
             "reference_url": "ftp://example.com/repo",
         },
         headers=user_a_headers,
@@ -69,6 +78,38 @@ def test_skills_scale_assessed_timestamp_evidence_and_isolation(
     assert ev_patch.status_code == 200
     assert ev_patch.json()["result"] == "Build strict OK"
 
+    # Progression de niveau via le flux officiel d'évaluation
+    assessment = client.post(
+        f"/api/v1/skills/{skill_id}/assessments",
+        json={"target_level": 1, "assessment_type": "code_review"},
+        headers=user_a_headers,
+    ).json()
+    client.post(
+        f"/api/v1/skills/{skill_id}/assessments/{assessment['id']}/submit",
+        json={
+            "submission_text": (
+                "J'ai typé les formulaires TypeScript avec Zod parce que cela garantit "
+                "la validation à l'exécution et l'inférence statique, en traitant les cas d'erreur."
+            ),
+            "submission_code": "const schema = z.object({ title: z.string().min(2) });",
+            "evidence_ids": [ev_id],
+        },
+        headers=user_a_headers,
+    )
+    client.post(
+        f"/api/v1/skills/{skill_id}/assessments/{assessment['id']}/evaluate",
+        headers=user_a_headers,
+    )
+    validated = client.post(
+        f"/api/v1/skills/{skill_id}/assessments/{assessment['id']}/validate",
+        headers=user_a_headers,
+    )
+    assert validated.status_code == 200
+
+    s1 = client.get(f"/api/v1/skills/{skill_id}", headers=user_a_headers)
+    assert s1.json()["current_level"] == 1
+    assert s1.json()["last_assessed_at"] is not None
+
     # Filtre par domaine
     filtered = client.get("/api/v1/skills?domain=frontend", headers=user_a_headers)
     assert len(filtered.json()) == 1
@@ -87,23 +128,15 @@ def test_skills_scale_assessed_timestamp_evidence_and_isolation(
     assert (
         client.post(
             f"/api/v1/skills/{skill_id}/evidence",
-            json={"type": "exercise", "description": "Fausse preuve"},
+            json={"type": "exercise", "description": "Tentative d'ajout de preuve sur compte tiers"},
             headers=user_b_headers,
         ).status_code
         == 404
     )
 
-    # Remise à 0 efface last_assessed_at
-    reset = client.patch(
-        f"/api/v1/skills/{skill_id}",
-        json={"current_level": 0},
-        headers=user_a_headers,
-    )
-    assert reset.status_code == 200
-    assert reset.json()["last_assessed_at"] is None
-
-    # Suppression compétence -> détache séance et supprime preuves
+    # Suppression compétence -> détache séance et supprime preuves + évaluations
     assert client.delete(f"/api/v1/skills/{skill_id}", headers=user_a_headers).status_code == 204
     assert client.get("/api/v1/skills/evidence", headers=user_a_headers).json() == []
+    assert client.get("/api/v1/skills/assessments", headers=user_a_headers).json() == []
     sessions_after = client.get("/api/v1/sessions", headers=user_a_headers).json()
     assert next(item for item in sessions_after if item["id"] == session_id)["skill_id"] is None

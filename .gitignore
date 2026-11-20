@@ -27,3 +27,4 @@ venv/
 # Éditeurs & OS
 .DS_Store
 Thumbs.db
+supabase/.temp/

@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
-import { Alert02Icon } from '@hugeicons/core-free-icons';
+import { Alert02Icon, Clock01Icon } from '@hugeicons/core-free-icons';
 import { Button } from '../../components/ui/Button';
 import { FormField, Input, Select, Textarea } from '../../components/ui/FormFields';
 import { Icon } from '../../components/ui/Icon';
+import { cn } from '../../lib/cn';
 import {
   formatTimeFr,
   isoToDateInput,
@@ -11,6 +12,7 @@ import {
 } from '../../lib/date';
 import { extractFieldErrors } from '../../lib/validation';
 import type { ScheduleEvent, ScheduleEventType } from '../../types/domain';
+import { formatDuration } from '../sessions/sessionUtils';
 import { scheduleEventFormSchema, type ScheduleEventFormValues } from './scheduleSchema';
 import { findConflictingEvents } from './scheduleUtils';
 
@@ -23,6 +25,38 @@ export interface ScheduleEventFormProps {
 }
 
 type ScheduleField = keyof ScheduleEventFormValues;
+
+const DURATION_PRESETS = [
+  { minutes: 30, label: '30 min' },
+  { minutes: 60, label: '1 h' },
+  { minutes: 90, label: '1 h 30' },
+  { minutes: 120, label: '2 h' },
+];
+
+function parseTimeToMinutes(value: string): number | null {
+  const match = /^(\d{2}):(\d{2})$/.exec(value.trim());
+  if (!match) return null;
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  if (hours > 23 || minutes > 59) return null;
+  return hours * 60 + minutes;
+}
+
+function addMinutesToTime(startTime: string, minutesToAdd: number): string {
+  const base = parseTimeToMinutes(startTime);
+  if (base === null) return startTime;
+  const clamped = Math.min(23 * 60 + 59, base + minutesToAdd);
+  const hours = String(Math.floor(clamped / 60)).padStart(2, '0');
+  const minutes = String(clamped % 60).padStart(2, '0');
+  return `${hours}:${minutes}`;
+}
+
+function diffTimeMinutes(startTime: string, endTime: string): number {
+  const start = parseTimeToMinutes(startTime);
+  const end = parseTimeToMinutes(endTime);
+  if (start === null || end === null || end <= start) return 0;
+  return end - start;
+}
 
 function getInitialValues(
   initialEvent: ScheduleEvent | null | undefined,
@@ -69,6 +103,11 @@ export function ScheduleEventForm({
     setValues(getInitialValues(initialEvent, defaultDate));
     setErrors({});
   }, [initialEvent, defaultDate]);
+
+  const currentDurationMinutes = useMemo(
+    () => diffTimeMinutes(values.startTime, values.endTime),
+    [values.startTime, values.endTime],
+  );
 
   const conflicts = useMemo(() => {
     if (!values.date || !values.startTime || !values.endTime || values.endTime <= values.startTime) {
@@ -181,6 +220,44 @@ export function ScheduleEventForm({
             }}
           />
         </FormField>
+      </div>
+
+      {/* Raccourcis de durée */}
+      <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-zinc-50 px-3 py-2 dark:bg-zinc-800/70">
+        <div className="flex items-center gap-1.5 text-xs text-zinc-600 dark:text-zinc-300">
+          <Icon icon={Clock01Icon} size={14} className="text-zinc-400 dark:text-zinc-500" />
+          <span>
+            {currentDurationMinutes > 0
+              ? `Durée : ${formatDuration(currentDurationMinutes)}`
+              : 'Raccourcis de durée'}
+          </span>
+        </div>
+        <div className="flex flex-wrap items-center gap-1.5">
+          {DURATION_PRESETS.map((preset) => {
+            const isActive = currentDurationMinutes === preset.minutes;
+            return (
+              <button
+                key={preset.minutes}
+                type="button"
+                onClick={() => {
+                  const nextEndTime = addMinutesToTime(values.startTime, preset.minutes);
+                  setValues((prev) => ({ ...prev, endTime: nextEndTime }));
+                  if (errors.endTime) {
+                    setErrors((prev) => ({ ...prev, endTime: undefined }));
+                  }
+                }}
+                className={cn(
+                  'rounded-full px-2.5 py-1 text-xs font-medium transition-colors',
+                  isActive
+                    ? 'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900'
+                    : 'bg-white text-zinc-600 hover:bg-zinc-200 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-700',
+                )}
+              >
+                {preset.label}
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       {conflicts.length > 0 && (

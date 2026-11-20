@@ -93,9 +93,38 @@ describe('LearningPage', () => {
     await user.click(screen.getByRole('button', { name: 'Marquer terminée' }));
     expect(screen.getByRole('status')).toHaveTextContent('aucune compétence validée automatiquement');
     expect(screen.getByText(/1\/1 leçon \(100%\)/)).toBeInTheDocument();
+    expect(screen.getByTestId('learning-completed-lessons')).toHaveTextContent('1 / 1');
+    expect(screen.getByTestId('learning-studied-lessons')).toHaveTextContent('1 leçon étudiée');
+    expect(screen.getByTestId('learning-validated-skills')).toHaveTextContent('0 / 0');
 
     const stored = JSON.parse(window.localStorage.getItem(STORAGE_KEYS.learningState) ?? '{}');
     expect(stored.skills[0].currentLevel).toBe(0);
     expect(stored.skills[0].lastAssessedAt).toBeNull();
+  });
+
+  it('charge le parcours exemple, affiche la prochaine leçon, replie un module et filtre par recherche', async () => {
+    const user = userEvent.setup();
+    renderLearningPage();
+
+    await user.click(screen.getByRole('button', { name: 'Charger un parcours exemple' }));
+    expect(screen.getByText('Socle Python & FastAPI')).toBeInTheDocument();
+    expect(screen.getByText('Prochaine leçon')).toBeInTheDocument();
+
+    const toggleModuleButtons = screen.getAllByRole('button', {
+      name: /Replier ou déplier le module/i,
+    });
+    expect(toggleModuleButtons[0]).toHaveAttribute('aria-expanded', 'true');
+
+    await user.click(toggleModuleButtons[0]);
+    expect(toggleModuleButtons[0]).toHaveAttribute('aria-expanded', 'false');
+
+    await user.click(toggleModuleButtons[0]);
+    expect(toggleModuleButtons[0]).toHaveAttribute('aria-expanded', 'true');
+
+    await user.type(screen.getByLabelText('Rechercher un parcours'), 'introuvable');
+    expect(screen.getByText('Aucun parcours ne correspond aux filtres')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Réinitialiser les filtres' }));
+    expect(screen.getByText('Socle Python & FastAPI')).toBeInTheDocument();
   });
 });

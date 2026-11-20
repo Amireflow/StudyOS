@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { createMemoryRouter, RouterProvider } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -49,6 +49,8 @@ const BASE_PROFILE = {
 describe('Intégration API FastAPI & Authentification (Lot 5)', () => {
   afterEach(() => {
     vi.restoreAllMocks();
+    window.localStorage.clear();
+    document.documentElement.classList.remove('dark');
   });
 
   it('connecte via /login, envoie le jeton Bearer, crée une tâche API et gère la déconnexion (AUTH-01)', async () => {
@@ -60,11 +62,12 @@ describe('Intégration API FastAPI & Authentification (Lot 5)', () => {
       const method = (init?.method ?? 'GET').toUpperCase();
       const headers = (init?.headers ?? {}) as Record<string, string>;
 
-      if (url.endsWith('/auth/local-login') && method === 'POST') {
+      if (url.endsWith('/auth/login') && method === 'POST') {
         return jsonResponse({
           access_token: 'jwt-abc-123',
           token_type: 'bearer',
-          expires_in: 86400,
+          expires_in: 604800,
+          email: 'khadim@amireflow.local',
           profile: BASE_PROFILE,
         });
       }
@@ -112,13 +115,15 @@ describe('Intégration API FastAPI & Authentification (Lot 5)', () => {
 
     renderWithRouter('/login', null);
 
-    await user.type(screen.getByLabelText(/Nom d’affichage/), 'Khadim');
-    await user.click(screen.getByRole('button', { name: 'Se connecter au backend' }));
+    await user.type(screen.getByLabelText(/Adresse e-mail/), 'khadim@amireflow.local');
+    await user.type(screen.getByLabelText(/Mot de passe/), 'MonMotDePasse123!');
+    await user.click(screen.getByRole('button', { name: 'Se connecter' }));
 
     expect(
       await screen.findByRole('heading', { level: 1, name: 'Tableau de bord' }),
     ).toBeInTheDocument();
     expect(screen.getByText('Khadim')).toBeInTheDocument();
+    expect(screen.getByText('khadim@amireflow.local')).toBeInTheDocument();
 
     const desktopNav = screen.getByRole('navigation', { name: 'Navigation principale' });
     await user.click(within(desktopNav).getByRole('link', { name: 'Tâches' }));
@@ -263,5 +268,198 @@ describe('Intégration API FastAPI & Authentification (Lot 5)', () => {
     );
     expect(currentProfile.timezone).toBe('Europe/Paris');
     expect(currentProfile.display_name).toBe('Khadim Dev');
+  });
+
+  it('permet de créer des comptes distincts et isole totalement les données, paramètres et thèmes entre deux utilisateurs', async () => {
+    const user = userEvent.setup();
+    const accountsByToken = new Map<
+      string,
+      {
+        email: string;
+        profile: {
+          id: string;
+          display_name: string;
+          timezone: string;
+          active_priority_title: string | null;
+          active_priority_task_id: string | null;
+          active_priority_project_id: string | null;
+          preferences: Record<string, unknown>;
+          ai_instructions: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        tasks: Array<Record<string, unknown>>;
+      }
+    >();
+
+    let userCounter = 0;
+    let taskCounter = 0;
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      const url = String(input);
+      const method = (init?.method ?? 'GET').toUpperCase();
+      const headers = (init?.headers ?? {}) as Record<string, string>;
+
+      if (url.endsWith('/auth/register') && method === 'POST') {
+        const body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>;
+        userCounter += 1;
+        const userId = `user-0000-0000-0000-00000000000${userCounter}`;
+        const token = `token-user-${userCounter}`;
+        const profile = {
+          id: userId,
+          display_name: String(body.display_name ?? 'Utilisateur'),
+          timezone: String(body.timezone ?? 'Africa/Dakar'),
+          active_priority_title: null,
+          active_priority_task_id: null,
+          active_priority_project_id: null,
+          preferences: { theme: 'system' },
+          ai_instructions: null,
+          created_at: '2026-11-20T04:00:00Z',
+          updated_at: '2026-11-20T04:00:00Z',
+        };
+        accountsByToken.set(token, {
+          email: String(body.email),
+          profile,
+          tasks: [],
+        });
+        return jsonResponse(
+          {
+            access_token: token,
+            token_type: 'bearer',
+            expires_in: 604800,
+            email: body.email,
+            profile,
+          },
+          201,
+        );
+      }
+
+      const authHeader = headers.Authorization ?? '';
+      const token = authHeader.replace(/^Bearer\s+/i, '').trim();
+      const account = accountsByToken.get(token);
+      if (!account) {
+        return jsonResponse(
+          { error: { code: 'UNAUTHORIZED', message: 'Non autorisé', request_id: 'req_u' } },
+          401,
+        );
+      }
+
+      if (url.endsWith('/profile') && method === 'GET') {
+        return jsonResponse(account.profile);
+      }
+      if (url.endsWith('/profile') && method === 'PATCH') {
+        const body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>;
+        account.profile = {
+          ...account.profile,
+          ...(typeof body.display_name === 'string' ? { display_name: body.display_name } : {}),
+          ...(typeof body.timezone === 'string' ? { timezone: body.timezone } : {}),
+          ...(body.preferences && typeof body.preferences === 'object'
+            ? { preferences: body.preferences as Record<string, unknown> }
+            : {}),
+        };
+        return jsonResponse(account.profile);
+      }
+      if (url.endsWith('/tasks') && method === 'GET') {
+        return jsonResponse(account.tasks);
+      }
+      if (url.endsWith('/tasks') && method === 'POST') {
+        const body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>;
+        taskCounter += 1;
+        const created = {
+          id: `task-${taskCounter}`,
+          user_id: account.profile.id,
+          title: body.title,
+          description: body.description ?? null,
+          status: body.status ?? 'todo',
+          priority: body.priority ?? 'normal',
+          due_at: body.due_at ?? null,
+          completed_at: null,
+          source: 'manual',
+          proposal_id: null,
+          project_id: null,
+          module_id: null,
+          created_at: '2026-11-20T04:10:00Z',
+          updated_at: '2026-11-20T04:10:00Z',
+        };
+        account.tasks.push(created);
+        return jsonResponse(created, 201);
+      }
+      if (url.endsWith('/ai/provider/config') && method === 'GET') {
+        return jsonResponse({
+          provider: 'local',
+          base_url: '',
+          model: 'local-coach-v1',
+          has_api_key: false,
+          api_key_preview: null,
+          source: 'default',
+          available_providers: [],
+        });
+      }
+
+      return jsonResponse([]);
+    });
+
+    renderWithRouter('/login', null);
+
+    // 1. Inscription d'Alice
+    await user.click(screen.getByRole('tab', { name: 'Créer un compte' }));
+    await user.type(screen.getByLabelText(/Nom d’affichage/), 'Alice');
+    await user.type(screen.getByLabelText(/Adresse e-mail/), 'alice@amireflow.local');
+    await user.selectOptions(screen.getByLabelText(/Fuseau horaire/), 'Europe/Paris');
+    await user.type(screen.getByLabelText(/^Mot de passe/), 'AlicePass123!');
+    await user.type(screen.getByLabelText(/Confirmer le mot de passe/), 'AlicePass123!');
+    await user.click(screen.getByRole('button', { name: 'Créer mon compte' }));
+
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'Tableau de bord' }),
+    ).toBeInTheDocument();
+    expect(screen.getByText('alice@amireflow.local')).toBeInTheDocument();
+
+    // Alice crée sa tâche privée et passe en thème sombre
+    const navAlice = screen.getByRole('navigation', { name: 'Navigation principale' });
+    await user.click(within(navAlice).getByRole('link', { name: 'Tâches' }));
+    await user.click(screen.getByRole('button', { name: 'Nouvelle tâche' }));
+    await user.type(screen.getByLabelText(/Titre/), 'Tâche confidentielle Alice');
+    await user.click(screen.getByRole('button', { name: 'Ajouter la tâche' }));
+    expect(
+      await screen.findByRole('article', { name: 'Tâche confidentielle Alice' }),
+    ).toBeInTheDocument();
+
+    await user.click(within(navAlice).getByRole('link', { name: 'Paramètres' }));
+    const themeGroup = screen.getByRole('group', { name: 'Choix du thème d’affichage' });
+    await user.click(within(themeGroup).getByRole('button', { name: 'Sombre' }));
+    expect(document.documentElement).toHaveClass('dark');
+
+    // Déconnexion d'Alice
+    await user.click(screen.getByRole('button', { name: 'Déconnexion' }));
+    expect(await screen.findByRole('heading', { level: 2, name: 'Connexion' })).toBeInTheDocument();
+
+    // 2. Inscription de Bob
+    await user.click(screen.getByRole('tab', { name: 'Créer un compte' }));
+    await user.type(screen.getByLabelText(/Nom d’affichage/), 'Bob');
+    await user.type(screen.getByLabelText(/Adresse e-mail/), 'bob@amireflow.local');
+    await user.selectOptions(screen.getByLabelText(/Fuseau horaire/), 'Africa/Dakar');
+    await user.type(screen.getByLabelText(/^Mot de passe/), 'BobPass123!');
+    await user.type(screen.getByLabelText(/Confirmer le mot de passe/), 'BobPass123!');
+    await user.click(screen.getByRole('button', { name: 'Créer mon compte' }));
+
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'Tableau de bord' }),
+    ).toBeInTheDocument();
+    expect(screen.getByText('bob@amireflow.local')).toBeInTheDocument();
+    expect(screen.queryByText('alice@amireflow.local')).not.toBeInTheDocument();
+
+    // Bob récupère son propre thème (system / non dark) et ne voit aucune tâche d'Alice
+    await waitFor(() => {
+      expect(document.documentElement).not.toHaveClass('dark');
+    });
+
+    const navBob = screen.getByRole('navigation', { name: 'Navigation principale' });
+    await user.click(within(navBob).getByRole('link', { name: 'Tâches' }));
+    expect(screen.queryByText('Tâche confidentielle Alice')).not.toBeInTheDocument();
+
+    await user.click(within(navBob).getByRole('link', { name: 'Paramètres' }));
+    expect(await screen.findByLabelText(/Nom d’affichage/)).toHaveValue('Bob');
+    expect(screen.getByLabelText(/Fuseau horaire/)).toHaveValue('Africa/Dakar');
   });
 });

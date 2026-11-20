@@ -1,8 +1,12 @@
+from datetime import datetime, timezone
 from pathlib import Path
+from uuid import UUID, uuid4
 from alembic import command
 from alembic.config import Config
 from fastapi.testclient import TestClient
+from sqlalchemy import text
 from app.core.config import Settings
+from app.core.database import create_db_engine
 from app.main import create_app
 
 
@@ -98,7 +102,7 @@ def test_alembic_migrations_and_restart_persistence_with_isolation(tmp_path: Pat
 
         skill = client1.post(
             "/api/v1/skills",
-            json={"name": "SQLAlchemy", "domain": "Backend", "current_level": 3, "target_level": 4},
+            json={"name": "SQLAlchemy", "domain": "Backend", "current_level": 0, "target_level": 4},
             headers=headers_a,
         )
         assert skill.status_code == 201
@@ -106,10 +110,40 @@ def test_alembic_migrations_and_restart_persistence_with_isolation(tmp_path: Pat
 
         evidence = client1.post(
             f"/api/v1/skills/{skill_id}/evidence",
-            json={"type": "code", "description": "Dépôt Alembic Palier 2"},
+            json={"type": "code", "description": "Dépôt Alembic Palier 2 avec tests de migration"},
             headers=headers_a,
         )
         assert evidence.status_code == 201
+        ev_id = evidence.json()["id"]
+
+        assessment = client1.post(
+            f"/api/v1/skills/{skill_id}/assessments",
+            json={"target_level": 1, "path_id": path_id, "module_id": module_id},
+            headers=headers_a,
+        )
+        assert assessment.status_code == 201
+        assessment_id = assessment.json()["id"]
+        client1.post(
+            f"/api/v1/skills/{skill_id}/assessments/{assessment_id}/submit",
+            json={
+                "submission_text": (
+                    "Les migrations Alembic garantissent l'évolution reproductible du schéma "
+                    "parce que chaque révision versionne upgrade et downgrade et gère les erreurs."
+                ),
+                "submission_code": "def upgrade() -> None:\n    op.create_table('skill_assessments', ...)",
+                "evidence_ids": [ev_id],
+            },
+            headers=headers_a,
+        )
+        client1.post(
+            f"/api/v1/skills/{skill_id}/assessments/{assessment_id}/evaluate",
+            headers=headers_a,
+        )
+        val_res = client1.post(
+            f"/api/v1/skills/{skill_id}/assessments/{assessment_id}/validate",
+            headers=headers_a,
+        )
+        assert val_res.status_code == 200
 
         project = client1.post(
             "/api/v1/projects",
@@ -143,6 +177,14 @@ def test_alembic_migrations_and_restart_persistence_with_isolation(tmp_path: Pat
 
         briefing = client1.post("/api/v1/ai/briefing", headers=headers_a)
         assert briefing.status_code == 201
+
+        course = client1.post(
+            "/api/v1/courses",
+            json={"subject": "Python", "language": "fr", "total_levels": 3, "link_skill": False},
+            headers=headers_a,
+        )
+        assert course.status_code == 201
+        course_id = course.json()["id"]
 
     # Instance 2 : redémarrage simulé sur le même fichier SQLite
     app2 = create_app(settings=settings, auto_create_tables=False)
@@ -179,8 +221,11 @@ def test_alembic_migrations_and_restart_persistence_with_isolation(tmp_path: Pat
 
         skills = client2.get("/api/v1/skills", headers=headers_a2).json()
         assert len(skills) == 1
-        assert skills[0]["current_level"] == 3
+        assert skills[0]["current_level"] == 1
         assert len(client2.get(f"/api/v1/skills/{skill_id}/evidence", headers=headers_a2).json()) == 1
+        assessments = client2.get(f"/api/v1/skills/{skill_id}/assessments", headers=headers_a2).json()
+        assert len(assessments) == 1
+        assert assessments[0]["status"] == "approved"
 
         projects = client2.get("/api/v1/projects", headers=headers_a2).json()
         assert len(projects) == 1
@@ -192,6 +237,14 @@ def test_alembic_migrations_and_restart_persistence_with_isolation(tmp_path: Pat
         assert len(proposals) == 1
         reports = client2.get("/api/v1/ai/reports", headers=headers_a2).json()
         assert len(reports) == 1
+
+        courses = client2.get("/api/v1/courses", headers=headers_a2).json()
+        assert len(courses) == 1
+        assert courses[0]["subject"] == "Python"
+        assert courses[0]["current_level"] == 1
+        course_detail = client2.get(f"/api/v1/courses/{course_id}", headers=headers_a2).json()
+        assert len(course_detail["levels"]) == 3
+        assert len(course_detail["levels"][0]["lessons"]) == 4
 
         # Second utilisateur totalement isolé
         login_b = client2.post(
@@ -205,3 +258,68 @@ def test_alembic_migrations_and_restart_persistence_with_isolation(tmp_path: Pat
         assert client2.get("/api/v1/skills", headers=headers_b).json() == []
         assert client2.get("/api/v1/projects", headers=headers_b).json() == []
         assert client2.get(f"/api/v1/projects/{project_id}", headers=headers_b).status_code == 404
+        assert client2.get("/api/v1/courses", headers=headers_b).json() == []
+        assert client2.get(f"/api/v1/courses/{course_id}", headers=headers_b).status_code == 404
+
+
+def test_migration_0004_preserves_historical_skill_levels_and_data(tmp_path: Path) -> None:
+    """Vérifie que la migration 0004 préserve les compétences historiques déjà enregistrées à un niveau > 0."""
+    backend_root = Path(__file__).resolve().parents[1]
+    db_file = tmp_path / "historical_upgrade.db"
+    db_url = f"sqlite:///{db_file.as_posix()}"
+
+    alembic_cfg = Config(str(backend_root / "alembic.ini"))
+    alembic_cfg.set_main_option("script_location", str(backend_root / "alembic"))
+    alembic_cfg.set_main_option("sqlalchemy.url", db_url)
+
+    # 1. Monter jusqu'à 0003 (avant le verrou pédagogique) et insérer une compétence historique au niveau 3
+    command.upgrade(alembic_cfg, "0003_palier2_ai_copilot")
+    legacy_skill_id = str(uuid4())
+    user_id = "11111111-1111-1111-1111-111111111111"
+    now_iso = datetime.now(timezone.utc).isoformat()
+
+    engine = create_db_engine(db_url)
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO skills (id, user_id, name, domain, description, current_level, target_level, last_assessed_at, created_at, updated_at) "
+                "VALUES (:id, :uid, :name, :domain, :desc, :lvl, :target, :assessed, :c_at, :u_at)"
+            ),
+            {
+                "id": UUID(legacy_skill_id).hex,
+                "uid": UUID(user_id).hex,
+                "name": "Compétence Historique",
+                "domain": "Architecture",
+                "desc": "Niveau acquis avant migration 0004",
+                "lvl": 3,
+                "target": 5,
+                "assessed": now_iso,
+                "c_at": now_iso,
+                "u_at": now_iso,
+            },
+        )
+    engine.dispose()
+
+    # 2. Appliquer la migration 0004 (head)
+    command.upgrade(alembic_cfg, "head")
+
+    # 3. Vérifier via l'API que le niveau historique 3 est intégralement préservé et que les métadonnées restent modifiables
+    app = create_app(
+        settings=Settings(app_env="local", allow_local_dev_auth=True, database_url=db_url),
+        auto_create_tables=False,
+    )
+    headers = {"Authorization": f"Bearer dev:{user_id}"}
+    with TestClient(app) as client:
+        skills = client.get("/api/v1/skills", headers=headers).json()
+        assert len(skills) == 1
+        assert skills[0]["name"] == "Compétence Historique"
+        assert skills[0]["current_level"] == 3
+        assert skills[0]["target_level"] == 5
+
+        patched = client.patch(
+            f"/api/v1/skills/{skills[0]['id']}",
+            json={"description": "Description mise à jour sans perdre le niveau 3"},
+            headers=headers,
+        )
+        assert patched.status_code == 200
+        assert patched.json()["current_level"] == 3

@@ -235,9 +235,9 @@ export function DashboardPage() {
   const nowMs = Date.now();
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-3.5 sm:space-y-5">
       {/* En-tête temporel */}
-      <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <header className="flex flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-xl font-semibold tracking-tight text-zinc-900 sm:text-2xl dark:text-zinc-50">
             Tableau de bord
@@ -245,12 +245,13 @@ export function DashboardPage() {
           <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">{displaySubtitle}</p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="no-scrollbar flex items-center gap-1.5 overflow-x-auto pb-0.5 sm:flex-wrap sm:overflow-visible sm:pb-0">
           {dataMode === 'local_demo' && isWorkspaceEmpty && (
             <Button
               type="button"
               variant="secondary"
               size="sm"
+              className="shrink-0"
               onClick={() => {
                 loadDemoData();
                 setFeedback('Données d’exemple chargées.');
@@ -264,13 +265,14 @@ export function DashboardPage() {
             type="button"
             variant={isQuickAddOpen ? 'primary' : 'secondary'}
             size="sm"
+            className="shrink-0"
             onClick={() => setIsQuickAddOpen((prev) => !prev)}
           >
             <Icon icon={Add01Icon} size={15} />
             Nouvelle tâche
           </Button>
 
-          <Link to="/ai-coach" className={buttonClasses('ghost', 'sm')}>
+          <Link to="/ai-coach" className={cn(buttonClasses('ghost', 'sm'), 'shrink-0')}>
             <Icon icon={AiChat02Icon} size={15} />
             <span>Copilote</span>
             {pendingAiProposalsCount > 0 && (
@@ -312,60 +314,60 @@ export function DashboardPage() {
       )}
 
       {/* Ruban d'indicateurs quotidiens */}
-      <section aria-label="Indicateurs du jour" className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <div className="rounded-2xl bg-white p-4 dark:bg-zinc-900">
+      <section aria-label="Indicateurs du jour" className="grid grid-cols-2 gap-2.5 sm:grid-cols-4 sm:gap-3">
+        <div className="rounded-2xl bg-white p-3 sm:p-4 dark:bg-zinc-900">
           <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Avancement</p>
           <p
-            className="mt-1 text-xl font-semibold tabular-nums text-zinc-900 dark:text-zinc-50"
+            className="mt-0.5 text-lg font-semibold tabular-nums text-zinc-900 sm:mt-1 sm:text-xl dark:text-zinc-50"
             data-testid="dashboard-completion-rate"
           >
             {taskSummary.completionRate} %
           </p>
-          <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-zinc-100 dark:bg-zinc-800">
+          <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-zinc-100 sm:mt-2 dark:bg-zinc-800">
             <div
               className="h-full rounded-full bg-teal-600 transition-all dark:bg-teal-400"
               style={{ width: `${taskSummary.completionRate}%` }}
             />
           </div>
-          <p className="mt-1.5 text-[11px] text-zinc-500 dark:text-zinc-400">
+          <p className="mt-1 text-[11px] text-zinc-500 sm:mt-1.5 dark:text-zinc-400">
             {taskSummary.doneCount}/{taskSummary.activeCount + taskSummary.doneCount} tâches
           </p>
         </div>
 
-        <div className="rounded-2xl bg-white p-4 dark:bg-zinc-900">
+        <div className="rounded-2xl bg-white p-3 sm:p-4 dark:bg-zinc-900">
           <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Temps étudié</p>
           <p
-            className="mt-1 text-xl font-semibold tabular-nums text-zinc-900 dark:text-zinc-50"
+            className="mt-0.5 text-lg font-semibold tabular-nums text-zinc-900 sm:mt-1 sm:text-xl dark:text-zinc-50"
             data-testid="dashboard-sessions-time"
           >
             {sessionSummary.completedCount === 0
               ? '0 min'
               : formatDuration(sessionSummary.totalCompletedMinutes)}
           </p>
-          <p className="mt-3.5 text-[11px] text-zinc-500 dark:text-zinc-400">Temps réel achevé</p>
+          <p className="mt-1.5 text-[11px] text-zinc-500 sm:mt-3.5 dark:text-zinc-400">Temps réel achevé</p>
         </div>
 
-        <div className="rounded-2xl bg-white p-4 dark:bg-zinc-900">
+        <div className="rounded-2xl bg-white p-3 sm:p-4 dark:bg-zinc-900">
           <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Séances</p>
           <p
-            className="mt-1 text-xl font-semibold tabular-nums text-emerald-700 dark:text-emerald-400"
+            className="mt-0.5 text-lg font-semibold tabular-nums text-emerald-700 sm:mt-1 sm:text-xl dark:text-emerald-400"
             data-testid="dashboard-sessions-count"
           >
             {sessionSummary.completedCount}
           </p>
-          <p className="mt-3.5 text-[11px] text-zinc-500 dark:text-zinc-400">
+          <p className="mt-1.5 text-[11px] text-zinc-500 sm:mt-3.5 dark:text-zinc-400">
             {inProgressSessions.length > 0
               ? `${inProgressSessions.length} en cours`
               : 'Achevées'}
           </p>
         </div>
 
-        <div className="rounded-2xl bg-white p-4 dark:bg-zinc-900">
+        <div className="rounded-2xl bg-white p-3 sm:p-4 dark:bg-zinc-900">
           <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Aujourd’hui</p>
-          <p className="mt-1 text-xl font-semibold tabular-nums text-zinc-900 dark:text-zinc-50">
+          <p className="mt-0.5 text-lg font-semibold tabular-nums text-zinc-900 sm:mt-1 sm:text-xl dark:text-zinc-50">
             {todayEvents.length}
           </p>
-          <p className="mt-3.5 text-[11px] text-zinc-500 dark:text-zinc-400">
+          <p className="mt-1.5 text-[11px] text-zinc-500 sm:mt-3.5 dark:text-zinc-400">
             {todayConflictingIds.size > 0
               ? `${todayConflictingIds.size} conflit(s)`
               : todayEvents.length > 1

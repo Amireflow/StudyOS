@@ -2,7 +2,10 @@ import type { ScheduleEventFormValues } from '../features/schedule/scheduleSchem
 import type { ManualSessionValues, StartSessionValues } from '../features/sessions/sessionSchema';
 import type { TaskFormValues } from '../features/tasks/taskSchema';
 import type {
+  CourseSessionSubtype,
+  ExtractedCourseRow,
   ScheduleEvent,
+  ScheduleEventSource,
   ScheduleEventType,
   SessionStatus,
   StudySession,
@@ -10,6 +13,12 @@ import type {
   TaskPriority,
   TaskSource,
   TaskStatus,
+  TimetableAnomaly,
+  TimetableAnomalyType,
+  TimetableFileFormat,
+  TimetableImport,
+  TimetableImportConfirmResult,
+  TimetableImportStatus,
   UserProfile,
 } from '../types/domain';
 import { ApiError, apiRequest } from './api-client';
@@ -54,8 +63,74 @@ interface ApiScheduleEvent {
   starts_at: string;
   ends_at: string;
   notes: string | null;
+  source?: ScheduleEventSource;
+  import_id?: string | null;
+  session_subtype?: CourseSessionSubtype | string | null;
+  teacher?: string | null;
+  room?: string | null;
+  group_name?: string | null;
   created_at: string;
   updated_at: string;
+}
+
+interface ApiExtractedCourseRow {
+  row_id: string;
+  subject: string;
+  day_of_week: number | null;
+  day_label: string | null;
+  start_time: string | null;
+  end_time: string | null;
+  teacher: string | null;
+  room: string | null;
+  group_name: string | null;
+  session_type: CourseSessionSubtype;
+  valid_from: string | null;
+  valid_until: string | null;
+  uncertain: boolean;
+  uncertainty_reasons: string[];
+  ignored: boolean;
+  raw_excerpt: string | null;
+}
+
+interface ApiTimetableAnomaly {
+  id: string;
+  row_id: string | null;
+  related_row_id: string | null;
+  type: TimetableAnomalyType;
+  severity: 'error' | 'warning';
+  message: string;
+}
+
+interface ApiTimetableImport {
+  id: string;
+  user_id: string;
+  filename: string;
+  file_format: TimetableFileFormat;
+  mime_type: string;
+  file_size_bytes: number;
+  source_preview_text: string | null;
+  source_deleted: boolean;
+  status: TimetableImportStatus;
+  valid_from: string | null;
+  valid_until: string | null;
+  extracted_courses: ApiExtractedCourseRow[];
+  anomalies: ApiTimetableAnomaly[];
+  warnings: string[];
+  blocking_anomalies_count: number;
+  created_events_count: number;
+  skipped_duplicates_count: number;
+  replaced_events_count: number;
+  created_at: string;
+  updated_at: string;
+  validated_at: string | null;
+}
+
+interface ApiTimetableImportConfirmResponse {
+  import_record: ApiTimetableImport;
+  created_events: ApiScheduleEvent[];
+  created_count: number;
+  skipped_duplicates_count: number;
+  replaced_count: number;
 }
 
 interface ApiSession {
@@ -80,7 +155,28 @@ export interface ApiLocalAuthResponse {
   access_token: string;
   token_type: 'bearer';
   expires_in: number;
+  email?: string | null;
   profile: ApiProfile;
+}
+
+export interface ApiAuthAccountResponse {
+  id: string;
+  email: string | null;
+  auth_provider: 'password' | 'external';
+  has_password_account: boolean;
+  last_login_at: string | null;
+  created_at: string;
+  profile: ApiProfile;
+}
+
+export interface AuthAccountInfo {
+  id: string;
+  email: string | null;
+  authProvider: 'password' | 'external';
+  hasPasswordAccount: boolean;
+  lastLoginAt: string | null;
+  createdAt: string;
+  profile: UserProfile;
 }
 
 interface ApiDuplicateWeekResponse {
@@ -132,8 +228,93 @@ function mapScheduleEvent(dto: ApiScheduleEvent): ScheduleEvent {
     startsAt: dto.starts_at,
     endsAt: dto.ends_at,
     notes: dto.notes,
+    source: dto.source ?? 'manual',
+    importId: dto.import_id ?? null,
+    sessionSubtype: dto.session_subtype ?? null,
+    teacher: dto.teacher ?? null,
+    room: dto.room ?? null,
+    groupName: dto.group_name ?? null,
     createdAt: dto.created_at,
     updatedAt: dto.updated_at,
+  };
+}
+
+function mapExtractedCourseRow(dto: ApiExtractedCourseRow): ExtractedCourseRow {
+  return {
+    rowId: dto.row_id,
+    subject: dto.subject,
+    dayOfWeek: dto.day_of_week,
+    dayLabel: dto.day_label,
+    startTime: dto.start_time,
+    endTime: dto.end_time,
+    teacher: dto.teacher,
+    room: dto.room,
+    groupName: dto.group_name,
+    sessionType: dto.session_type,
+    validFrom: dto.valid_from,
+    validUntil: dto.valid_until,
+    uncertain: dto.uncertain,
+    uncertaintyReasons: dto.uncertainty_reasons ?? [],
+    ignored: dto.ignored,
+    rawExcerpt: dto.raw_excerpt,
+  };
+}
+
+function toApiCourseRow(row: ExtractedCourseRow): ApiExtractedCourseRow {
+  return {
+    row_id: row.rowId,
+    subject: row.subject,
+    day_of_week: row.dayOfWeek,
+    day_label: row.dayLabel,
+    start_time: row.startTime,
+    end_time: row.endTime,
+    teacher: row.teacher,
+    room: row.room,
+    group_name: row.groupName,
+    session_type: row.sessionType,
+    valid_from: row.validFrom,
+    valid_until: row.validUntil,
+    uncertain: row.uncertain,
+    uncertainty_reasons: row.uncertaintyReasons,
+    ignored: row.ignored,
+    raw_excerpt: row.rawExcerpt,
+  };
+}
+
+function mapTimetableAnomaly(dto: ApiTimetableAnomaly): TimetableAnomaly {
+  return {
+    id: dto.id,
+    rowId: dto.row_id,
+    relatedRowId: dto.related_row_id,
+    type: dto.type,
+    severity: dto.severity,
+    message: dto.message,
+  };
+}
+
+function mapTimetableImport(dto: ApiTimetableImport): TimetableImport {
+  return {
+    id: dto.id,
+    userId: dto.user_id,
+    filename: dto.filename,
+    fileFormat: dto.file_format,
+    mimeType: dto.mime_type,
+    fileSizeBytes: dto.file_size_bytes,
+    sourcePreviewText: dto.source_preview_text,
+    sourceDeleted: dto.source_deleted,
+    status: dto.status,
+    validFrom: dto.valid_from,
+    validUntil: dto.valid_until,
+    extractedCourses: (dto.extracted_courses ?? []).map(mapExtractedCourseRow),
+    anomalies: (dto.anomalies ?? []).map(mapTimetableAnomaly),
+    warnings: dto.warnings ?? [],
+    blockingAnomaliesCount: dto.blocking_anomalies_count ?? 0,
+    createdEventsCount: dto.created_events_count ?? 0,
+    skippedDuplicatesCount: dto.skipped_duplicates_count ?? 0,
+    replacedEventsCount: dto.replaced_events_count ?? 0,
+    createdAt: dto.created_at,
+    updatedAt: dto.updated_at,
+    validatedAt: dto.validated_at,
   };
 }
 
@@ -160,7 +341,7 @@ function mapSession(dto: ApiSession): StudySession {
 export async function loginLocalApi(
   email: string,
   displayName?: string,
-): Promise<{ accessToken: string; profile: UserProfile }> {
+): Promise<{ accessToken: string; email: string | null; profile: UserProfile }> {
   const response = await apiRequest<ApiLocalAuthResponse>('/auth/local-login', {
     method: 'POST',
     body: {
@@ -170,7 +351,87 @@ export async function loginLocalApi(
   });
   return {
     accessToken: response.access_token,
+    email: response.email ?? email.trim().toLowerCase(),
     profile: mapProfile(response.profile),
+  };
+}
+
+export async function registerAccountApi(payload: {
+  email: string;
+  password: string;
+  displayName: string;
+  timezone?: string;
+}): Promise<{ accessToken: string; email: string | null; profile: UserProfile }> {
+  const response = await apiRequest<ApiLocalAuthResponse>('/auth/register', {
+    method: 'POST',
+    body: {
+      email: payload.email.trim(),
+      password: payload.password,
+      display_name: payload.displayName.trim(),
+      timezone: payload.timezone?.trim() || null,
+    },
+  });
+  return {
+    accessToken: response.access_token,
+    email: response.email ?? payload.email.trim().toLowerCase(),
+    profile: mapProfile(response.profile),
+  };
+}
+
+export async function loginAccountApi(payload: {
+  email: string;
+  password: string;
+}): Promise<{ accessToken: string; email: string | null; profile: UserProfile }> {
+  const response = await apiRequest<ApiLocalAuthResponse>('/auth/login', {
+    method: 'POST',
+    body: {
+      email: payload.email.trim(),
+      password: payload.password,
+    },
+  });
+  return {
+    accessToken: response.access_token,
+    email: response.email ?? payload.email.trim().toLowerCase(),
+    profile: mapProfile(response.profile),
+  };
+}
+
+export async function changePasswordApi(
+  accessToken: string,
+  payload: { currentPassword: string; newPassword: string },
+): Promise<{ accessToken: string; email: string | null; profile: UserProfile }> {
+  const response = await apiRequest<ApiLocalAuthResponse>('/auth/change-password', {
+    method: 'POST',
+    accessToken,
+    body: {
+      current_password: payload.currentPassword,
+      new_password: payload.newPassword,
+    },
+  });
+  return {
+    accessToken: response.access_token,
+    email: response.email ?? null,
+    profile: mapProfile(response.profile),
+  };
+}
+
+export async function logoutAllSessionsApi(accessToken: string): Promise<void> {
+  await apiRequest<void>('/auth/logout', {
+    method: 'POST',
+    accessToken,
+  });
+}
+
+export async function fetchAccountInfoApi(accessToken: string): Promise<AuthAccountInfo> {
+  const dto = await apiRequest<ApiAuthAccountResponse>('/auth/account', { accessToken });
+  return {
+    id: dto.id,
+    email: dto.email ?? null,
+    authProvider: dto.auth_provider,
+    hasPasswordAccount: dto.has_password_account,
+    lastLoginAt: dto.last_login_at,
+    createdAt: dto.created_at,
+    profile: mapProfile(dto.profile),
   };
 }
 
@@ -224,6 +485,7 @@ export interface ProfilePatchPayload {
   activePriorityTitle?: string | null;
   activePriorityTaskId?: string | null;
   activePriorityProjectId?: string | null;
+  preferences?: Record<string, unknown>;
   aiInstructions?: string | null;
 }
 
@@ -238,6 +500,9 @@ export async function updateProfileApi(
   if ('activePriorityTaskId' in patch) body.active_priority_task_id = patch.activePriorityTaskId;
   if ('activePriorityProjectId' in patch) {
     body.active_priority_project_id = patch.activePriorityProjectId;
+  }
+  if ('preferences' in patch && patch.preferences !== undefined) {
+    body.preferences = patch.preferences;
   }
   if ('aiInstructions' in patch) body.ai_instructions = patch.aiInstructions;
 
@@ -362,6 +627,117 @@ export async function duplicateWeekApi(
     createdCount: dto.created_count,
     skippedCount: dto.skipped_count,
   };
+}
+
+export async function analyzeTimetableFileApi(
+  accessToken: string,
+  file: File,
+): Promise<TimetableImport> {
+  const formData = new FormData();
+  formData.append('file', file);
+  const url = `${env.VITE_API_BASE_URL}/schedule/imports/analyze`;
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
+    body: formData,
+  });
+
+  if (!response.ok) {
+    let payload: { error?: { code?: string; message?: string; request_id?: string } } | null = null;
+    try {
+      payload = await response.json();
+    } catch {
+      payload = null;
+    }
+    throw new ApiError(
+      response.status,
+      payload?.error?.code ?? 'HTTP_ERROR',
+      payload?.error?.message ?? `Erreur lors de l'analyse du document (${response.status}).`,
+      payload?.error?.request_id,
+    );
+  }
+
+  const dto = (await response.json()) as ApiTimetableImport;
+  return mapTimetableImport(dto);
+}
+
+export async function updateTimetableImportDraftApi(
+  accessToken: string,
+  importId: string,
+  payload: {
+    courses: ExtractedCourseRow[];
+    validFrom?: string | null;
+    validUntil?: string | null;
+  },
+): Promise<TimetableImport> {
+  const dto = await apiRequest<ApiTimetableImport>(`/schedule/imports/${importId}`, {
+    method: 'PATCH',
+    accessToken,
+    body: {
+      courses: payload.courses.map(toApiCourseRow),
+      valid_from: payload.validFrom ?? null,
+      valid_until: payload.validUntil ?? null,
+    },
+  });
+  return mapTimetableImport(dto);
+}
+
+export async function confirmTimetableImportApi(
+  accessToken: string,
+  importId: string,
+  payload: {
+    courses: ExtractedCourseRow[];
+    validFrom?: string | null;
+    validUntil?: string | null;
+    targetWeekStart?: string | null;
+    recurrenceWeeks?: number;
+    replaceExistingImported?: boolean;
+  },
+): Promise<TimetableImportConfirmResult> {
+  const dto = await apiRequest<ApiTimetableImportConfirmResponse>(
+    `/schedule/imports/${importId}/confirm`,
+    {
+      method: 'POST',
+      accessToken,
+      body: {
+        courses: payload.courses.map(toApiCourseRow),
+        valid_from: payload.validFrom ?? null,
+        valid_until: payload.validUntil ?? null,
+        target_week_start: payload.targetWeekStart ?? null,
+        recurrence_weeks: payload.recurrenceWeeks ?? 1,
+        replace_existing_imported: payload.replaceExistingImported ?? false,
+      },
+    },
+  );
+  return {
+    importRecord: mapTimetableImport(dto.import_record),
+    createdEvents: (dto.created_events ?? []).map(mapScheduleEvent),
+    createdCount: dto.created_count,
+    skippedDuplicatesCount: dto.skipped_duplicates_count,
+    replacedCount: dto.replaced_count,
+  };
+}
+
+export async function cancelTimetableImportApi(
+  accessToken: string,
+  importId: string,
+): Promise<TimetableImport> {
+  const dto = await apiRequest<ApiTimetableImport>(`/schedule/imports/${importId}/cancel`, {
+    method: 'POST',
+    accessToken,
+  });
+  return mapTimetableImport(dto);
+}
+
+export async function deleteTimetableImportSourceApi(
+  accessToken: string,
+  importId: string,
+): Promise<TimetableImport> {
+  const dto = await apiRequest<ApiTimetableImport>(`/schedule/imports/${importId}/source`, {
+    method: 'DELETE',
+    accessToken,
+  });
+  return mapTimetableImport(dto);
 }
 
 export async function fetchSessionsApi(accessToken: string): Promise<StudySession[]> {

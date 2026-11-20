@@ -6,6 +6,11 @@ import type {
   Project,
   ProjectStatus,
   Skill,
+  SkillAssessment,
+  SkillAssessmentCriterion,
+  SkillAssessmentStatus,
+  SkillAssessmentType,
+  SkillEvaluatorType,
   SkillEvidence,
   SkillEvidenceType,
   SkillLevel,
@@ -78,6 +83,60 @@ interface ApiSkillEvidence {
   reference_url: string | null;
   result: string | null;
   observed_at: string;
+  is_admissible?: boolean;
+  external_reference_verified?: boolean;
+  verification_note?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+interface ApiAssessmentCriterion {
+  key: string;
+  label: string;
+  description: string;
+  weight: number;
+  max_score: number;
+  score: number;
+  passed: boolean;
+  feedback: string;
+}
+
+interface ApiSkillAssessment {
+  id: string;
+  user_id: string;
+  skill_id: string;
+  path_id: string | null;
+  module_id: string | null;
+  lesson_id: string | null;
+  assessment_type: SkillAssessmentType;
+  starting_level: SkillLevel;
+  target_level: SkillLevel;
+  proposed_level: SkillLevel | null;
+  status: SkillAssessmentStatus;
+  prompt_title: string;
+  prompt_instructions: string;
+  revealed_hints: string[];
+  hints_total: number;
+  hints_revealed_count: number;
+  submission_text: string | null;
+  submission_code: string | null;
+  submission_reference_url: string | null;
+  evidence_ids: string[];
+  criteria: ApiAssessmentCriterion[];
+  score: number | null;
+  passed: boolean | null;
+  feedback: string | null;
+  mastered_points: string[];
+  gaps_identified: string[];
+  remediation_recommendation: string | null;
+  external_verification_warning: string | null;
+  evaluator_type: SkillEvaluatorType;
+  evaluator_name: string | null;
+  decision_reason: string | null;
+  applied_level_delta: number | null;
+  submitted_at: string | null;
+  evaluated_at: string | null;
+  validated_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -125,7 +184,6 @@ export interface SkillInput {
   name: string;
   domain: string;
   description?: string;
-  currentLevel: SkillLevel;
   targetLevel: SkillLevel | null;
 }
 
@@ -134,6 +192,24 @@ export interface SkillEvidenceInput {
   description: string;
   referenceUrl?: string;
   result?: string;
+}
+
+export interface SkillAssessmentCreateInput {
+  targetLevel?: SkillLevel;
+  assessmentType?: SkillAssessmentType;
+  pathId?: string | null;
+  moduleId?: string | null;
+  lessonId?: string | null;
+  promptTitle?: string;
+  promptInstructions?: string;
+}
+
+export interface SkillAssessmentSubmitInput {
+  submissionText: string;
+  submissionCode?: string;
+  submissionReferenceUrl?: string;
+  evidenceIds?: string[];
+  newEvidence?: SkillEvidenceInput;
 }
 
 export interface ProjectInput {
@@ -214,6 +290,64 @@ function mapEvidence(dto: ApiSkillEvidence): SkillEvidence {
     referenceUrl: dto.reference_url,
     result: dto.result,
     observedAt: dto.observed_at,
+    isAdmissible: dto.is_admissible ?? true,
+    externalReferenceVerified: dto.external_reference_verified ?? false,
+    verificationNote: dto.verification_note ?? null,
+    createdAt: dto.created_at,
+    updatedAt: dto.updated_at,
+  };
+}
+
+function mapCriterion(dto: ApiAssessmentCriterion): SkillAssessmentCriterion {
+  return {
+    key: dto.key,
+    label: dto.label,
+    description: dto.description,
+    weight: dto.weight,
+    maxScore: dto.max_score,
+    score: dto.score,
+    passed: dto.passed,
+    feedback: dto.feedback,
+  };
+}
+
+function mapAssessment(dto: ApiSkillAssessment): SkillAssessment {
+  return {
+    id: dto.id,
+    userId: dto.user_id,
+    skillId: dto.skill_id,
+    pathId: dto.path_id,
+    moduleId: dto.module_id,
+    lessonId: dto.lesson_id,
+    assessmentType: dto.assessment_type,
+    startingLevel: dto.starting_level,
+    targetLevel: dto.target_level,
+    proposedLevel: dto.proposed_level,
+    status: dto.status,
+    promptTitle: dto.prompt_title,
+    promptInstructions: dto.prompt_instructions,
+    revealedHints: dto.revealed_hints ?? [],
+    hintsTotal: dto.hints_total ?? 0,
+    hintsRevealedCount: dto.hints_revealed_count ?? 0,
+    submissionText: dto.submission_text,
+    submissionCode: dto.submission_code,
+    submissionReferenceUrl: dto.submission_reference_url,
+    evidenceIds: dto.evidence_ids ?? [],
+    criteria: (dto.criteria ?? []).map(mapCriterion),
+    score: dto.score,
+    passed: dto.passed,
+    feedback: dto.feedback,
+    masteredPoints: dto.mastered_points ?? [],
+    gapsIdentified: dto.gaps_identified ?? [],
+    remediationRecommendation: dto.remediation_recommendation,
+    externalVerificationWarning: dto.external_verification_warning,
+    evaluatorType: dto.evaluator_type,
+    evaluatorName: dto.evaluator_name,
+    decisionReason: dto.decision_reason,
+    appliedLevelDelta: dto.applied_level_delta,
+    submittedAt: dto.submitted_at,
+    evaluatedAt: dto.evaluated_at,
+    validatedAt: dto.validated_at,
     createdAt: dto.created_at,
     updatedAt: dto.updated_at,
   };
@@ -380,7 +514,6 @@ export async function createSkillApi(accessToken: string, input: SkillInput): Pr
       name: input.name.trim(),
       domain: input.domain.trim(),
       description: input.description?.trim() || null,
-      current_level: input.currentLevel,
       target_level: input.targetLevel,
     },
   });
@@ -396,7 +529,6 @@ export async function updateSkillApi(
   if (patch.name !== undefined) body.name = patch.name.trim();
   if (patch.domain !== undefined) body.domain = patch.domain.trim();
   if (patch.description !== undefined) body.description = patch.description.trim() || null;
-  if (patch.currentLevel !== undefined) body.current_level = patch.currentLevel;
   if ('targetLevel' in patch) body.target_level = patch.targetLevel ?? null;
   const dto = await apiRequest<ApiSkill>(`/skills/${id}`, {
     method: 'PATCH',
@@ -442,6 +574,146 @@ export async function deleteSkillEvidenceApi(
     method: 'DELETE',
     accessToken,
   });
+}
+
+export async function fetchAllSkillAssessmentsApi(
+  accessToken: string,
+): Promise<SkillAssessment[]> {
+  const dtos = await apiRequest<ApiSkillAssessment[]>('/skills/assessments', { accessToken });
+  return dtos.map(mapAssessment);
+}
+
+export async function createSkillAssessmentApi(
+  accessToken: string,
+  skillId: string,
+  input: SkillAssessmentCreateInput,
+): Promise<SkillAssessment> {
+  const dto = await apiRequest<ApiSkillAssessment>(`/skills/${skillId}/assessments`, {
+    method: 'POST',
+    accessToken,
+    body: {
+      target_level: input.targetLevel ?? null,
+      assessment_type: input.assessmentType ?? 'practical_exercise',
+      path_id: input.pathId || null,
+      module_id: input.moduleId || null,
+      lesson_id: input.lessonId || null,
+      prompt_title: input.promptTitle?.trim() || null,
+      prompt_instructions: input.promptInstructions?.trim() || null,
+    },
+  });
+  return mapAssessment(dto);
+}
+
+export async function revealAssessmentHintApi(
+  accessToken: string,
+  skillId: string,
+  assessmentId: string,
+): Promise<SkillAssessment> {
+  const dto = await apiRequest<ApiSkillAssessment>(
+    `/skills/${skillId}/assessments/${assessmentId}/hint`,
+    {
+      method: 'POST',
+      accessToken,
+    },
+  );
+  return mapAssessment(dto);
+}
+
+export async function submitSkillAssessmentApi(
+  accessToken: string,
+  skillId: string,
+  assessmentId: string,
+  input: SkillAssessmentSubmitInput,
+): Promise<SkillAssessment> {
+  const dto = await apiRequest<ApiSkillAssessment>(
+    `/skills/${skillId}/assessments/${assessmentId}/submit`,
+    {
+      method: 'POST',
+      accessToken,
+      body: {
+        submission_text: input.submissionText.trim(),
+        submission_code: input.submissionCode?.trim() || null,
+        submission_reference_url: input.submissionReferenceUrl?.trim() || null,
+        evidence_ids: input.evidenceIds ?? [],
+        new_evidence: input.newEvidence
+          ? {
+              type: input.newEvidence.type,
+              description: input.newEvidence.description.trim(),
+              reference_url: input.newEvidence.referenceUrl?.trim() || null,
+              result: input.newEvidence.result?.trim() || null,
+            }
+          : null,
+      },
+    },
+  );
+  return mapAssessment(dto);
+}
+
+export async function evaluateSkillAssessmentApi(
+  accessToken: string,
+  skillId: string,
+  assessmentId: string,
+): Promise<SkillAssessment> {
+  const dto = await apiRequest<ApiSkillAssessment>(
+    `/skills/${skillId}/assessments/${assessmentId}/evaluate`,
+    {
+      method: 'POST',
+      accessToken,
+      body: {},
+    },
+  );
+  return mapAssessment(dto);
+}
+
+export async function validateSkillAssessmentApi(
+  accessToken: string,
+  skillId: string,
+  assessmentId: string,
+  reason?: string,
+): Promise<SkillAssessment> {
+  const dto = await apiRequest<ApiSkillAssessment>(
+    `/skills/${skillId}/assessments/${assessmentId}/validate`,
+    {
+      method: 'POST',
+      accessToken,
+      body: { reason: reason?.trim() || null },
+    },
+  );
+  return mapAssessment(dto);
+}
+
+export async function rejectSkillAssessmentApi(
+  accessToken: string,
+  skillId: string,
+  assessmentId: string,
+  reason?: string,
+): Promise<SkillAssessment> {
+  const dto = await apiRequest<ApiSkillAssessment>(
+    `/skills/${skillId}/assessments/${assessmentId}/reject`,
+    {
+      method: 'POST',
+      accessToken,
+      body: { reason: reason?.trim() || null },
+    },
+  );
+  return mapAssessment(dto);
+}
+
+export async function cancelSkillAssessmentApi(
+  accessToken: string,
+  skillId: string,
+  assessmentId: string,
+  reason?: string,
+): Promise<SkillAssessment> {
+  const dto = await apiRequest<ApiSkillAssessment>(
+    `/skills/${skillId}/assessments/${assessmentId}/cancel`,
+    {
+      method: 'POST',
+      accessToken,
+      body: { reason: reason?.trim() || null },
+    },
+  );
+  return mapAssessment(dto);
 }
 
 export async function fetchProjectsApi(accessToken: string): Promise<Project[]> {

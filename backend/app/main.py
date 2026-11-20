@@ -10,6 +10,7 @@ import app.models  # noqa: F401 - enregistre les modèles ORM dans Base.metadata
 from app.api.routes import (
     ai,
     auth,
+    courses,
     dashboard,
     learning,
     profile,
@@ -125,6 +126,7 @@ def create_app(
     application.include_router(schedule.router, prefix=api_prefix)
     application.include_router(sessions.router, prefix=api_prefix)
     application.include_router(learning.router, prefix=api_prefix)
+    application.include_router(courses.router, prefix=api_prefix)
     application.include_router(skills.router, prefix=api_prefix)
     application.include_router(projects.router, prefix=api_prefix)
     application.include_router(ai.router, prefix=api_prefix)

@@ -8,14 +8,23 @@ import {
   useState,
   type ReactNode,
 } from 'react';
+import {
+  buildLocalAssessmentExercise,
+  evaluateLocalSubmission,
+  EXTERNAL_URL_DISCLAIMER,
+  passThresholdForLevel,
+  validateEvidenceQualityLocal,
+} from '../features/skills/assessmentEngine';
 import { ApiError } from '../lib/api-client';
 import { dateInputToDueIso } from '../lib/date';
 import {
+  cancelSkillAssessmentApi,
   createLearningModuleApi,
   createLearningPathApi,
   createLessonApi,
   createProjectApi,
   createSkillApi,
+  createSkillAssessmentApi,
   createSkillEvidenceApi,
   deleteLearningModuleApi,
   deleteLearningPathApi,
@@ -23,19 +32,27 @@ import {
   deleteProjectApi,
   deleteSkillApi,
   deleteSkillEvidenceApi,
+  evaluateSkillAssessmentApi,
+  fetchAllSkillAssessmentsApi,
   fetchAllSkillEvidenceApi,
   fetchLearningOverviewApi,
   fetchProjectsApi,
   fetchSkillsApi,
+  rejectSkillAssessmentApi,
+  revealAssessmentHintApi,
+  submitSkillAssessmentApi,
   updateLearningModuleApi,
   updateLearningPathApi,
   updateLessonApi,
   updateProjectApi,
   updateSkillApi,
+  validateSkillAssessmentApi,
   type LearningModuleInput,
   type LearningPathInput,
   type LessonInput,
   type ProjectInput,
+  type SkillAssessmentCreateInput,
+  type SkillAssessmentSubmitInput,
   type SkillEvidenceInput,
   type SkillInput,
 } from '../lib/learningApi';
@@ -48,7 +65,9 @@ import type {
   Project,
   ProjectStatus,
   Skill,
+  SkillAssessment,
   SkillEvidence,
+  SkillLevel,
 } from '../types/domain';
 import { useAuth } from './AuthContext';
 
@@ -60,6 +79,7 @@ export interface LearningLocalState {
   lessons: Lesson[];
   skills: Skill[];
   evidence: SkillEvidence[];
+  assessments: SkillAssessment[];
   projects: Project[];
 }
 
@@ -69,6 +89,7 @@ const DEFAULT_LEARNING_STATE: LearningLocalState = {
   lessons: [],
   skills: [],
   evidence: [],
+  assessments: [],
   projects: [],
 };
 
@@ -83,6 +104,7 @@ function sanitizeLearningState(raw: unknown): LearningLocalState {
     lessons: Array.isArray(c.lessons) ? c.lessons : [],
     skills: Array.isArray(c.skills) ? c.skills : [],
     evidence: Array.isArray(c.evidence) ? c.evidence : [],
+    assessments: Array.isArray(c.assessments) ? c.assessments : [],
     projects: Array.isArray(c.projects) ? c.projects : [],
   };
 }
@@ -109,6 +131,32 @@ export interface LearningStoreContextValue extends LearningLocalState {
   deleteSkill: (id: string) => Promise<boolean>;
   addEvidence: (skillId: string, input: SkillEvidenceInput) => Promise<boolean>;
   deleteEvidence: (skillId: string, evidenceId: string) => Promise<boolean>;
+  createAssessment: (
+    skillId: string,
+    input?: SkillAssessmentCreateInput,
+  ) => Promise<SkillAssessment | null>;
+  revealAssessmentHint: (skillId: string, assessmentId: string) => Promise<boolean>;
+  submitAssessment: (
+    skillId: string,
+    assessmentId: string,
+    input: SkillAssessmentSubmitInput,
+  ) => Promise<boolean>;
+  evaluateAssessment: (skillId: string, assessmentId: string) => Promise<boolean>;
+  validateAssessment: (
+    skillId: string,
+    assessmentId: string,
+    reason?: string,
+  ) => Promise<boolean>;
+  rejectAssessment: (
+    skillId: string,
+    assessmentId: string,
+    reason?: string,
+  ) => Promise<boolean>;
+  cancelAssessment: (
+    skillId: string,
+    assessmentId: string,
+    reason?: string,
+  ) => Promise<boolean>;
   createProject: (input: ProjectInput) => Promise<boolean>;
   updateProject: (id: string, patch: Partial<ProjectInput>) => Promise<boolean>;
   setProjectStatus: (id: string, status: ProjectStatus) => Promise<boolean>;
@@ -155,6 +203,12 @@ export function LearningStoreProvider({ children }: { children: ReactNode }) {
     enabled: isApiMode,
   });
 
+  const assessmentsQuery = useQuery({
+    queryKey: ['skill-assessments', userIdKey],
+    queryFn: () => fetchAllSkillAssessmentsApi(accessToken),
+    enabled: isApiMode,
+  });
+
   const projectsQuery = useQuery({
     queryKey: ['projects', userIdKey],
     queryFn: () => fetchProjectsApi(accessToken),
@@ -162,7 +216,11 @@ export function LearningStoreProvider({ children }: { children: ReactNode }) {
   });
 
   const firstQueryError =
-    overviewQuery.error ?? skillsQuery.error ?? evidenceQuery.error ?? projectsQuery.error;
+    overviewQuery.error ??
+    skillsQuery.error ??
+    evidenceQuery.error ??
+    assessmentsQuery.error ??
+    projectsQuery.error;
 
   useEffect(() => {
     if (firstQueryError instanceof ApiError && firstQueryError.status === 401) {
@@ -174,7 +232,14 @@ export function LearningStoreProvider({ children }: { children: ReactNode }) {
     async <T,>(
       fn: () => Promise<T>,
       invalidateRoots: Array<
-        'learning' | 'skills' | 'skill-evidence' | 'projects' | 'tasks' | 'sessions' | 'profile'
+        | 'learning'
+        | 'skills'
+        | 'skill-evidence'
+        | 'skill-assessments'
+        | 'projects'
+        | 'tasks'
+        | 'sessions'
+        | 'profile'
       >,
     ): Promise<boolean> => {
       setMutationError(null);
@@ -202,6 +267,7 @@ export function LearningStoreProvider({ children }: { children: ReactNode }) {
     void queryClient.invalidateQueries({ queryKey: ['learning'] });
     void queryClient.invalidateQueries({ queryKey: ['skills'] });
     void queryClient.invalidateQueries({ queryKey: ['skill-evidence'] });
+    void queryClient.invalidateQueries({ queryKey: ['skill-assessments'] });
     void queryClient.invalidateQueries({ queryKey: ['projects'] });
   }, [queryClient]);
 
@@ -257,18 +323,27 @@ export function LearningStoreProvider({ children }: { children: ReactNode }) {
       if (isApiMode) {
         return runApiMutation(
           () => deleteLearningPathApi(accessToken, id),
-          ['learning', 'tasks', 'sessions'],
+          ['learning', 'tasks', 'sessions', 'skill-assessments'],
         );
       }
       setLocalState((prev) => {
         const removedModuleIds = new Set(
           prev.modules.filter((m) => m.pathId === id).map((m) => m.id),
         );
+        const removedLessonIds = new Set(
+          prev.lessons.filter((l) => removedModuleIds.has(l.moduleId)).map((l) => l.id),
+        );
         return {
           ...prev,
           paths: prev.paths.filter((p) => p.id !== id),
           modules: prev.modules.filter((m) => m.pathId !== id),
           lessons: prev.lessons.filter((l) => !removedModuleIds.has(l.moduleId)),
+          assessments: prev.assessments.map((a) => ({
+            ...a,
+            pathId: a.pathId === id ? null : a.pathId,
+            moduleId: a.moduleId && removedModuleIds.has(a.moduleId) ? null : a.moduleId,
+            lessonId: a.lessonId && removedLessonIds.has(a.lessonId) ? null : a.lessonId,
+          })),
         };
       });
       return true;
@@ -327,14 +402,24 @@ export function LearningStoreProvider({ children }: { children: ReactNode }) {
       if (isApiMode) {
         return runApiMutation(
           () => deleteLearningModuleApi(accessToken, id),
-          ['learning', 'tasks', 'sessions'],
+          ['learning', 'tasks', 'sessions', 'skill-assessments'],
         );
       }
-      setLocalState((prev) => ({
-        ...prev,
-        modules: prev.modules.filter((m) => m.id !== id),
-        lessons: prev.lessons.filter((l) => l.moduleId !== id),
-      }));
+      setLocalState((prev) => {
+        const removedLessonIds = new Set(
+          prev.lessons.filter((l) => l.moduleId === id).map((l) => l.id),
+        );
+        return {
+          ...prev,
+          modules: prev.modules.filter((m) => m.id !== id),
+          lessons: prev.lessons.filter((l) => l.moduleId !== id),
+          assessments: prev.assessments.map((a) => ({
+            ...a,
+            moduleId: a.moduleId === id ? null : a.moduleId,
+            lessonId: a.lessonId && removedLessonIds.has(a.lessonId) ? null : a.lessonId,
+          })),
+        };
+      });
       return true;
     };
 
@@ -396,12 +481,16 @@ export function LearningStoreProvider({ children }: { children: ReactNode }) {
       if (isApiMode) {
         return runApiMutation(
           () => deleteLessonApi(accessToken, id),
-          ['learning', 'sessions'],
+          ['learning', 'sessions', 'skill-assessments'],
         );
       }
       setLocalState((prev) => ({
         ...prev,
         lessons: prev.lessons.filter((l) => l.id !== id),
+        assessments: prev.assessments.map((a) => ({
+          ...a,
+          lessonId: a.lessonId === id ? null : a.lessonId,
+        })),
       }));
       return true;
     };
@@ -507,6 +596,7 @@ export function LearningStoreProvider({ children }: { children: ReactNode }) {
       if (isApiMode) {
         return runApiMutation(() => createSkillApi(accessToken, input), ['skills']);
       }
+      setMutationError(null);
       const nowIso = new Date().toISOString();
       const created: Skill = {
         id: generateId(),
@@ -514,9 +604,9 @@ export function LearningStoreProvider({ children }: { children: ReactNode }) {
         name: input.name.trim(),
         domain: input.domain.trim(),
         description: input.description?.trim() || null,
-        currentLevel: input.currentLevel,
+        currentLevel: 0,
         targetLevel: input.targetLevel,
-        lastAssessedAt: input.currentLevel > 0 ? nowIso : null,
+        lastAssessedAt: null,
         createdAt: nowIso,
         updatedAt: nowIso,
       };
@@ -528,19 +618,12 @@ export function LearningStoreProvider({ children }: { children: ReactNode }) {
       if (isApiMode) {
         return runApiMutation(() => updateSkillApi(accessToken, id, patch), ['skills']);
       }
+      setMutationError(null);
       const nowIso = new Date().toISOString();
       setLocalState((prev) => ({
         ...prev,
         skills: prev.skills.map((skill) => {
           if (skill.id !== id) return skill;
-          const nextLevel = patch.currentLevel ?? skill.currentLevel;
-          let nextAssessedAt = skill.lastAssessedAt;
-          if (patch.currentLevel !== undefined) {
-            if (nextLevel === 0) nextAssessedAt = null;
-            else if (nextLevel !== skill.currentLevel || !skill.lastAssessedAt) {
-              nextAssessedAt = nowIso;
-            }
-          }
           return {
             ...skill,
             name: patch.name !== undefined ? patch.name.trim() : skill.name,
@@ -549,9 +632,7 @@ export function LearningStoreProvider({ children }: { children: ReactNode }) {
               patch.description !== undefined
                 ? patch.description.trim() || null
                 : skill.description,
-            currentLevel: nextLevel,
             targetLevel: 'targetLevel' in patch ? (patch.targetLevel ?? null) : skill.targetLevel,
-            lastAssessedAt: nextAssessedAt,
             updatedAt: nowIso,
           };
         }),
@@ -563,13 +644,14 @@ export function LearningStoreProvider({ children }: { children: ReactNode }) {
       if (isApiMode) {
         return runApiMutation(
           () => deleteSkillApi(accessToken, id),
-          ['skills', 'skill-evidence', 'sessions'],
+          ['skills', 'skill-evidence', 'skill-assessments', 'sessions'],
         );
       }
       setLocalState((prev) => ({
         ...prev,
         skills: prev.skills.filter((s) => s.id !== id),
         evidence: prev.evidence.filter((e) => e.skillId !== id),
+        assessments: prev.assessments.filter((a) => a.skillId !== id),
       }));
       return true;
     };
@@ -581,6 +663,19 @@ export function LearningStoreProvider({ children }: { children: ReactNode }) {
           ['skill-evidence'],
         );
       }
+      setMutationError(null);
+      const quality = validateEvidenceQualityLocal(
+        input.description,
+        input.referenceUrl,
+        input.result,
+      );
+      if (!quality.admissible) {
+        setMutationError(
+          quality.reason ??
+            'Preuve refusée : décrivez concrètement la production réalisée et le résultat.',
+        );
+        return false;
+      }
       const nowIso = new Date().toISOString();
       const created: SkillEvidence = {
         id: generateId(),
@@ -591,6 +686,9 @@ export function LearningStoreProvider({ children }: { children: ReactNode }) {
         referenceUrl: input.referenceUrl?.trim() || null,
         result: input.result?.trim() || null,
         observedAt: nowIso,
+        isAdmissible: true,
+        externalReferenceVerified: false,
+        verificationNote: quality.verificationNote,
         createdAt: nowIso,
         updatedAt: nowIso,
       };
@@ -608,6 +706,478 @@ export function LearningStoreProvider({ children }: { children: ReactNode }) {
       setLocalState((prev) => ({
         ...prev,
         evidence: prev.evidence.filter((e) => e.id !== evidenceId),
+      }));
+      return true;
+    };
+
+    const createAssessment = async (
+      skillId: string,
+      input: SkillAssessmentCreateInput = {},
+    ): Promise<SkillAssessment | null> => {
+      setMutationError(null);
+      if (isApiMode) {
+        try {
+          const created = await createSkillAssessmentApi(accessToken, skillId, input);
+          await queryClient.invalidateQueries({ queryKey: ['skill-assessments'] });
+          return created;
+        } catch (err) {
+          setMutationError(
+            err instanceof Error ? err.message : 'Impossible de créer l’évaluation.',
+          );
+          return null;
+        }
+      }
+
+      const skill = localState.skills.find((s) => s.id === skillId);
+      if (!skill) {
+        setMutationError('Compétence introuvable.');
+        return null;
+      }
+
+      const targetLevel = (input.targetLevel ??
+        Math.min(5, Math.max(1, skill.currentLevel + 1))) as SkillLevel;
+      if (targetLevel < Math.max(1, skill.currentLevel) || targetLevel > 5) {
+        setMutationError(
+          'Le niveau visé doit être au moins égal au niveau actuel vérifié (entre 1 et 5).',
+        );
+        return null;
+      }
+
+      const priorForSkill = localState.assessments
+        .filter((a) => a.skillId === skillId)
+        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      const failedPrior = priorForSkill.find(
+        (a) => a.gapsIdentified.length > 0 && (a.status === 'rejected' || a.passed === false),
+      );
+      const linkedLesson = input.lessonId
+        ? localState.lessons.find((l) => l.id === input.lessonId)
+        : undefined;
+      const linkedModule = input.moduleId
+        ? localState.modules.find((m) => m.id === input.moduleId)
+        : linkedLesson
+          ? localState.modules.find((m) => m.id === linkedLesson.moduleId)
+          : undefined;
+      const resolvedPathId = input.pathId ?? linkedModule?.pathId ?? null;
+      const resolvedModuleId = input.moduleId ?? linkedLesson?.moduleId ?? null;
+
+      const assessmentType = input.assessmentType ?? 'practical_exercise';
+      const generated = buildLocalAssessmentExercise({
+        skill,
+        targetLevel,
+        assessmentType,
+        previousGaps: failedPrior?.gapsIdentified ?? [],
+        lessonTitle: linkedLesson?.title ?? null,
+      });
+
+      const nowIso = new Date().toISOString();
+      const created: SkillAssessment = {
+        id: generateId(),
+        userId: LOCAL_USER_ID,
+        skillId,
+        pathId: resolvedPathId,
+        moduleId: resolvedModuleId,
+        lessonId: input.lessonId ?? null,
+        assessmentType,
+        startingLevel: skill.currentLevel,
+        targetLevel,
+        proposedLevel: null,
+        status: 'pending',
+        promptTitle: input.promptTitle?.trim() || generated.promptTitle,
+        promptInstructions: input.promptInstructions?.trim() || generated.promptInstructions,
+        revealedHints: [],
+        hintsTotal: generated.hints.length,
+        hintsRevealedCount: 0,
+        submissionText: null,
+        submissionCode: null,
+        submissionReferenceUrl: null,
+        evidenceIds: [],
+        criteria: generated.criteria,
+        score: null,
+        passed: null,
+        feedback: null,
+        masteredPoints: [],
+        gapsIdentified: [],
+        remediationRecommendation: null,
+        externalVerificationWarning: null,
+        evaluatorType: 'pedagogical_engine',
+        evaluatorName: null,
+        decisionReason: null,
+        appliedLevelDelta: null,
+        submittedAt: null,
+        evaluatedAt: null,
+        validatedAt: null,
+        createdAt: nowIso,
+        updatedAt: nowIso,
+      };
+
+      setLocalState((prev) => ({
+        ...prev,
+        assessments: [created, ...prev.assessments],
+      }));
+      return created;
+    };
+
+    const revealAssessmentHint = async (
+      skillId: string,
+      assessmentId: string,
+    ): Promise<boolean> => {
+      if (isApiMode) {
+        return runApiMutation(
+          () => revealAssessmentHintApi(accessToken, skillId, assessmentId),
+          ['skill-assessments'],
+        );
+      }
+      setMutationError(null);
+      const skill = localState.skills.find((s) => s.id === skillId);
+      const assessment = localState.assessments.find(
+        (a) => a.id === assessmentId && a.skillId === skillId,
+      );
+      if (!skill || !assessment || assessment.status !== 'pending') {
+        setMutationError('Indice disponible uniquement sur une évaluation en attente.');
+        return false;
+      }
+
+      const generated = buildLocalAssessmentExercise({
+        skill,
+        targetLevel: assessment.targetLevel,
+        assessmentType: assessment.assessmentType,
+      });
+      const nextCount = Math.min(generated.hints.length, assessment.hintsRevealedCount + 1);
+      const nowIso = new Date().toISOString();
+
+      setLocalState((prev) => ({
+        ...prev,
+        assessments: prev.assessments.map((a) =>
+          a.id !== assessmentId
+            ? a
+            : {
+                ...a,
+                hintsRevealedCount: nextCount,
+                revealedHints: generated.hints.slice(0, nextCount),
+                updatedAt: nowIso,
+              },
+        ),
+      }));
+      return true;
+    };
+
+    const submitAssessment = async (
+      skillId: string,
+      assessmentId: string,
+      input: SkillAssessmentSubmitInput,
+    ): Promise<boolean> => {
+      if (isApiMode) {
+        return runApiMutation(
+          () => submitSkillAssessmentApi(accessToken, skillId, assessmentId, input),
+          ['skill-assessments', 'skill-evidence'],
+        );
+      }
+      setMutationError(null);
+      const assessment = localState.assessments.find(
+        (a) => a.id === assessmentId && a.skillId === skillId,
+      );
+      if (!assessment || assessment.status !== 'pending') {
+        setMutationError('Cette évaluation a déjà été soumise ou clôturée.');
+        return false;
+      }
+
+      const trimmedText = input.submissionText.trim();
+      if (trimmedText.length < 15) {
+        setMutationError('La production soumise doit contenir au moins 15 caractères.');
+        return false;
+      }
+
+      const selectedIds = Array.from(new Set(input.evidenceIds ?? []));
+      let hasExternalUrl = Boolean(input.submissionReferenceUrl?.trim());
+      for (const eid of selectedIds) {
+        const ev = localState.evidence.find((item) => item.id === eid);
+        if (!ev || ev.skillId !== skillId) {
+          setMutationError('Une preuve sélectionnée est introuvable ou liée à une autre compétence.');
+          return false;
+        }
+        const q = validateEvidenceQualityLocal(ev.description, ev.referenceUrl, ev.result);
+        if (!q.admissible) {
+          setMutationError(q.reason ?? 'Preuve liée non admissible.');
+          return false;
+        }
+        if (ev.referenceUrl) hasExternalUrl = true;
+      }
+
+      const nowIso = new Date().toISOString();
+      let createdEvidence: SkillEvidence | null = null;
+      if (input.newEvidence) {
+        const q = validateEvidenceQualityLocal(
+          input.newEvidence.description,
+          input.newEvidence.referenceUrl,
+          input.newEvidence.result,
+        );
+        if (!q.admissible) {
+          setMutationError(
+            q.reason ?? 'La nouvelle preuve fournie ne respecte pas les critères de qualité.',
+          );
+          return false;
+        }
+        createdEvidence = {
+          id: generateId(),
+          userId: LOCAL_USER_ID,
+          skillId,
+          type: input.newEvidence.type,
+          description: input.newEvidence.description.trim(),
+          referenceUrl: input.newEvidence.referenceUrl?.trim() || null,
+          result: input.newEvidence.result?.trim() || null,
+          observedAt: nowIso,
+          isAdmissible: true,
+          externalReferenceVerified: false,
+          verificationNote: q.verificationNote,
+          createdAt: nowIso,
+          updatedAt: nowIso,
+        };
+        selectedIds.push(createdEvidence.id);
+        if (createdEvidence.referenceUrl) hasExternalUrl = true;
+      }
+
+      setLocalState((prev) => ({
+        ...prev,
+        evidence: createdEvidence ? [createdEvidence, ...prev.evidence] : prev.evidence,
+        assessments: prev.assessments.map((a) =>
+          a.id !== assessmentId
+            ? a
+            : {
+                ...a,
+                status: 'submitted',
+                submissionText: trimmedText,
+                submissionCode: input.submissionCode?.trim() || null,
+                submissionReferenceUrl: input.submissionReferenceUrl?.trim() || null,
+                evidenceIds: selectedIds,
+                externalVerificationWarning: hasExternalUrl ? EXTERNAL_URL_DISCLAIMER : null,
+                submittedAt: nowIso,
+                updatedAt: nowIso,
+              },
+        ),
+      }));
+      return true;
+    };
+
+    const evaluateAssessment = async (
+      skillId: string,
+      assessmentId: string,
+    ): Promise<boolean> => {
+      if (isApiMode) {
+        return runApiMutation(
+          () => evaluateSkillAssessmentApi(accessToken, skillId, assessmentId),
+          ['skill-assessments'],
+        );
+      }
+      setMutationError(null);
+      const skill = localState.skills.find((s) => s.id === skillId);
+      const assessment = localState.assessments.find(
+        (a) => a.id === assessmentId && a.skillId === skillId,
+      );
+      if (!skill || !assessment || assessment.status !== 'submitted') {
+        setMutationError('L’évaluation doit d’abord être soumise avant d’être corrigée.');
+        return false;
+      }
+
+      const linkedEvidences = localState.evidence.filter(
+        (ev) => ev.skillId === skillId && assessment.evidenceIds.includes(ev.id),
+      );
+      const evaluated = evaluateLocalSubmission({
+        skill,
+        assessment,
+        linkedEvidences,
+      });
+      const nowIso = new Date().toISOString();
+
+      setLocalState((prev) => ({
+        ...prev,
+        assessments: prev.assessments.map((a) =>
+          a.id !== assessmentId
+            ? a
+            : {
+                ...a,
+                status: 'evaluated',
+                criteria: evaluated.criteria,
+                score: evaluated.score,
+                passed: evaluated.passed,
+                proposedLevel: evaluated.proposedLevel,
+                feedback: evaluated.feedback,
+                masteredPoints: evaluated.masteredPoints,
+                gapsIdentified: evaluated.gapsIdentified,
+                remediationRecommendation: evaluated.remediationRecommendation,
+                externalVerificationWarning: evaluated.externalVerificationWarning,
+                evaluatorType: 'pedagogical_engine',
+                evaluatorName: 'Amireflow Grader',
+                evaluatedAt: nowIso,
+                updatedAt: nowIso,
+              },
+        ),
+      }));
+      return true;
+    };
+
+    const validateAssessment = async (
+      skillId: string,
+      assessmentId: string,
+      reason?: string,
+    ): Promise<boolean> => {
+      if (isApiMode) {
+        return runApiMutation(
+          () => validateSkillAssessmentApi(accessToken, skillId, assessmentId, reason),
+          ['skills', 'skill-assessments', 'skill-evidence'],
+        );
+      }
+      setMutationError(null);
+      const skill = localState.skills.find((s) => s.id === skillId);
+      const assessment = localState.assessments.find(
+        (a) => a.id === assessmentId && a.skillId === skillId,
+      );
+      if (!skill || !assessment) {
+        setMutationError('Évaluation introuvable.');
+        return false;
+      }
+      if (assessment.status === 'approved') {
+        setMutationError('Cette évaluation a déjà été validée et ne peut pas être réutilisée.');
+        return false;
+      }
+      if (assessment.status !== 'evaluated') {
+        setMutationError('Seule une évaluation corrigée peut être validée.');
+        return false;
+      }
+      const threshold = passThresholdForLevel(assessment.targetLevel);
+      if (!assessment.passed || (assessment.score ?? 0) < threshold) {
+        setMutationError(
+          'Résultat insuffisant pour faire progresser cette compétence. Lancez un exercice correctif.',
+        );
+        return false;
+      }
+      const validEvidences = localState.evidence.filter(
+        (ev) =>
+          ev.skillId === skillId &&
+          assessment.evidenceIds.includes(ev.id) &&
+          validateEvidenceQualityLocal(ev.description, ev.referenceUrl, ev.result).admissible,
+      );
+      if (validEvidences.length === 0) {
+        setMutationError('Au moins une preuve concrète admissible est requise pour valider ce niveau.');
+        return false;
+      }
+
+      const proposed = assessment.proposedLevel ?? skill.currentLevel;
+      const newLevel = Math.max(skill.currentLevel, proposed) as SkillLevel;
+      const delta = newLevel - skill.currentLevel;
+      const nowIso = new Date().toISOString();
+
+      setLocalState((prev) => ({
+        ...prev,
+        skills: prev.skills.map((s) =>
+          s.id !== skillId
+            ? s
+            : {
+                ...s,
+                currentLevel: newLevel,
+                lastAssessedAt: nowIso,
+                updatedAt: nowIso,
+              },
+        ),
+        assessments: prev.assessments.map((a) =>
+          a.id !== assessmentId
+            ? a
+            : {
+                ...a,
+                status: 'approved',
+                appliedLevelDelta: delta,
+                decisionReason:
+                  reason?.trim() ||
+                  `Progression validée de ${skill.currentLevel}/5 à ${newLevel}/5.`,
+                validatedAt: nowIso,
+                updatedAt: nowIso,
+              },
+        ),
+      }));
+      return true;
+    };
+
+    const rejectAssessment = async (
+      skillId: string,
+      assessmentId: string,
+      reason?: string,
+    ): Promise<boolean> => {
+      if (isApiMode) {
+        return runApiMutation(
+          () => rejectSkillAssessmentApi(accessToken, skillId, assessmentId, reason),
+          ['skill-assessments'],
+        );
+      }
+      setMutationError(null);
+      const skill = localState.skills.find((s) => s.id === skillId);
+      const assessment = localState.assessments.find(
+        (a) => a.id === assessmentId && a.skillId === skillId,
+      );
+      if (
+        !skill ||
+        !assessment ||
+        (assessment.status !== 'submitted' && assessment.status !== 'evaluated')
+      ) {
+        setMutationError('Seule une évaluation soumise ou évaluée peut être rejetée.');
+        return false;
+      }
+      const nowIso = new Date().toISOString();
+      setLocalState((prev) => ({
+        ...prev,
+        assessments: prev.assessments.map((a) =>
+          a.id !== assessmentId
+            ? a
+            : {
+                ...a,
+                status: 'rejected',
+                proposedLevel: skill.currentLevel,
+                appliedLevelDelta: 0,
+                decisionReason: reason?.trim() || 'Évaluation non validée : niveau conservé.',
+                validatedAt: nowIso,
+                updatedAt: nowIso,
+              },
+        ),
+      }));
+      return true;
+    };
+
+    const cancelAssessment = async (
+      skillId: string,
+      assessmentId: string,
+      reason?: string,
+    ): Promise<boolean> => {
+      if (isApiMode) {
+        return runApiMutation(
+          () => cancelSkillAssessmentApi(accessToken, skillId, assessmentId, reason),
+          ['skill-assessments'],
+        );
+      }
+      setMutationError(null);
+      const assessment = localState.assessments.find(
+        (a) => a.id === assessmentId && a.skillId === skillId,
+      );
+      if (
+        !assessment ||
+        assessment.status === 'approved' ||
+        assessment.status === 'rejected' ||
+        assessment.status === 'cancelled'
+      ) {
+        setMutationError('Cette évaluation est déjà clôturée.');
+        return false;
+      }
+      const nowIso = new Date().toISOString();
+      setLocalState((prev) => ({
+        ...prev,
+        assessments: prev.assessments.map((a) =>
+          a.id !== assessmentId
+            ? a
+            : {
+                ...a,
+                status: 'cancelled',
+                appliedLevelDelta: 0,
+                decisionReason: reason?.trim() || 'Évaluation annulée par l’utilisateur.',
+                updatedAt: nowIso,
+              },
+        ),
       }));
       return true;
     };
@@ -718,12 +1288,30 @@ export function LearningStoreProvider({ children }: { children: ReactNode }) {
       deleteSkill,
       addEvidence,
       deleteEvidence,
+      createAssessment,
+      revealAssessmentHint,
+      submitAssessment,
+      evaluateAssessment,
+      validateAssessment,
+      rejectAssessment,
+      cancelAssessment,
       createProject,
       updateProject,
       setProjectStatus,
       deleteProject,
     };
-  }, [accessToken, isApiMode, localState.projects, runApiMutation]);
+  }, [
+    accessToken,
+    isApiMode,
+    localState.assessments,
+    localState.evidence,
+    localState.lessons,
+    localState.modules,
+    localState.projects,
+    localState.skills,
+    queryClient,
+    runApiMutation,
+  ]);
 
   const resolvedState: LearningLocalState = useMemo(() => {
     if (!isApiMode) {
@@ -735,6 +1323,7 @@ export function LearningStoreProvider({ children }: { children: ReactNode }) {
       lessons: overviewQuery.data?.lessons ?? [],
       skills: skillsQuery.data ?? [],
       evidence: evidenceQuery.data ?? [],
+      assessments: assessmentsQuery.data ?? [],
       projects: projectsQuery.data ?? [],
     };
   }, [
@@ -743,6 +1332,7 @@ export function LearningStoreProvider({ children }: { children: ReactNode }) {
     overviewQuery.data,
     skillsQuery.data,
     evidenceQuery.data,
+    assessmentsQuery.data,
     projectsQuery.data,
   ]);
 
@@ -751,6 +1341,7 @@ export function LearningStoreProvider({ children }: { children: ReactNode }) {
     (overviewQuery.isLoading ||
       skillsQuery.isLoading ||
       evidenceQuery.isLoading ||
+      assessmentsQuery.isLoading ||
       projectsQuery.isLoading);
 
   const error =

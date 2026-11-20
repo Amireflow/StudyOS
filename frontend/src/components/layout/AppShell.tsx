@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Cancel01Icon, Logout01Icon, Menu01Icon } from '@hugeicons/core-free-icons';
-import { NavLink, Outlet, useLocation } from 'react-router-dom';
+import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { cn } from '../../lib/cn';
 import { useAuth } from '../../state/AuthContext';
 import { Button } from '../ui/Button';
@@ -68,22 +68,31 @@ function BrandLogo() {
 
 function SessionFooter() {
   const { session, logout } = useAuth();
+  const navigate = useNavigate();
   if (!session) {
     return null;
   }
 
   return (
     <div className="mt-3 space-y-1.5 rounded-xl bg-zinc-100/70 p-2.5 dark:bg-zinc-800/70">
-      <div className="flex items-center justify-between gap-2 px-1">
-        <span className="truncate text-xs font-semibold text-zinc-800 dark:text-zinc-200">
+      <div className="px-1">
+        <p className="truncate text-xs font-semibold text-zinc-800 dark:text-zinc-200">
           {session.displayName}
-        </span>
+        </p>
+        {session.email && (
+          <p className="truncate text-[11px] text-zinc-500 dark:text-zinc-400">
+            {session.email}
+          </p>
+        )}
       </div>
       <Button
         variant="ghost"
         size="sm"
         className="w-full justify-start text-zinc-600 dark:text-zinc-300"
-        onClick={() => logout()}
+        onClick={() => {
+          navigate('/login', { replace: true, state: null });
+          logout();
+        }}
       >
         <Icon icon={Logout01Icon} size={15} />
         Déconnexion
@@ -152,19 +161,19 @@ export function AppShell() {
       </aside>
 
       {/* En-tête mobile sticky */}
-      <header className="sticky top-0 z-30 flex h-14 items-center justify-between bg-white/95 px-4 backdrop-blur-xs lg:hidden dark:bg-zinc-900/95">
+      <header className="sticky top-0 z-30 flex h-12 items-center justify-between bg-white/95 px-3.5 backdrop-blur-xs sm:h-14 sm:px-4 lg:hidden dark:bg-zinc-900/95">
         <BrandLogo />
-        <div className="flex items-center gap-2">
-          <ThemeToggleButton className="h-10 w-10" />
+        <div className="flex items-center gap-1.5">
+          <ThemeToggleButton className="h-9 w-9" />
           <button
             type="button"
             onClick={() => setIsMobileMenuOpen((prev) => !prev)}
             aria-expanded={isMobileMenuOpen}
             aria-controls="mobile-navigation-drawer"
             aria-label={isMobileMenuOpen ? 'Fermer le menu' : 'Ouvrir le menu'}
-            className="inline-flex h-10 w-10 items-center justify-center rounded-lg bg-zinc-100 text-zinc-700 transition-colors hover:bg-zinc-200/70 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700 cursor-pointer"
+            className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-zinc-100 text-zinc-700 transition-colors hover:bg-zinc-200/70 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700 cursor-pointer"
           >
-            <Icon icon={isMobileMenuOpen ? Cancel01Icon : Menu01Icon} size={19} />
+            <Icon icon={isMobileMenuOpen ? Cancel01Icon : Menu01Icon} size={18} />
           </button>
         </div>
       </header>
@@ -221,7 +230,7 @@ export function AppShell() {
         <main
           id="main-content"
           tabIndex={-1}
-          className="mx-auto max-w-5xl px-4 pb-24 pt-4 outline-none sm:px-6 lg:px-8 lg:py-7"
+          className="mx-auto max-w-5xl px-3.5 pb-20 pt-3 outline-none sm:px-6 sm:pb-24 sm:pt-4 lg:px-8 lg:py-7"
         >
           <Outlet />
         </main>
@@ -230,7 +239,7 @@ export function AppShell() {
       {/* Barre de navigation basse Mobile-First */}
       <nav
         aria-label="Accès rapide mobile"
-        className="pb-safe fixed inset-x-0 bottom-0 z-30 bg-white/95 px-2 pt-1.5 backdrop-blur-xs lg:hidden dark:bg-zinc-900/95"
+        className="pb-safe fixed inset-x-0 bottom-0 z-30 bg-white/95 px-2 pt-1 backdrop-blur-xs lg:hidden dark:bg-zinc-900/95"
       >
         <ul className="mx-auto grid max-w-md grid-cols-5 gap-1">
           {mobileBarItems.map((item) => (
@@ -240,7 +249,7 @@ export function AppShell() {
                 end={item.path === '/'}
                 className={({ isActive }) =>
                   cn(
-                    'flex min-h-12 flex-col items-center justify-center gap-0.5 rounded-lg px-1 py-1 text-[11px] transition-colors',
+                    'flex min-h-11 flex-col items-center justify-center gap-0.5 rounded-lg px-1 py-0.5 text-[11px] transition-colors',
                     isActive
                       ? 'font-semibold text-zinc-950 dark:text-zinc-50'
                       : 'font-medium text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200',

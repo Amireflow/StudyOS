@@ -4,6 +4,7 @@ import { AppShell } from '../components/layout/AppShell';
 import { RequireAuth } from '../state/AuthContext';
 import { AiCoachPage } from '../features/ai-coach/AiCoachPage';
 import { LoginPage } from '../features/auth/LoginPage';
+import { CoursesPage } from '../features/courses/CoursesPage';
 import { DashboardPage } from '../features/dashboard/DashboardPage';
 import { LearningPage } from '../features/learning/LearningPage';
 import { ProjectsPage } from '../features/projects/ProjectsPage';
@@ -42,6 +43,14 @@ export const appRoutes: RouteObject[] = [
       {
         path: 'sessions',
         element: <SessionsPage />,
+      },
+      {
+        path: 'courses',
+        element: <CoursesPage />,
+      },
+      {
+        path: 'courses/:courseId',
+        element: <CoursesPage />,
       },
       {
         path: 'learning',

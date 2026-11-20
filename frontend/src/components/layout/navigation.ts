@@ -7,6 +7,7 @@ import {
   CheckmarkSquare02Icon,
   DashboardSquare01Icon,
   FolderKanbanIcon,
+  Mortarboard02Icon,
   Settings02Icon,
   Timer02Icon,
 } from '@hugeicons/core-free-icons';
@@ -67,6 +68,16 @@ export const NAVIGATION_ITEMS: readonly NavigationItem[] = [
     targetLot: 'Lot 2',
     priorityTier: 'P0',
     showInMobileBar: true,
+  },
+  {
+    id: 'courses',
+    label: 'Cours',
+    shortLabel: 'Cours',
+    path: '/courses',
+    icon: Mortarboard02Icon,
+    group: 'principal',
+    targetLot: 'Cours IA',
+    priorityTier: 'P0',
   },
   {
     id: 'learning',

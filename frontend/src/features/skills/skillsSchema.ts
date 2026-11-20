@@ -1,6 +1,12 @@
 import { z } from 'zod';
 import type { BadgeVariant } from '../../components/ui/Badge';
-import type { SkillEvidenceType, SkillLevel } from '../../types/domain';
+import type {
+  SkillAssessmentStatus,
+  SkillAssessmentType,
+  SkillEvidenceType,
+  SkillLevel,
+  SkillPedagogicalState,
+} from '../../types/domain';
 
 export const SKILL_LEVEL_META: Record<
   SkillLevel,
@@ -12,6 +18,38 @@ export const SKILL_LEVEL_META: Record<
   3: { shortLabel: '3 — Autonome', label: '3 / 5 — Autonome', badgeVariant: 'success' },
   4: { shortLabel: '4 — Solide', label: '4 / 5 — Solide', badgeVariant: 'success' },
   5: { shortLabel: '5 — Maîtrise', label: '5 / 5 — Maîtrise', badgeVariant: 'success' },
+};
+
+export const SKILL_PEDAGOGICAL_STATE_META: Record<
+  SkillPedagogicalState,
+  { label: string; badgeVariant: BadgeVariant }
+> = {
+  not_evaluated: { label: 'Non évaluée', badgeVariant: 'neutral' },
+  learning: { label: 'En cours d’apprentissage', badgeVariant: 'primary' },
+  awaiting_assessment: { label: 'En attente d’évaluation', badgeVariant: 'warning' },
+  validated: { label: 'Validée', badgeVariant: 'success' },
+  needs_reinforcement: { label: 'À renforcer', badgeVariant: 'danger' },
+};
+
+export const ASSESSMENT_STATUS_META: Record<
+  SkillAssessmentStatus,
+  { label: string; badgeVariant: BadgeVariant }
+> = {
+  pending: { label: 'En attente de production', badgeVariant: 'warning' },
+  submitted: { label: 'Production soumise', badgeVariant: 'primary' },
+  evaluated: { label: 'Évaluée', badgeVariant: 'primary' },
+  approved: { label: 'Validée', badgeVariant: 'success' },
+  rejected: { label: 'Non validée', badgeVariant: 'danger' },
+  cancelled: { label: 'Annulée', badgeVariant: 'neutral' },
+};
+
+export const ASSESSMENT_TYPE_META: Record<SkillAssessmentType, { label: string }> = {
+  practical_exercise: { label: 'Exercice pratique' },
+  code_review: { label: 'Code & revue technique' },
+  quiz: { label: 'Questions de compréhension' },
+  explanation: { label: 'Explication & raisonnement' },
+  deliverable: { label: 'Livrable concret' },
+  mixed: { label: 'Épreuve mixte' },
 };
 
 export const SKILL_EVIDENCE_TYPE_META: Record<
@@ -43,11 +81,10 @@ export const skillFormSchema = z.object({
     .max(1000, 'La description ne doit pas dépasser 1000 caractères.')
     .optional()
     .or(z.literal('')),
-  currentLevel: z.coerce.number().int().min(0).max(5),
   targetLevel: z
     .string()
     .refine(
-      (value) => value === '' || ['0', '1', '2', '3', '4', '5'].includes(value),
+      (value) => value === '' || ['1', '2', '3', '4', '5'].includes(value),
       'Niveau cible invalide.',
     ),
 });
@@ -57,7 +94,7 @@ export const evidenceFormSchema = z.object({
   description: z
     .string()
     .trim()
-    .min(2, 'Décrivez la preuve concrète (min. 2 caractères).')
+    .min(12, 'Décrivez la preuve concrète réalisée (min. 12 caractères).')
     .max(1000, 'La description ne doit pas dépasser 1000 caractères.'),
   referenceUrl: z
     .string()

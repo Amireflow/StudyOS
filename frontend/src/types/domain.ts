@@ -11,6 +11,23 @@ export type TaskSource = 'manual' | 'ai_proposal';
 
 export type ScheduleEventType = 'course' | 'learning' | 'project' | 'personal' | 'other';
 
+export type ScheduleEventSource = 'manual' | 'timetable_import' | 'ai_proposal';
+
+export type TimetableFileFormat = 'pdf' | 'image' | 'excel' | 'word';
+
+export type TimetableImportStatus = 'pending_review' | 'validated' | 'cancelled';
+
+export type CourseSessionSubtype = 'cours' | 'td' | 'tp' | 'examen' | 'autre';
+
+export type TimetableAnomalyType =
+  | 'missing_time'
+  | 'invalid_duration'
+  | 'missing_subject'
+  | 'duplicate_course'
+  | 'overlap_conflict'
+  | 'existing_calendar_conflict'
+  | 'uncertain_extraction';
+
 export type SessionStatus = 'in_progress' | 'completed' | 'cancelled';
 
 export type LearningStatus = 'not_started' | 'active' | 'paused' | 'completed';
@@ -25,6 +42,35 @@ export type SkillEvidenceType =
   | 'assessment'
   | 'deliverable'
   | 'other';
+
+export type SkillAssessmentStatus =
+  | 'pending'
+  | 'submitted'
+  | 'evaluated'
+  | 'approved'
+  | 'rejected'
+  | 'cancelled';
+
+export type SkillAssessmentType =
+  | 'quiz'
+  | 'practical_exercise'
+  | 'code_review'
+  | 'explanation'
+  | 'deliverable'
+  | 'mixed';
+
+export type SkillEvaluatorType =
+  | 'pedagogical_engine'
+  | 'ai_copilot'
+  | 'self_rubric'
+  | 'hybrid';
+
+export type SkillPedagogicalState =
+  | 'not_evaluated'
+  | 'learning'
+  | 'awaiting_assessment'
+  | 'validated'
+  | 'needs_reinforcement';
 
 export type ProjectStatus = 'planned' | 'active' | 'blocked' | 'completed' | 'archived';
 
@@ -43,7 +89,15 @@ export type AiActionType =
   | 'park_task'
   | 'create_schedule_event'
   | 'add_skill_evidence'
-  | 'update_skill_level';
+  | 'propose_skill_assessment'
+  | 'recommend_skill_progression'
+  | 'plan_strategic_activity'
+  | 'create_course';
+
+export type StrategicDecision =
+  | 'ACCEPTABLE'
+  | 'ACCEPTABLE_WITH_CONDITIONS'
+  | 'NOT_RECOMMENDED';
 
 export type AiReportType = 'daily_briefing' | 'weekly_review';
 
@@ -95,8 +149,74 @@ export interface ScheduleEvent {
   startsAt: string;
   endsAt: string;
   notes: string | null;
+  source?: ScheduleEventSource;
+  importId?: string | null;
+  sessionSubtype?: CourseSessionSubtype | string | null;
+  teacher?: string | null;
+  room?: string | null;
+  groupName?: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface ExtractedCourseRow {
+  rowId: string;
+  subject: string;
+  dayOfWeek: number | null;
+  dayLabel: string | null;
+  startTime: string | null;
+  endTime: string | null;
+  teacher: string | null;
+  room: string | null;
+  groupName: string | null;
+  sessionType: CourseSessionSubtype;
+  validFrom: string | null;
+  validUntil: string | null;
+  uncertain: boolean;
+  uncertaintyReasons: string[];
+  ignored: boolean;
+  rawExcerpt: string | null;
+}
+
+export interface TimetableAnomaly {
+  id: string;
+  rowId: string | null;
+  relatedRowId: string | null;
+  type: TimetableAnomalyType;
+  severity: 'error' | 'warning';
+  message: string;
+}
+
+export interface TimetableImport {
+  id: string;
+  userId: string;
+  filename: string;
+  fileFormat: TimetableFileFormat;
+  mimeType: string;
+  fileSizeBytes: number;
+  sourcePreviewText: string | null;
+  sourceDeleted: boolean;
+  status: TimetableImportStatus;
+  validFrom: string | null;
+  validUntil: string | null;
+  extractedCourses: ExtractedCourseRow[];
+  anomalies: TimetableAnomaly[];
+  warnings: string[];
+  blockingAnomaliesCount: number;
+  createdEventsCount: number;
+  skippedDuplicatesCount: number;
+  replacedEventsCount: number;
+  createdAt: string;
+  updatedAt: string;
+  validatedAt: string | null;
+}
+
+export interface TimetableImportConfirmResult {
+  importRecord: TimetableImport;
+  createdEvents: ScheduleEvent[];
+  createdCount: number;
+  skippedDuplicatesCount: number;
+  replacedCount: number;
 }
 
 export interface StudySession {
@@ -175,6 +295,60 @@ export interface SkillEvidence {
   referenceUrl: string | null;
   result: string | null;
   observedAt: string;
+  isAdmissible?: boolean;
+  externalReferenceVerified?: boolean;
+  verificationNote?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SkillAssessmentCriterion {
+  key: string;
+  label: string;
+  description: string;
+  weight: number;
+  maxScore: number;
+  score: number;
+  passed: boolean;
+  feedback: string;
+}
+
+export interface SkillAssessment {
+  id: string;
+  userId: string;
+  skillId: string;
+  pathId: string | null;
+  moduleId: string | null;
+  lessonId: string | null;
+  assessmentType: SkillAssessmentType;
+  startingLevel: SkillLevel;
+  targetLevel: SkillLevel;
+  proposedLevel: SkillLevel | null;
+  status: SkillAssessmentStatus;
+  promptTitle: string;
+  promptInstructions: string;
+  revealedHints: string[];
+  hintsTotal: number;
+  hintsRevealedCount: number;
+  submissionText: string | null;
+  submissionCode: string | null;
+  submissionReferenceUrl: string | null;
+  evidenceIds: string[];
+  criteria: SkillAssessmentCriterion[];
+  score: number | null;
+  passed: boolean | null;
+  feedback: string | null;
+  masteredPoints: string[];
+  gapsIdentified: string[];
+  remediationRecommendation: string | null;
+  externalVerificationWarning: string | null;
+  evaluatorType: SkillEvaluatorType;
+  evaluatorName: string | null;
+  decisionReason: string | null;
+  appliedLevelDelta: number | null;
+  submittedAt: string | null;
+  evaluatedAt: string | null;
+  validatedAt: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -192,6 +366,16 @@ export interface Project {
   targetDate: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface ProposedActivitySlot {
+  day_label: string;
+  local_date: string;
+  local_start_time: string;
+  local_end_time: string;
+  starts_at: string;
+  ends_at: string;
+  duration_minutes: number;
 }
 
 export interface AiActionProposal {
@@ -260,4 +444,234 @@ export interface AiToolSpec {
   description: string;
   requiresConfirmation: boolean;
   parameterKeys: string[];
+}
+
+export type AiProviderKind = 'local' | 'river' | 'openai_compatible' | 'gemini';
+
+export interface AiProviderCatalogItem {
+  id: AiProviderKind;
+  label: string;
+  consoleUrl: string | null;
+  defaultBaseUrl: string;
+  requiresApiKey: boolean;
+}
+
+export interface AiProviderModel {
+  id: string;
+  label: string;
+  ownedBy: string | null;
+  contextWindow: number | null;
+}
+
+export interface AiProviderConfig {
+  provider: AiProviderKind;
+  baseUrl: string;
+  model: string;
+  hasApiKey: boolean;
+  apiKeyPreview: string | null;
+  source: 'user' | 'server_env' | 'default';
+  availableProviders: AiProviderCatalogItem[];
+}
+
+export type CourseLanguage = 'fr' | 'en' | 'bilingual';
+
+export type CourseStatus = 'active' | 'paused' | 'completed';
+
+export type CourseLevelStatus = 'locked' | 'unlocked' | 'validated';
+
+export type CourseLessonStatus = 'not_started' | 'in_progress' | 'completed';
+
+export type CourseResourceType =
+  | 'documentation'
+  | 'video'
+  | 'article'
+  | 'interactive'
+  | 'book';
+
+export type CourseSubmissionKind = 'exercise' | 'project';
+
+export type CourseSubmissionStatus = 'submitted' | 'evaluated';
+
+export interface CourseCodeExample {
+  title: string;
+  language: string;
+  code: string;
+  explanation: string;
+}
+
+export interface CourseExercise {
+  id: string;
+  title: string;
+  difficulty: 'guide' | 'pratique' | 'defi';
+  instructionsMarkdown: string;
+  starterCode: string | null;
+  hints: string[];
+  expectedConcepts: string[];
+}
+
+export interface CourseRubricCriterion {
+  key: string;
+  label: string;
+  description: string;
+  maxScore: number;
+}
+
+export interface CourseCriterionResult {
+  key: string;
+  label: string;
+  score: number;
+  maxScore: number;
+  passed: boolean;
+  feedback: string;
+}
+
+export interface CourseLesson {
+  id: string;
+  userId: string;
+  courseId: string;
+  levelId: string;
+  position: number;
+  title: string;
+  summary: string | null;
+  estimatedMinutes: number;
+  contentMarkdown: string;
+  codeExamples: CourseCodeExample[];
+  exercises: CourseExercise[];
+  status: CourseLessonStatus;
+  completedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CourseResource {
+  id: string;
+  userId: string;
+  courseId: string;
+  levelId: string | null;
+  lessonId: string | null;
+  title: string;
+  url: string;
+  resourceType: CourseResourceType;
+  language: 'fr' | 'en';
+  isOfficial: boolean;
+  sourceName: string | null;
+  notes: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CourseSubmission {
+  id: string;
+  userId: string;
+  courseId: string;
+  levelId: string;
+  lessonId: string | null;
+  submissionKind: CourseSubmissionKind;
+  exerciseId: string | null;
+  title: string;
+  answerText: string;
+  submittedCode: string | null;
+  referenceUrl: string | null;
+  status: CourseSubmissionStatus;
+  score: number | null;
+  passed: boolean | null;
+  criteriaResults: CourseCriterionResult[];
+  feedbackMarkdown: string | null;
+  strengths: string[];
+  improvements: string[];
+  nextStepHint: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CourseLevel {
+  id: string;
+  userId: string;
+  courseId: string;
+  levelNumber: number;
+  title: string;
+  summary: string;
+  objectives: string[];
+  status: CourseLevelStatus;
+  contentGenerated: boolean;
+  projectTitle: string | null;
+  projectBrief: string | null;
+  projectDeliverables: string[];
+  projectRubric: CourseRubricCriterion[];
+  validatedAt: string | null;
+  lessons: CourseLesson[];
+  resources: CourseResource[];
+  submissions: CourseSubmission[];
+  passThreshold: number;
+  projectPassed: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CourseSummary {
+  id: string;
+  userId: string;
+  title: string;
+  subject: string;
+  domain: string;
+  description: string | null;
+  language: CourseLanguage;
+  currentLevel: number;
+  totalLevels: number;
+  status: CourseStatus;
+  skillId: string | null;
+  learningPathId: string | null;
+  completedLessonsCount: number;
+  totalLessonsCount: number;
+  resourcesCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CourseDetail extends CourseSummary {
+  levels: CourseLevel[];
+  resources: CourseResource[];
+}
+
+export interface CoursePreviewLevel {
+  levelNumber: number;
+  title: string;
+  summary: string;
+  objectives: string[];
+  projectTitle: string | null;
+}
+
+export interface CoursePreviewLesson {
+  position: number;
+  title: string;
+  summary: string | null;
+  estimatedMinutes: number;
+  contentMarkdown: string;
+  codeExamples: CourseCodeExample[];
+  exercises: CourseExercise[];
+}
+
+export interface CoursePreviewResource {
+  title: string;
+  url: string;
+  resourceType: CourseResourceType;
+  language: 'fr' | 'en';
+  isOfficial: boolean;
+  sourceName: string | null;
+  notes: string | null;
+}
+
+export interface CoursePreview {
+  title: string;
+  subject: string;
+  domain: string;
+  description: string;
+  language: CourseLanguage;
+  totalLevels: number;
+  levelsRoadmap: CoursePreviewLevel[];
+  firstLevelLessons: CoursePreviewLesson[];
+  firstLevelProjectTitle: string;
+  firstLevelProjectBrief: string;
+  firstLevelProjectDeliverables: string[];
+  firstLevelResources: CoursePreviewResource[];
 }

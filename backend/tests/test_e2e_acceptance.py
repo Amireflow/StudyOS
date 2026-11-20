@@ -63,10 +63,10 @@ def test_e2e_02_follow_learning_path_to_skill_evidence(
     client: TestClient,
     user_a_headers: dict[str, str],
 ) -> None:
-    """E2E-02 — Suivre un apprentissage jusqu'à une preuve de compétence."""
+    """E2E-02 — Suivre un apprentissage jusqu'à une preuve et une évaluation validée."""
     skill = client.post(
         "/api/v1/skills",
-        json={"name": "Python & FastAPI", "domain": "Backend", "current_level": 2, "target_level": 4},
+        json={"name": "Python & FastAPI", "domain": "Backend", "current_level": 0, "target_level": 4},
         headers=user_a_headers,
     ).json()
     skill_id = skill["id"]
@@ -94,7 +94,7 @@ def test_e2e_02_follow_learning_path_to_skill_evidence(
         headers=user_a_headers,
     )
     assert done_lesson.status_code == 200
-    assert client.get(f"/api/v1/skills/{skill_id}", headers=user_a_headers).json()["current_level"] == 2
+    assert client.get(f"/api/v1/skills/{skill_id}", headers=user_a_headers).json()["current_level"] == 0
 
     session = client.post(
         "/api/v1/sessions",

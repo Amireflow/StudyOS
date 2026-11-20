@@ -1,7 +1,10 @@
 import { useEffect, useState, type FormEvent } from 'react';
+import { Calendar03Icon } from '@hugeicons/core-free-icons';
 import { Button } from '../../components/ui/Button';
 import { FormField, Input, Select, Textarea } from '../../components/ui/FormFields';
-import { isoToDateInput } from '../../lib/date';
+import { Icon } from '../../components/ui/Icon';
+import { cn } from '../../lib/cn';
+import { addDays, isoToDateInput, toLocalDateKey } from '../../lib/date';
 import { extractFieldErrors } from '../../lib/validation';
 import { useLearningStore } from '../../state/LearningStoreContext';
 import type { Task, TaskPriority, TaskStatus } from '../../types/domain';
@@ -52,6 +55,14 @@ export function TaskForm({ initialTask, onSubmit, onCancel }: TaskFormProps) {
     setErrors({});
     onSubmit(parsed.data);
   };
+
+  const today = new Date();
+  const duePresets = [
+    { label: 'Aujourd’hui', value: toLocalDateKey(today) },
+    { label: 'Demain', value: toLocalDateKey(addDays(today, 1)) },
+    { label: '+7 jours', value: toLocalDateKey(addDays(today, 7)) },
+    { label: 'Aucune', value: '' },
+  ];
 
   return (
     <form onSubmit={handleSubmit} noValidate className="space-y-4">
@@ -122,6 +133,39 @@ export function TaskForm({ initialTask, onSubmit, onCancel }: TaskFormProps) {
             onChange={(e) => setValues((prev) => ({ ...prev, dueDate: e.target.value }))}
           />
         </FormField>
+      </div>
+
+      {/* Raccourcis d'échéance */}
+      <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-zinc-50 px-3 py-2 dark:bg-zinc-800/70">
+        <div className="flex items-center gap-1.5 text-xs text-zinc-600 dark:text-zinc-300">
+          <Icon icon={Calendar03Icon} size={14} className="text-zinc-400 dark:text-zinc-500" />
+          <span>Raccourcis d’échéance</span>
+        </div>
+        <div className="flex flex-wrap items-center gap-1.5">
+          {duePresets.map((preset) => {
+            const isActive = (values.dueDate ?? '') === preset.value;
+            return (
+              <button
+                key={preset.label}
+                type="button"
+                onClick={() => {
+                  setValues((prev) => ({ ...prev, dueDate: preset.value }));
+                  if (errors.dueDate) {
+                    setErrors((prev) => ({ ...prev, dueDate: undefined }));
+                  }
+                }}
+                className={cn(
+                  'rounded-full px-2.5 py-1 text-xs font-medium transition-colors',
+                  isActive
+                    ? 'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900'
+                    : 'bg-white text-zinc-600 hover:bg-zinc-200 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-700',
+                )}
+              >
+                {preset.label}
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       {(projects.length > 0 || modules.length > 0) && (

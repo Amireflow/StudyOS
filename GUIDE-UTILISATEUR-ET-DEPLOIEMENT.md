@@ -16,17 +16,21 @@ Ce guide synthétise l’utilisation quotidienne d’**Amireflow Study OS** (Par
 1. Dans **Apprentissage** (`/learning`), ouvrez votre parcours actif (ex. *Socle Python & FastAPI*), consultez le module en cours et marquez vos leçons terminées au fil de votre avancement.
    - *Rappel `LEARN-03` : terminer une leçon ne valide jamais automatiquement une compétence.*
 2. Dans **Séances** (`/sessions`), lancez une séance en direct (ou enregistrez une séance passée) reliée à votre tâche, module, leçon ou compétence, puis clôturez-la en notant le **résultat concret produit**.
-3. Dans **Compétences** (`/skills`), ajoutez une **preuve vérifiable** (exercice, code, projet, évaluation, livrable) et mettez à jour votre niveau sur l’échelle `0..5`.
-   - *Alerte `SKILL-03` : toute compétence de niveau ≥ 3 (Autonome+) sans preuve est signalée automatiquement.*
+3. Dans **Compétences** (`/skills`), cliquez sur **Évaluer cette compétence** pour lancer une épreuve adaptée à votre niveau visé (`1..5`), utilisez les indices progressifs si besoin, soumettez votre production réelle accompagnée d’une **preuve concrète** (exercice, code, projet, livrable), lancez la correction selon les 4 critères pédagogiques puis validez le passage de niveau.
+   - *Verrou pédagogique : toute nouvelle compétence démarre au niveau 0 et aucune modification directe du niveau n’est possible sans évaluation validée et preuve admissible.*
+   - *Alerte `SKILL-03` : toute compétence historique de niveau ≥ 3 (Autonome+) sans preuve est signalée automatiquement.*
 
 ### Parcours C — Réagir à un imprévu ou une surcharge
 1. Ouvrez **Tâches** (`/tasks`) ou demandez au **Copilote IA** (`/ai-coach`) : *« Je suis en surcharge, mets une tâche secondaire au parking »*.
 2. Validez la proposition `park_task` (ou cliquez sur **Parking** sur la carte d’une tâche) pour isoler les idées non prioritaires sans les perdre.
 
-### Parcours D — Faire le bilan hebdomadaire
-1. En fin de semaine, ouvrez **Copilote IA** (`/ai-coach`) et cliquez sur **Bilan hebdo**.
-2. Analysez le temps réel d’étude (hors séances annulées, `SESSION-03`), les tâches achevées, les compétences ≥ 3 sans preuve et l’alerte anti-dispersion des projets (`> 3` projets actifs, `PROJ-01`).
-3. Dans **Planning** (`/planning`), cliquez sur **Dupliquer vers la semaine suivante** pour reconduire vos créneaux récurrents en un clic.
+### Parcours D — Faire le bilan hebdomadaire & importer son emploi du temps
+1. En début de semestre ou de semaine, ouvrez **Planning** (`/planning`) et cliquez sur **Importer mon emploi du temps**.
+2. Glissez-déposez votre fichier (`.pdf`, `.png`, `.jpg`, `.jpeg`, `.webp`, `.xlsx`, `.xls`, `.docx`), vérifiez le tableau d’aperçu modifiable et les anomalies éventuelles (horaires manquants, chevauchements, doublons), puis cliquez sur **Enregistrer mon emploi du temps**.
+3. Le **Copilote IA** (`/ai-coach`) connaît alors vos cours universitaires verrouillés et planifie vos séances de révision, devoirs et projets uniquement sur vos périodes libres (avec préservation des pauses).
+4. En fin de semaine, ouvrez **Copilote IA** (`/ai-coach`) et cliquez sur **Bilan hebdo**.
+5. Analysez le temps réel d’étude (hors séances annulées, `SESSION-03`), les tâches achevées, les compétences ≥ 3 sans preuve et l’alerte anti-dispersion des projets (`> 3` projets actifs, `PROJ-01`).
+6. Dans **Planning** (`/planning`), cliquez sur **Dupliquer vers la semaine suivante** pour reconduire vos créneaux récurrents en un clic.
 
 ---
 
@@ -40,12 +44,12 @@ Ce guide synthétise l’utilisation quotidienne d’**Amireflow Study OS** (Par
 
 ### Étape 1 — Préparer la base PostgreSQL (Supabase)
 1. Créez un projet Supabase et récupérez l’URL de connexion PostgreSQL (`postgresql+psycopg://...`), l’URL JWKS (`https://<PROJECT_REF>.supabase.co/auth/v1/.well-known/jwks.json`) et l’Issuer (`https://<PROJECT_REF>.supabase.co/auth/v1`).
-2. Exécutez les migrations Alembic (`0001`, `0002`, `0003`) :
+2. Exécutez les migrations Alembic (`0001` à `0005_timetable_imports`) :
    ```bash
    cd backend
    DATABASE_URL="postgresql+psycopg://..." python -m alembic upgrade head
    ```
-3. Appliquez les politiques Row-Level Security (défense en profondeur sur les 14 tables) dans l’éditeur SQL Supabase en exécutant [backend/alembic/rls_supabase.sql](./backend/alembic/rls_supabase.sql).
+3. Appliquez les politiques Row-Level Security (défense en profondeur sur les 16 tables, incluant `skill_assessments` et `timetable_imports`) dans l’éditeur SQL Supabase en exécutant [backend/alembic/rls_supabase.sql](./backend/alembic/rls_supabase.sql) ou les migrations incrémentales dans [supabase/migrations/](./supabase/migrations/).
 
 ### Étape 2 — Déployer le Backend FastAPI
 Configurez les variables d’environnement suivantes sur votre hébergeur (sans jamais les commiter) :
@@ -85,4 +89,4 @@ pg_dump --format=custom --no-owner --no-privileges "$DATABASE_URL" --file="backu
 ```bash
 pg_restore --clean --if-exists --no-owner --no-privileges --dbname="$RESTORE_DATABASE_URL" "backup_amireflow_YYYYMMDD.dump"
 ```
-Après restauration, vérifiez l’état de la révision Alembic (`python -m alembic current` → `0003_palier2_ai_copilot (head)`) et l’endpoint de santé `GET /health`.
+Après restauration, vérifiez l’état de la révision Alembic (`python -m alembic current` → `0005_timetable_imports (head)`) et l’endpoint de santé `GET /health`.

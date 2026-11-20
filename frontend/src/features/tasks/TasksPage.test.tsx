@@ -1,7 +1,7 @@
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import { AppProviders } from '../../app/providers';
 import { STORAGE_KEYS } from '../../lib/storage';
 import { TasksPage } from './TasksPage';
@@ -17,6 +17,10 @@ function renderTasksPage() {
 }
 
 describe('TasksPage', () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+  });
+
   it('valide les champs obligatoires puis crée, modifie et termine une tâche (TASK-01)', async () => {
     const user = userEvent.setup();
     renderTasksPage();
@@ -130,5 +134,32 @@ describe('TasksPage', () => {
     const card = screen.getByRole('article', { name: 'Relire le cours SQL' });
     expect(card).toBeInTheDocument();
     expect(within(card).queryByText('Origine IA')).not.toBeInTheDocument();
+  });
+
+  it('permet la capture rapide, le filtrage par tuile KPI et la bascule Liste / Tableau', async () => {
+    const user = userEvent.setup();
+    renderTasksPage();
+
+    // Capture rapide en ligne
+    await user.type(screen.getByLabelText('Capture rapide de tâche'), 'Réviser React Query');
+    await user.click(screen.getByRole('button', { name: 'Ajouter' }));
+
+    expect(screen.getByRole('article', { name: 'Réviser React Query' })).toBeInTheDocument();
+    expect(screen.getByTestId('stat-active')).toHaveTextContent('1');
+
+    // Bascule en vue Tableau Kanban puis retour en Liste
+    await user.click(screen.getByRole('button', { name: 'Tableau' }));
+    const board = screen.getByRole('region', { name: 'Tableau des tâches' });
+    expect(within(board).getByRole('article', { name: 'Réviser React Query' })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Liste' }));
+    expect(screen.queryByRole('region', { name: 'Tableau des tâches' })).not.toBeInTheDocument();
+
+    // Filtre via tuile KPI Parking puis réinitialisation
+    await user.click(screen.getByRole('button', { name: /Parking \(0\)/ }));
+    expect(screen.getByText('Aucune tâche ne correspond aux filtres')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Réinitialiser les filtres' }));
+    expect(screen.getByRole('article', { name: 'Réviser React Query' })).toBeInTheDocument();
   });
 });

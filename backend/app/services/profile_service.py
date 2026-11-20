@@ -5,6 +5,19 @@ from app.core.errors import AppError
 from app.repositories.memory import ProfileRecord, ProfileRepository, TaskRepository
 from app.schemas.profile import ProfileResponse, ProfileUpdate
 
+INTERNAL_AI_CONFIG_KEY = "_ai_provider_config"
+
+
+def _sanitize_public_preferences(preferences: dict[str, Any] | None) -> dict[str, Any]:
+    """Supprime les clés internes (préfixées par '_') avant exposition via /profile."""
+    return {k: v for k, v in (preferences or {}).items() if not str(k).startswith("_")}
+
+
+def _to_public_profile_response(record: ProfileRecord) -> ProfileResponse:
+    data = record.model_dump()
+    data["preferences"] = _sanitize_public_preferences(record.preferences)
+    return ProfileResponse.model_validate(data)
+
 
 class ProfileService:
     def __init__(
@@ -36,7 +49,25 @@ class ProfileService:
 
     def get_profile(self, user_id: UUID) -> ProfileResponse:
         record = self.get_or_create_record(user_id)
-        return ProfileResponse.model_validate(record.model_dump())
+        return _to_public_profile_response(record)
+
+    def get_ai_provider_config(self, user_id: UUID) -> dict[str, Any] | None:
+        record = self.get_or_create_record(user_id)
+        raw = (record.preferences or {}).get(INTERNAL_AI_CONFIG_KEY)
+        return dict(raw) if isinstance(raw, dict) else None
+
+    def save_ai_provider_config(self, user_id: UUID, config: dict[str, Any]) -> dict[str, Any]:
+        record = self.get_or_create_record(user_id)
+        merged_prefs = dict(record.preferences or {})
+        merged_prefs[INTERNAL_AI_CONFIG_KEY] = dict(config)
+        updated = record.model_copy(
+            update={
+                "preferences": merged_prefs,
+                "updated_at": datetime.now(timezone.utc),
+            }
+        )
+        saved = self._profile_repo.save(updated)
+        return dict((saved.preferences or {}).get(INTERNAL_AI_CONFIG_KEY) or {})
 
     def update_profile(self, user_id: UUID, payload: ProfileUpdate) -> ProfileResponse:
         record = self.get_or_create_record(user_id)
@@ -50,7 +81,11 @@ class ProfileService:
             updates["timezone"] = payload.timezone
 
         if "preferences" in fields and payload.preferences is not None:
-            updates["preferences"] = payload.preferences
+            sanitized_client_prefs = _sanitize_public_preferences(payload.preferences)
+            preserved_internal = {
+                k: v for k, v in (record.preferences or {}).items() if str(k).startswith("_")
+            }
+            updates["preferences"] = {**sanitized_client_prefs, **preserved_internal}
 
         if "ai_instructions" in fields:
             updates["ai_instructions"] = payload.ai_instructions
@@ -93,4 +128,4 @@ class ProfileService:
 
         updated = record.model_copy(update=updates)
         saved = self._profile_repo.save(updated)
-        return ProfileResponse.model_validate(saved.model_dump())
+        return _to_public_profile_response(saved)

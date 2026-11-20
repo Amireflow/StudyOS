@@ -13,6 +13,42 @@ export const SCHEDULE_EVENT_TYPE_META: Record<
   other: { label: 'Autre', badgeVariant: 'neutral' },
 };
 
+export const SCHEDULE_EVENT_TONE: Record<
+  ScheduleEventType,
+  { bar: string; dot: string; blockBg: string; blockText: string }
+> = {
+  course: {
+    bar: 'bg-teal-600 dark:bg-teal-400',
+    dot: 'bg-teal-600 dark:bg-teal-400',
+    blockBg: 'bg-teal-50/90 dark:bg-teal-950/55',
+    blockText: 'text-teal-950 dark:text-teal-100',
+  },
+  learning: {
+    bar: 'bg-emerald-600 dark:bg-emerald-400',
+    dot: 'bg-emerald-600 dark:bg-emerald-400',
+    blockBg: 'bg-emerald-50/90 dark:bg-emerald-950/55',
+    blockText: 'text-emerald-950 dark:text-emerald-100',
+  },
+  project: {
+    bar: 'bg-amber-500 dark:bg-amber-400',
+    dot: 'bg-amber-500 dark:bg-amber-400',
+    blockBg: 'bg-amber-50/90 dark:bg-amber-950/55',
+    blockText: 'text-amber-950 dark:text-amber-100',
+  },
+  personal: {
+    bar: 'bg-zinc-500 dark:bg-zinc-400',
+    dot: 'bg-zinc-500 dark:bg-zinc-400',
+    blockBg: 'bg-zinc-100 dark:bg-zinc-800/80',
+    blockText: 'text-zinc-900 dark:text-zinc-100',
+  },
+  other: {
+    bar: 'bg-zinc-400 dark:bg-zinc-500',
+    dot: 'bg-zinc-400 dark:bg-zinc-500',
+    blockBg: 'bg-zinc-100/80 dark:bg-zinc-800/60',
+    blockText: 'text-zinc-800 dark:text-zinc-200',
+  },
+};
+
 /**
  * Détecte un chevauchement strict entre deux intervalles horaires (`aStart < bEnd && bStart < aEnd`).
  * Deux créneaux consécutifs (ex. 10:00–12:00 et 12:00–14:00) ne sont pas en conflit.

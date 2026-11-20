@@ -18,7 +18,9 @@ def test_ai_tools_whitelist_excludes_delete_and_sql(
     assert "park_task" in names
     assert "create_schedule_event" in names
     assert "add_skill_evidence" in names
-    assert "update_skill_level" in names
+    assert "propose_skill_assessment" in names
+    assert "recommend_skill_progression" in names
+    assert "update_skill_level" not in names
     assert not any("delete" in name or "sql" in name for name in names)
 
 

@@ -1,24 +1,30 @@
+from datetime import datetime
 from uuid import UUID
-from sqlalchemy import select, update
+from sqlalchemy import or_, select, update
 from sqlalchemy.orm import Session
 from app.models.tables import (
     ProfileTable,
     ScheduleEventTable,
     StudySessionTable,
     TaskTable,
+    TimetableImportTable,
 )
 from app.repositories.memory import (
     ProfileRecord,
     ScheduleEventRecord,
     SessionRecord,
     TaskRecord,
+    TimetableImportRecord,
 )
 from app.schemas.common import (
+    ScheduleEventSource,
     ScheduleEventType,
     SessionStatus,
     TaskPriority,
     TaskSource,
     TaskStatus,
+    TimetableFileFormat,
+    TimetableImportStatus,
 )
 
 
@@ -57,6 +63,7 @@ def _to_task_record(row: TaskTable) -> TaskRecord:
 
 
 def _to_schedule_record(row: ScheduleEventTable) -> ScheduleEventRecord:
+    raw_source = getattr(row, "source", None) or "manual"
     return ScheduleEventRecord(
         id=row.id,
         user_id=row.user_id,
@@ -65,8 +72,40 @@ def _to_schedule_record(row: ScheduleEventTable) -> ScheduleEventRecord:
         starts_at=row.starts_at,
         ends_at=row.ends_at,
         notes=row.notes,
+        source=ScheduleEventSource(raw_source),
+        import_id=getattr(row, "import_id", None),
+        session_subtype=getattr(row, "session_subtype", None),
+        teacher=getattr(row, "teacher", None),
+        room=getattr(row, "room", None),
+        group_name=getattr(row, "group_name", None),
         created_at=row.created_at,
         updated_at=row.updated_at,
+    )
+
+
+def _to_timetable_import_record(row: TimetableImportTable) -> TimetableImportRecord:
+    return TimetableImportRecord(
+        id=row.id,
+        user_id=row.user_id,
+        filename=row.filename,
+        file_format=TimetableFileFormat(row.file_format),
+        mime_type=row.mime_type,
+        file_size_bytes=row.file_size_bytes,
+        file_sha256=row.file_sha256,
+        source_preview_text=row.source_preview_text,
+        source_deleted=bool(row.source_deleted),
+        status=TimetableImportStatus(row.status),
+        valid_from=row.valid_from,
+        valid_until=row.valid_until,
+        extracted_courses=list(row.extracted_courses or []),
+        anomalies=list(row.anomalies or []),
+        warnings=list(row.warnings or []),
+        created_events_count=row.created_events_count,
+        skipped_duplicates_count=row.skipped_duplicates_count,
+        replaced_events_count=row.replaced_events_count,
+        created_at=row.created_at,
+        updated_at=row.updated_at,
+        validated_at=row.validated_at,
     )
 
 
@@ -183,6 +222,7 @@ class SqlScheduleRepository:
         )
         data = record.model_dump()
         data["type"] = record.type.value
+        data["source"] = record.source.value
         if row is None:
             row = ScheduleEventTable(**data)
             self._db.add(row)
@@ -198,6 +238,7 @@ class SqlScheduleRepository:
         for record in records:
             data = record.model_dump()
             data["type"] = record.type.value
+            data["source"] = record.source.value
             row = ScheduleEventTable(**data)
             self._db.add(row)
             rows.append(row)
@@ -218,6 +259,67 @@ class SqlScheduleRepository:
         self._db.delete(row)
         self._db.commit()
         return True
+
+    def delete_imported_events(
+        self,
+        user_id: UUID,
+        *,
+        range_start: datetime | None = None,
+        range_end: datetime | None = None,
+    ) -> int:
+        stmt = select(ScheduleEventTable).where(
+            ScheduleEventTable.user_id == user_id,
+            or_(
+                ScheduleEventTable.source == ScheduleEventSource.timetable_import.value,
+                ScheduleEventTable.import_id.is_not(None),
+            ),
+        )
+        if range_start is not None:
+            stmt = stmt.where(ScheduleEventTable.starts_at >= range_start)
+        if range_end is not None:
+            stmt = stmt.where(ScheduleEventTable.starts_at <= range_end)
+        rows = self._db.scalars(stmt).all()
+        for row in rows:
+            self._db.delete(row)
+        self._db.commit()
+        return len(rows)
+
+    def list_imports_by_user(self, user_id: UUID) -> list[TimetableImportRecord]:
+        rows = self._db.scalars(
+            select(TimetableImportTable)
+            .where(TimetableImportTable.user_id == user_id)
+            .order_by(TimetableImportTable.created_at.desc())
+        ).all()
+        return [_to_timetable_import_record(row) for row in rows]
+
+    def get_import(self, user_id: UUID, import_id: UUID) -> TimetableImportRecord | None:
+        row = self._db.scalar(
+            select(TimetableImportTable).where(
+                TimetableImportTable.id == import_id,
+                TimetableImportTable.user_id == user_id,
+            )
+        )
+        return _to_timetable_import_record(row) if row else None
+
+    def save_import(self, record: TimetableImportRecord) -> TimetableImportRecord:
+        row = self._db.scalar(
+            select(TimetableImportTable).where(
+                TimetableImportTable.id == record.id,
+                TimetableImportTable.user_id == record.user_id,
+            )
+        )
+        data = record.model_dump()
+        data["file_format"] = record.file_format.value
+        data["status"] = record.status.value
+        if row is None:
+            row = TimetableImportTable(**data)
+            self._db.add(row)
+        else:
+            for key, value in data.items():
+                setattr(row, key, value)
+        self._db.commit()
+        self._db.refresh(row)
+        return _to_timetable_import_record(row)
 
 
 class SqlSessionRepository:

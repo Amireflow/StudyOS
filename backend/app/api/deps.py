@@ -11,6 +11,8 @@ from app.ai.tool_registry import ToolRegistry
 from app.core.config import Settings
 from app.core.security import get_app_settings
 from app.repositories.ai_sql import SqlAiRepository
+from app.repositories.auth_sql import InMemoryUserRepository, SqlUserRepository
+from app.repositories.courses_sql import SqlCourseRepository
 from app.repositories.learning_sql import (
     SqlLearningRepository,
     SqlProjectRepository,
@@ -28,6 +30,8 @@ from app.repositories.sql import (
     SqlSessionRepository,
     SqlTaskRepository,
 )
+from app.services.auth_service import AuthService, LoginRateLimiter
+from app.services.courses_service import CourseService
 from app.services.dashboard_service import DashboardService
 from app.services.learning_service import LearningService
 from app.services.profile_service import ProfileService
@@ -62,6 +66,15 @@ def get_profile_repository(
     if db is not None:
         return SqlProfileRepository(db)
     return ProfileRepository(request.app.state.store)
+
+
+def get_user_repository(
+    request: Request,
+    db: Session | None = Depends(get_db_session),
+) -> InMemoryUserRepository | SqlUserRepository:
+    if db is not None:
+        return SqlUserRepository(db)
+    return InMemoryUserRepository(request.app.state.store)
 
 
 def get_task_repository(
@@ -115,6 +128,14 @@ def get_project_repository(
     return SqlProjectRepository(db)
 
 
+def get_course_repository(
+    db: Session | None = Depends(get_db_session),
+) -> SqlCourseRepository:
+    if db is None:
+        raise RuntimeError("Une base SQLAlchemy est requise pour les cours.")
+    return SqlCourseRepository(db)
+
+
 def get_profile_service(
     profile_repo: ProfileRepository | SqlProfileRepository = Depends(get_profile_repository),
     task_repo: TaskRepository | SqlTaskRepository = Depends(get_task_repository),
@@ -127,6 +148,24 @@ def get_profile_service(
         task_repo=task_repo,  # type: ignore[arg-type]
         default_timezone=settings.default_timezone,
         project_repo=project_repo,
+    )
+
+
+def get_auth_service(
+    request: Request,
+    user_repo: InMemoryUserRepository | SqlUserRepository = Depends(get_user_repository),
+    profile_service: ProfileService = Depends(get_profile_service),
+    settings: Settings = Depends(get_app_settings),
+) -> AuthService:
+    rate_limiter = getattr(request.app.state, "auth_rate_limiter", None)
+    if not isinstance(rate_limiter, LoginRateLimiter):
+        rate_limiter = LoginRateLimiter()
+        request.app.state.auth_rate_limiter = rate_limiter
+    return AuthService(
+        user_repo=user_repo,
+        profile_service=profile_service,
+        settings=settings,
+        rate_limiter=rate_limiter,
     )
 
 
@@ -173,8 +212,9 @@ def get_learning_service(
 
 def get_skill_service(
     skill_repo: SqlSkillRepository = Depends(get_skill_repository),
+    learning_repo: SqlLearningRepository = Depends(get_learning_repository),
 ) -> SkillService:
-    return SkillService(repo=skill_repo)
+    return SkillService(repo=skill_repo, learning_repo=learning_repo)
 
 
 def get_project_service(
@@ -184,6 +224,18 @@ def get_project_service(
     return ProjectService(
         repo=project_repo,
         profile_repo=profile_repo,  # type: ignore[arg-type]
+    )
+
+
+def get_course_service(
+    course_repo: SqlCourseRepository = Depends(get_course_repository),
+    skill_repo: SqlSkillRepository = Depends(get_skill_repository),
+    settings: Settings = Depends(get_app_settings),
+) -> CourseService:
+    return CourseService(
+        repo=course_repo,
+        skill_repo=skill_repo,
+        settings=settings,
     )
 
 
@@ -206,6 +258,7 @@ def get_ai_provider(
 
 
 def get_ai_orchestrator(
+    request: Request,
     ai_repo: SqlAiRepository = Depends(get_ai_repository),
     profile_service: ProfileService = Depends(get_profile_service),
     task_repo: TaskRepository | SqlTaskRepository = Depends(get_task_repository),
@@ -214,9 +267,13 @@ def get_ai_orchestrator(
     learning_repo: SqlLearningRepository = Depends(get_learning_repository),
     skill_repo: SqlSkillRepository = Depends(get_skill_repository),
     project_repo: SqlProjectRepository = Depends(get_project_repository),
+    course_repo: SqlCourseRepository = Depends(get_course_repository),
     task_service: TaskService = Depends(get_task_service),
     schedule_service: ScheduleService = Depends(get_schedule_service),
     skill_service: SkillService = Depends(get_skill_service),
+    learning_service: LearningService = Depends(get_learning_service),
+    project_service: ProjectService = Depends(get_project_service),
+    course_service: CourseService = Depends(get_course_service),
     provider: AIProvider = Depends(get_ai_provider),
     settings: Settings = Depends(get_app_settings),
 ) -> AIOrchestrator:
@@ -229,6 +286,7 @@ def get_ai_orchestrator(
         learning_repo=learning_repo,
         skill_repo=skill_repo,
         project_repo=project_repo,
+        course_repo=course_repo,
     )
     prompt_manager = PromptManager(tool_registry=tool_registry)
     action_validator = ActionValidator(
@@ -249,6 +307,12 @@ def get_ai_orchestrator(
         task_service=task_service,
         schedule_service=schedule_service,
         skill_service=skill_service,
+        learning_service=learning_service,
+        project_service=project_service,
+        course_service=course_service,
+        profile_service=profile_service,
+        settings=settings,
+        has_custom_provider=getattr(request.app.state, "ai_provider", None) is not None,
         rate_limit_per_minute=settings.ai_rate_limit_per_minute,
     )
 
