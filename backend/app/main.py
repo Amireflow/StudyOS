@@ -234,6 +234,21 @@ def create_app(
                 if not candidate.is_relative_to(spa_dist_dir):
                     raise HTTPException(status_code=404, detail="Ressource introuvable.")
                 if candidate.is_file():
+                    if cleaned == "manifest.webmanifest":
+                        return FileResponse(
+                            candidate,
+                            media_type="application/manifest+json",
+                            headers={"Cache-Control": "no-cache"},
+                        )
+                    if cleaned == "sw.js":
+                        return FileResponse(
+                            candidate,
+                            media_type="application/javascript",
+                            headers={
+                                "Cache-Control": "no-cache, no-store, must-revalidate",
+                                "Service-Worker-Allowed": "/",
+                            },
+                        )
                     headers = (
                         {"Cache-Control": "public, max-age=31536000, immutable"}
                         if cleaned.startswith("assets/")

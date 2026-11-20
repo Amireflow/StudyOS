@@ -471,7 +471,7 @@ export function ProjectsPage() {
   if (error) {
     return (
       <div className="space-y-5">
-        <PageHeader title="Mes objectifs et projets" />
+        <PageHeader title="Objectifs & Projets" />
         <ErrorState message={error} onRetry={retry} />
       </div>
     );
@@ -479,13 +479,13 @@ export function ProjectsPage() {
 
   const headerSubtitle =
     projects.length > 0 || personalGoals.length > 0
-      ? `${personalGoals.length} objectif${personalGoals.length > 1 ? 's' : ''} personnel${personalGoals.length > 1 ? 's' : ''} · ${summary.activeCount}/3 projet${summary.activeCount > 1 ? 's' : ''} actif${summary.activeCount > 1 ? 's' : ''} · ${summary.linkedTasksCount} tâche${summary.linkedTasksCount > 1 ? 's' : ''} liée${summary.linkedTasksCount > 1 ? 's' : ''}`
+      ? `${personalGoals.length} objectif${personalGoals.length > 1 ? 's' : ''} · ${summary.activeCount}/3 actifs`
       : undefined;
 
   return (
     <div className="space-y-3.5 sm:space-y-5">
       <PageHeader
-        title="Mes objectifs et projets"
+        title="Objectifs & Projets"
         description={headerSubtitle}
         actions={
           <div className="flex flex-wrap items-center gap-2">
@@ -560,7 +560,7 @@ export function ProjectsPage() {
                 : 'Capacité maximale atteinte (3/3 projets actifs)'}
             </p>
             <p className="text-zinc-600 dark:text-zinc-300">
-              Maximum autorisé : 3 projets actifs simultanés. Mettez en pause, terminez ou archivez un projet pour en activer un autre.
+              Maximum 3 projets actifs. Mettez-en un en pause ou terminez-le pour en activer un autre.
             </p>
           </div>
         </div>
@@ -646,41 +646,41 @@ export function ProjectsPage() {
         aria-label="Séparation des trois sources"
         className="grid gap-2.5 sm:grid-cols-3"
       >
-        <div className="rounded-2xl bg-white p-3.5 dark:bg-zinc-900">
+        <div className="min-w-0 rounded-2xl bg-white p-3.5 dark:bg-zinc-900">
           <p className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
-            1. Obligations académiques
+            1. Académique
           </p>
           <p className="mt-1 text-sm font-semibold text-zinc-900 dark:text-zinc-100">
             {academicObligationsCount} cours ou examen{academicObligationsCount > 1 ? 's' : ''} fixe{academicObligationsCount > 1 ? 's' : ''}
           </p>
           <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
-            Emploi du temps universitaire isolé, jamais mélangé aux objectifs personnels.
+            Emploi du temps fixe isolé.
           </p>
         </div>
 
-        <div className="rounded-2xl bg-white p-3.5 dark:bg-zinc-900">
+        <div className="min-w-0 rounded-2xl bg-white p-3.5 dark:bg-zinc-900">
           <p className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
-            2. Objectifs personnels
+            2. Objectifs
           </p>
           <p className="mt-1 text-sm font-semibold text-zinc-900 dark:text-zinc-100">
             {personalGoals.length} objectif{personalGoals.length > 1 ? 's' : ''} d’apprentissage
           </p>
-          <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
+          <p className="mt-0.5 line-clamp-1 break-words text-xs text-zinc-500 dark:text-zinc-400">
             {activePriorityTitle
-              ? `Priorité principale : ${activePriorityTitle}`
-              : 'Créneaux flexibles reliés aux parcours et compétences.'}
+              ? `Priorité : ${activePriorityTitle}`
+              : 'Créneaux flexibles.'}
           </p>
         </div>
 
-        <div className="rounded-2xl bg-white p-3.5 dark:bg-zinc-900">
+        <div className="min-w-0 rounded-2xl bg-white p-3.5 dark:bg-zinc-900">
           <p className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
-            3. Projets personnels et pros
+            3. Projets
           </p>
           <p className="mt-1 text-sm font-semibold text-zinc-900 dark:text-zinc-100">
             {summary.activeCount}/3 projet{summary.activeCount > 1 ? 's' : ''} actif{summary.activeCount > 1 ? 's' : ''}
           </p>
           <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
-            Livrables concrets, prochaines actions et séances reliées.
+            Livrables et prochaines actions.
           </p>
         </div>
       </section>
@@ -718,7 +718,7 @@ export function ProjectsPage() {
       {personalGoals.length > 0 && (
         <section aria-label="Mes objectifs personnels" className="space-y-3">
           <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
-            Objectifs personnels d’apprentissage ({personalGoals.length})
+            Objectifs personnels ({personalGoals.length})
           </h2>
           <div className="grid gap-3 md:grid-cols-2">
             {personalGoals.map((goal) => (
@@ -728,8 +728,8 @@ export function ProjectsPage() {
                 className="space-y-2.5 rounded-2xl bg-white p-4 shadow-sm ring-1 ring-zinc-200/70 dark:bg-zinc-900 dark:ring-zinc-800"
               >
                 <div className="flex flex-wrap items-start justify-between gap-2">
-                  <div>
-                    <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+                  <div className="min-w-0 flex-1">
+                    <h3 className="line-clamp-1 text-sm font-semibold text-zinc-900 dark:text-zinc-100">
                       {goal.title}
                     </h3>
                     <p className="text-xs text-zinc-500 dark:text-zinc-400">
@@ -778,7 +778,7 @@ export function ProjectsPage() {
                   </div>
                 </div>
 
-                <p className="text-xs text-zinc-700 dark:text-zinc-300">{goal.goal}</p>
+                <p className="line-clamp-2 text-xs text-zinc-700 dark:text-zinc-300">{goal.goal}</p>
 
                 <div className="flex flex-wrap gap-3 text-[11px] text-zinc-500 dark:text-zinc-400">
                   {goal.currentLevel !== null && (
@@ -794,7 +794,7 @@ export function ProjectsPage() {
                 </div>
 
                 {goal.nextAction && (
-                  <p className="rounded-lg bg-zinc-50 px-2.5 py-1.5 text-xs text-zinc-700 dark:bg-zinc-800/60 dark:text-zinc-300">
+                  <p className="line-clamp-2 rounded-lg bg-zinc-50 px-2.5 py-1.5 text-xs text-zinc-700 dark:bg-zinc-800/60 dark:text-zinc-300">
                     <strong>Prochaine action :</strong> {goal.nextAction}
                   </p>
                 )}
@@ -846,7 +846,7 @@ export function ProjectsPage() {
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
-              <div className="w-40 sm:w-44">
+              <div className="min-w-[130px] flex-1 sm:w-44 sm:flex-none">
                 <label htmlFor="projects-status-filter" className="sr-only">
                   Filtrer par statut
                 </label>

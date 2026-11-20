@@ -85,11 +85,10 @@ export function UnifiedPlanPanel({
       <div className="flex items-start justify-between gap-3">
         <div>
           <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-100">
-            Moteur de planification unifiée (3 sources)
+            Programme unifié
           </h2>
           <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
-            Combine emploi du temps universitaire fixe, objectifs personnels et projets actifs sans
-            conflit et avec récupération quotidienne.
+            Combine cours fixes, objectifs et projets sans conflit.
           </p>
         </div>
         <Button type="button" variant="ghost" size="sm" onClick={onClose}>
@@ -99,7 +98,7 @@ export function UnifiedPlanPanel({
       </div>
 
       <div className="grid gap-3 sm:grid-cols-3 sm:items-end">
-        <FormField id="plan-weekly-minutes" label="Budget temps hebdomadaire flexible (min)">
+        <FormField id="plan-weekly-minutes" label="Budget hebdomadaire (min)">
           <Input
             id="plan-weekly-minutes"
             type="number"

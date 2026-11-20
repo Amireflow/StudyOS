@@ -86,16 +86,10 @@ export function ObjectivesIntakePanel({
       aria-label="Décrire mes besoins à l’IA"
       className="space-y-4 rounded-2xl bg-white p-5 shadow-sm ring-1 ring-zinc-200/70 dark:bg-zinc-900 dark:ring-zinc-800"
     >
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-100">
-            Collecte conversationnelle des objectifs et projets
-          </h2>
-          <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
-            Expliquez vos besoins librement. StudyOS extrait les informations connues, vous demande
-            ce qui manque sans rien inventer et attend votre confirmation avant d’enregistrer.
-          </p>
-        </div>
+      <div className="flex items-center justify-between gap-3">
+        <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-100">
+          Décrire mes besoins
+        </h2>
         <Button type="button" variant="ghost" size="sm" onClick={onClose}>
           <Icon icon={Cancel01Icon} size={15} />
           Fermer
@@ -108,7 +102,7 @@ export function ObjectivesIntakePanel({
             id="intake-message-input"
             rows={3}
             value={message}
-            placeholder="Ex. Je veux continuer Python, apprendre React, améliorer mes compétences en développement web et construire des projets pratiques."
+            placeholder="Ex. Continuer Python, apprendre React et créer un projet web."
             onChange={(e) => setMessage(e.target.value)}
           />
         </FormField>

@@ -11,6 +11,8 @@ from app.ai.provider import (
     GEMINI_DEFAULT_BASE_URL,
     OPENAI_DEFAULT_BASE_URL,
     RIVER_DEFAULT_BASE_URL,
+    _PROTOCOL_JSON_MARKERS_RE,
+    _parse_llm_json_output,
     _validate_outbound_base_url,
     build_ai_provider_from_config,
     canonicalize_provider_name,
@@ -621,8 +623,61 @@ class AIOrchestrator:
             raise AppError(404, "NOT_FOUND", "Conversation IA introuvable.")
 
         now = datetime.now(timezone.utc)
-        messages = self._ai_repo.list_messages(user_id, conversation_id)
-        messages.sort(key=lambda item: item.created_at)
+        raw_messages = self._ai_repo.list_messages(user_id, conversation_id)
+        raw_messages.sort(key=lambda item: item.created_at)
+
+        messages: list[AiMessageRecord] = []
+        for msg in raw_messages:
+            if (
+                msg.role == AiMessageRole.assistant
+                and ("```" in msg.content or msg.content.lstrip().startswith("{"))
+                and _PROTOCOL_JSON_MARKERS_RE.search(msg.content)
+            ):
+                dummy_ctx = self._context_builder.build_context(
+                    user_id,
+                    explicit_scopes=[AiContextScope.auto],
+                    now_utc=now,
+                )
+                re_parsed = _parse_llm_json_output(
+                    msg.content,
+                    dummy_ctx,
+                    str((msg.metadata or {}).get("provider") or "river"),
+                    str((msg.metadata or {}).get("model") or "gpt-4o-mini"),
+                )
+                if re_parsed.reply != msg.content:
+                    meta = dict(msg.metadata or {})
+                    existing_prop_ids = list(meta.get("proposal_ids") or [])
+                    if not existing_prop_ids and re_parsed.proposals:
+                        for cand in re_parsed.proposals:
+                            try:
+                                validated = self._action_validator.validate_candidate(user_id, cand)
+                                saved_p = self._ai_repo.save_proposal(
+                                    AiActionProposalRecord(
+                                        id=uuid4(),
+                                        user_id=user_id,
+                                        conversation_id=conversation_id,
+                                        action_type=validated.action_type.value,
+                                        title=validated.title,
+                                        explanation=validated.explanation,
+                                        payload=validated.payload,
+                                        status=ProposalStatus.pending,
+                                        expires_at=now + timedelta(days=PROPOSAL_TTL_DAYS),
+                                        created_at=msg.created_at,
+                                    )
+                                )
+                                existing_prop_ids.append(str(saved_p.id))
+                            except AppError:
+                                continue
+                    meta["proposal_ids"] = existing_prop_ids
+                    msg = self._ai_repo.save_message(
+                        msg.model_copy(
+                            update={
+                                "content": re_parsed.reply,
+                                "metadata": meta,
+                            }
+                        )
+                    )
+            messages.append(msg)
 
         proposals = [
             self._refresh_proposal_expiration(item, now)

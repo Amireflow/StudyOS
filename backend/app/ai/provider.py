@@ -2399,42 +2399,293 @@ def _sanitize_ai_reply_dashes(text: str) -> str:
     return "".join(parts)
 
 
+_PROTOCOL_JSON_KEYS: frozenset[str] = frozenset(
+    {
+        "reply",
+        "response",
+        "message",
+        "assistant_message",
+        "proposals",
+        "actions",
+        "action_type",
+        "is_estimate",
+        "missing_data",
+    }
+)
+
+_PROTOCOL_JSON_MARKERS_RE = re.compile(
+    r'"(?:reply|proposals|action_type|is_estimate|missing_data|create_missing_courses|apply_immediately|replace_future_planned)"\s*:',
+    re.IGNORECASE,
+)
+
+
+def _try_load_json_any(snippet: str) -> Any | None:
+    candidate = (snippet or "").strip()
+    if not candidate:
+        return None
+    attempts = [
+        candidate,
+        re.sub(r",\s*([}\]])", r"\1", candidate),
+    ]
+    for attempt in attempts:
+        try:
+            return json.loads(attempt, strict=False)
+        except Exception:
+            continue
+    return None
+
+
+def _is_protocol_dict(value: Any) -> bool:
+    if not isinstance(value, dict):
+        return False
+    return bool(set(value.keys()) & _PROTOCOL_JSON_KEYS)
+
+
+def _coerce_to_protocol_dict(value: Any) -> dict[str, Any] | None:
+    if _is_protocol_dict(value):
+        return value
+    if isinstance(value, list) and value and all(
+        isinstance(item, dict)
+        and any(k in item for k in ("action_type", "action", "tool", "payload"))
+        for item in value
+    ):
+        return {"proposals": value}
+    return None
+
+
+def _extract_candidates_from_dict(parsed: dict[str, Any]) -> list[RawProposalCandidate]:
+    raw_proposals = parsed.get("proposals")
+    if not isinstance(raw_proposals, list):
+        raw_proposals = parsed.get("actions")
+    if not isinstance(raw_proposals, list):
+        if any(k in parsed for k in ("action_type", "action", "tool")):
+            raw_proposals = [parsed]
+        else:
+            raw_proposals = []
+
+    proposals: list[RawProposalCandidate] = []
+    for item in raw_proposals:
+        if not isinstance(item, dict):
+            continue
+        action_type = str(
+            item.get("action_type")
+            or item.get("action")
+            or item.get("tool")
+            or item.get("name")
+            or ""
+        ).strip()
+        if not action_type:
+            continue
+
+        if isinstance(item.get("payload"), dict):
+            raw_payload = dict(item["payload"])
+        elif isinstance(item.get("parameters"), dict):
+            raw_payload = dict(item["parameters"])
+        elif isinstance(item.get("arguments"), dict):
+            raw_payload = dict(item["arguments"])
+        else:
+            raw_payload = {
+                k: v
+                for k, v in item.items()
+                if k
+                not in (
+                    "action_type",
+                    "action",
+                    "tool",
+                    "name",
+                    "title",
+                    "label",
+                    "explanation",
+                    "description",
+                    "reason",
+                    "payload",
+                    "parameters",
+                    "arguments",
+                )
+            }
+
+        cleaned_payload = {k: v for k, v in raw_payload.items() if v is not None}
+        raw_title = str(item.get("title") or item.get("label") or "").strip()
+        if len(raw_title) < 2:
+            raw_title = "Proposition IA"
+        raw_explanation = str(
+            item.get("explanation") or item.get("description") or item.get("reason") or ""
+        ).strip()
+        if len(raw_explanation) < 2:
+            raw_explanation = "Soumise à validation."
+
+        proposals.append(
+            RawProposalCandidate(
+                action_type=action_type,
+                title=_sanitize_ai_reply_dashes(raw_title[:180]),
+                explanation=_sanitize_ai_reply_dashes(raw_explanation[:1000]),
+                payload=cleaned_payload,
+            )
+        )
+    return proposals
+
+
+def _strip_residual_protocol_json(text: str) -> str:
+    """Supprime tout bloc de code JSON résiduel ou objet JSON technique du texte affiché."""
+    if not text:
+        return ""
+
+    def _replace_fence(match: re.Match[str]) -> str:
+        inner = match.group(1) or ""
+        if _PROTOCOL_JSON_MARKERS_RE.search(inner):
+            return ""
+        return match.group(0)
+
+    cleaned = re.sub(r"```(?:json)?\s*([\s\S]*?)```", _replace_fence, text, flags=re.IGNORECASE)
+    # Si un bloc ```json non refermé (tronqué) contenant des clés protocolaires subsiste en fin de message
+    unclosed_m = re.search(r"```(?:json)?\s*([\s\S]*)$", cleaned, flags=re.IGNORECASE)
+    if unclosed_m and _PROTOCOL_JSON_MARKERS_RE.search(unclosed_m.group(1)):
+        cleaned = cleaned[: unclosed_m.start()]
+    return cleaned.strip()
+
+
 def _parse_llm_json_output(
     raw_text: str,
     context: BoundedUserContext,
     provider_name: str,
     model_name: str,
 ) -> ProviderResult:
-    cleaned = raw_text.strip()
-    if cleaned.startswith("```"):
-        cleaned = re.sub(r"^```(?:json)?\s*|\s*```$", "", cleaned, flags=re.DOTALL).strip()
-    try:
-        parsed = json.loads(cleaned)
-        if not isinstance(parsed, dict):
-            raise ValueError("Réponse JSON non objet.")
-        reply = _sanitize_ai_reply_dashes(str(parsed.get("reply") or "Voici ma synthèse.").strip())
-        raw_proposals = parsed.get("proposals")
-        proposals: list[RawProposalCandidate] = []
-        if isinstance(raw_proposals, list):
-            for item in raw_proposals:
-                if isinstance(item, dict) and "action_type" in item and "payload" in item:
-                    proposals.append(
-                        RawProposalCandidate(
-                            action_type=str(item.get("action_type", "")),
-                            title=_sanitize_ai_reply_dashes(str(item.get("title", "Proposition IA"))),
-                            explanation=_sanitize_ai_reply_dashes(
-                                str(item.get("explanation", "Soumise à validation."))
-                            ),
-                            payload=dict(item.get("payload") or {}),
-                        )
-                    )
-        missing = parsed.get("missing_data")
+    cleaned = (raw_text or "").strip()
+    if not cleaned:
+        return ProviderResult(
+            reply="Réponse générée.",
+            proposals=[],
+            is_estimate=context.is_partial_data,
+            missing_data=context.missing_data,
+            provider_name=provider_name,
+            model_name=model_name,
+        )
+
+    parsed_dict: dict[str, Any] | None = None
+    surrounding_prose = ""
+
+    # 1. Essai direct sur la totalité (avec ou sans fence englobant)
+    whole_candidate = cleaned
+    if whole_candidate.startswith("```") and whole_candidate.endswith("```"):
+        whole_candidate = re.sub(
+            r"^```(?:json)?\s*|\s*```$", "", whole_candidate, flags=re.DOTALL | re.IGNORECASE
+        ).strip()
+    parsed_dict = _coerce_to_protocol_dict(_try_load_json_any(whole_candidate))
+
+    # 2. Recherche de blocs ```json ... ``` intégrés au milieu ou à la fin d'un texte en prose
+    if parsed_dict is None:
+        fence_pattern = re.compile(r"```(?:json)?\s*([\s\S]*?)```", re.IGNORECASE)
+        matches = list(fence_pattern.finditer(cleaned))
+        for m in reversed(matches):
+            cand_dict = _coerce_to_protocol_dict(_try_load_json_any(m.group(1)))
+            if cand_dict is not None:
+                parsed_dict = cand_dict
+                surrounding_prose = (cleaned[: m.start()] + "\n\n" + cleaned[m.end() :]).strip()
+                break
+
+    # 3. Recherche d'un objet JSON non entouré de ``` dans le texte via raw_decode(strict=False)
+    if parsed_dict is None:
+        decoder = json.JSONDecoder(strict=False)
+        for m in re.finditer(r"[\{\[]", cleaned):
+            start_idx = m.start()
+            snippet = cleaned[start_idx:]
+            if not _PROTOCOL_JSON_MARKERS_RE.search(snippet):
+                continue
+            try:
+                obj, end_offset = decoder.raw_decode(snippet)
+            except Exception:
+                try:
+                    fixed_snippet = re.sub(r",\s*([}\]])", r"\1", snippet)
+                    obj, end_offset = decoder.raw_decode(fixed_snippet)
+                except Exception:
+                    continue
+            cand_dict = _coerce_to_protocol_dict(obj)
+            if cand_dict is not None:
+                parsed_dict = cand_dict
+                end_idx = start_idx + end_offset
+                before = re.sub(r"```(?:json)?\s*$", "", cleaned[:start_idx], flags=re.IGNORECASE)
+                after = re.sub(r"^\s*```", "", cleaned[end_idx:])
+                surrounding_prose = (before + "\n\n" + after).strip()
+                break
+
+    # 4. Récupération de secours si le JSON est malformé ou tronqué (ex. guillemets non échappés dans "reply")
+    if parsed_dict is None and _PROTOCOL_JSON_MARKERS_RE.search(cleaned):
+        recovered_dict: dict[str, Any] = {}
+        reply_m = re.search(
+            r'"reply"\s*:\s*"([\s\S]*?)"\s*,\s*"(?:is_estimate|missing_data|proposals)"',
+            cleaned,
+        )
+        if not reply_m:
+            reply_m = re.search(r'"reply"\s*:\s*"((?:[^"\\]|\\.)*)"', cleaned)
+        if reply_m:
+            raw_reply_val = reply_m.group(1)
+            try:
+                recovered_dict["reply"] = json.loads(f'"{raw_reply_val}"', strict=False)
+            except Exception:
+                recovered_dict["reply"] = (
+                    raw_reply_val.replace("\\n", "\n").replace('\\"', '"').replace("\\t", "\t")
+                )
+
+        prop_m = re.search(r'"proposals"\s*:\s*(\[[\s\S]*\])', cleaned)
+        if prop_m:
+            decoder = json.JSONDecoder(strict=False)
+            arr_text = prop_m.group(1)
+            for candidate_arr in (arr_text, re.sub(r",\s*([}\]])", r"\1", arr_text)):
+                try:
+                    arr_obj, _ = decoder.raw_decode(candidate_arr)
+                    if isinstance(arr_obj, list):
+                        recovered_dict["proposals"] = arr_obj
+                        break
+                except Exception:
+                    continue
+
+        if recovered_dict:
+            parsed_dict = recovered_dict
+            first_json_pos = cleaned.find("```")
+            if first_json_pos == -1:
+                first_json_pos = cleaned.find("{")
+            if first_json_pos > 0:
+                surrounding_prose = cleaned[:first_json_pos].strip()
+
+    if parsed_dict is not None:
+        json_reply = str(
+            parsed_dict.get("reply")
+            or parsed_dict.get("response")
+            or parsed_dict.get("message")
+            or parsed_dict.get("assistant_message")
+            or ""
+        ).strip()
+
+        proposals = _extract_candidates_from_dict(parsed_dict)
+
+        # Si "reply" contenait lui-même un bloc JSON de propositions imbriqué
+        if json_reply and _PROTOCOL_JSON_MARKERS_RE.search(json_reply):
+            nested_fence = re.search(r"```(?:json)?\s*([\s\S]*?)```", json_reply, re.IGNORECASE)
+            if nested_fence:
+                nested_dict = _coerce_to_protocol_dict(_try_load_json_any(nested_fence.group(1)))
+                if nested_dict is not None and not proposals:
+                    proposals = _extract_candidates_from_dict(nested_dict)
+            json_reply = _strip_residual_protocol_json(json_reply)
+
+        clean_surrounding = _strip_residual_protocol_json(surrounding_prose)
+        if clean_surrounding and json_reply:
+            if json_reply in clean_surrounding:
+                combined_reply = clean_surrounding
+            elif clean_surrounding in json_reply:
+                combined_reply = json_reply
+            else:
+                combined_reply = f"{clean_surrounding}\n\n{json_reply}"
+        else:
+            combined_reply = json_reply or clean_surrounding or "Voici ma synthèse."
+
+        reply = _sanitize_ai_reply_dashes(combined_reply.strip() or "Voici ma synthèse.")
+        missing = parsed_dict.get("missing_data")
         missing_list = (
             [str(x) for x in missing]
             if isinstance(missing, list)
             else list(context.missing_data)
         )
-        is_estimate = bool(parsed.get("is_estimate", context.is_partial_data))
+        is_estimate = bool(parsed_dict.get("is_estimate", context.is_partial_data))
         return ProviderResult(
             reply=reply,
             proposals=proposals,
@@ -2443,15 +2694,16 @@ def _parse_llm_json_output(
             provider_name=provider_name,
             model_name=model_name,
         )
-    except Exception:
-        return ProviderResult(
-            reply=_sanitize_ai_reply_dashes(raw_text.strip()) or "Réponse générée.",
-            proposals=[],
-            is_estimate=context.is_partial_data,
-            missing_data=context.missing_data,
-            provider_name=provider_name,
-            model_name=model_name,
-        )
+
+    fallback_reply = _strip_residual_protocol_json(cleaned)
+    return ProviderResult(
+        reply=_sanitize_ai_reply_dashes(fallback_reply) or "Voici ma synthèse.",
+        proposals=[],
+        is_estimate=context.is_partial_data,
+        missing_data=context.missing_data,
+        provider_name=provider_name,
+        model_name=model_name,
+    )
 
 
 RIVER_DEFAULT_BASE_URL = "https://api.river.ai/v1"

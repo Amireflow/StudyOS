@@ -261,17 +261,12 @@ export function IntelligentPlanStudio({ onClose, onApplied }: IntelligentPlanStu
       aria-label="Moteur intelligent de planification"
       className="space-y-4 rounded-2xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900"
     >
-      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-zinc-200 pb-4 dark:border-zinc-800">
-        <div>
-          <div className="flex items-center gap-2">
-            <h2 className="text-base font-bold text-zinc-900 dark:text-zinc-100">
-              Programme intelligent d&apos;apprentissage
-            </h2>
-            <Badge variant="primary">Multi-sources</Badge>
-          </div>
-          <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-            Analyse vos cours fixes, indisponibilités personnelles, objectifs, parcours, tâches en retard et historique sans surcharge.
-          </p>
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-200 pb-3 dark:border-zinc-800">
+        <div className="flex items-center gap-2">
+          <h2 className="text-base font-bold text-zinc-900 dark:text-zinc-100">
+            Programme intelligent
+          </h2>
+          <Badge variant="primary">Multi-sources</Badge>
         </div>
         <Button type="button" variant="ghost" size="sm" onClick={onClose}>
           <Icon icon={Cancel01Icon} size={15} />
@@ -309,7 +304,7 @@ export function IntelligentPlanStudio({ onClose, onApplied }: IntelligentPlanStu
       <div className="space-y-3 rounded-xl border border-zinc-200 bg-zinc-50/70 p-4 dark:border-zinc-800 dark:bg-zinc-950/40">
         <div className="flex items-center justify-between gap-2">
           <h3 className="text-xs font-semibold uppercase tracking-wide text-zinc-700 dark:text-zinc-300">
-            Règles de disponibilité &amp; d&apos;indisponibilité
+            Disponibilités &amp; indisponibilités
           </h3>
           <span className="text-xs text-zinc-500">{rules.length} règle(s) active(s)</span>
         </div>
@@ -477,7 +472,7 @@ export function IntelligentPlanStudio({ onClose, onApplied }: IntelligentPlanStu
                   {currentPlan.load_summary.weekly_planned_minutes} / {currentPlan.load_summary.weekly_cap_minutes} min
                 </span>
               </div>
-              <p className="text-xs text-zinc-700 dark:text-zinc-300">{currentPlan.rationale}</p>
+              <p className="line-clamp-2 text-xs text-zinc-700 dark:text-zinc-300">{currentPlan.rationale}</p>
             </div>
 
             {currentPlan.status === 'proposed' && (
@@ -528,7 +523,7 @@ export function IntelligentPlanStudio({ onClose, onApplied }: IntelligentPlanStu
                         </span>
                       </div>
                     </div>
-                    <p className="mt-1.5 text-xs text-zinc-600 dark:text-zinc-300">{sess.rationale}</p>
+                    <p className="mt-1.5 line-clamp-2 text-xs text-zinc-600 dark:text-zinc-300">{sess.rationale}</p>
                     {sess.pedagogical_content.exercises_focus.length > 0 && (
                       <p className="mt-1 text-[11px] text-zinc-500 dark:text-zinc-400">
                         Activités ciblées : {sess.pedagogical_content.exercises_focus.join(' · ')}

@@ -337,7 +337,7 @@ export function PlanningPage() {
       >
         {/* Ligne 1 : Navigation semaine + bascule Agenda / Grille */}
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="inline-flex items-center gap-0.5 rounded-xl bg-zinc-100 p-1 sm:gap-1 dark:bg-zinc-800/80">
+          <div className="inline-flex min-w-0 max-w-full items-center gap-0.5 rounded-xl bg-zinc-100 p-1 sm:gap-1 dark:bg-zinc-800/80">
             <Button
               type="button"
               variant="ghost"
@@ -464,7 +464,7 @@ export function PlanningPage() {
         </div>
 
         {/* Ligne 3 : Bandeau interactif des 7 jours */}
-        <div className="grid grid-cols-7 gap-1.5">
+        <div className="grid grid-cols-7 gap-1 sm:gap-1.5">
           {weekDays.map((day) => {
             const dayKey = toLocalDateKey(day);
             const isToday = dayKey === todayKey;
@@ -487,7 +487,7 @@ export function PlanningPage() {
                   setSelectedDayKey((prev) => (prev === dayKey ? null : dayKey));
                 }}
                 className={cn(
-                  'flex flex-col items-center justify-center rounded-xl py-2 transition-colors',
+                  'flex min-w-0 flex-col items-center justify-center rounded-xl px-0.5 py-2 transition-colors',
                   isSelected
                     ? 'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900'
                     : isToday

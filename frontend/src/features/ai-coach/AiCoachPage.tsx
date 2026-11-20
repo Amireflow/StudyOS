@@ -117,6 +117,70 @@ const THINKING_STEPS: Array<{ label: string; detail: string }> = [
   },
 ];
 
+const PROTOCOL_JSON_MARKER_RE =
+  /"(?:reply|proposals|action_type|is_estimate|missing_data|create_missing_courses|apply_immediately|replace_future_planned)"\s*:/i;
+
+function cleanAssistantReplyText(rawContent: string): string {
+  const trimmed = (rawContent ?? '').trim();
+  if (!trimmed) return '';
+  if (!PROTOCOL_JSON_MARKER_RE.test(trimmed)) return trimmed;
+
+  // 1. Si tout le message est un objet JSON (entouré ou non de ```json)
+  let candidate = trimmed;
+  if (candidate.startsWith('```') && candidate.endsWith('```')) {
+    candidate = candidate
+      .replace(/^```(?:json)?\s*/i, '')
+      .replace(/\s*```$/, '')
+      .trim();
+  }
+  if (candidate.startsWith('{')) {
+    try {
+      const parsed = JSON.parse(candidate) as Record<string, unknown>;
+      const replyVal =
+        parsed.reply ?? parsed.response ?? parsed.message ?? parsed.assistant_message;
+      if (typeof replyVal === 'string' && replyVal.trim()) {
+        return cleanAssistantReplyText(replyVal.trim());
+      }
+    } catch {
+      const replyMatch =
+        candidate.match(
+          /"reply"\s*:\s*"([\s\S]*?)"\s*,\s*"(?:is_estimate|missing_data|proposals)"/i,
+        ) ?? candidate.match(/"reply"\s*:\s*"((?:[^"\\]|\\.)*)"/i);
+      if (replyMatch?.[1]) {
+        return replyMatch[1]
+          .replace(/\\n/g, '\n')
+          .replace(/\\"/g, '"')
+          .replace(/\\t/g, '\t')
+          .trim();
+      }
+    }
+  }
+
+  // 2. Si un bloc ```json protocolaire est présent dans ou à la fin du message
+  let extractedFromFence = '';
+  const withoutFences = trimmed
+    .replace(/```(?:json)?\s*([\s\S]*?)```/gi, (full, inner: string) => {
+      if (!PROTOCOL_JSON_MARKER_RE.test(inner)) return full;
+      try {
+        const parsed = JSON.parse(inner.trim()) as Record<string, unknown>;
+        const replyVal =
+          parsed.reply ?? parsed.response ?? parsed.message ?? parsed.assistant_message;
+        if (typeof replyVal === 'string' && replyVal.trim()) {
+          extractedFromFence = replyVal.trim();
+        }
+      } catch {
+        // Bloc technique malformé : on le retire de l'affichage
+      }
+      return '';
+    })
+    .trim();
+
+  if (withoutFences && extractedFromFence && !withoutFences.includes(extractedFromFence)) {
+    return `${withoutFences}\n\n${extractedFromFence}`;
+  }
+  return withoutFences || extractedFromFence || 'Voici ma synthèse.';
+}
+
 function StreamingAssistantContent({
   content,
   isStreaming,
@@ -126,15 +190,16 @@ function StreamingAssistantContent({
   isStreaming: boolean;
   onComplete: () => void;
 }) {
-  const [revealedCount, setRevealedCount] = useState(() => (isStreaming ? 0 : content.length));
+  const safeContent = useMemo(() => cleanAssistantReplyText(content), [content]);
+  const [revealedCount, setRevealedCount] = useState(() => (isStreaming ? 0 : safeContent.length));
 
   useEffect(() => {
     if (!isStreaming) {
-      setRevealedCount(content.length);
+      setRevealedCount(safeContent.length);
       return;
     }
 
-    const total = content.length;
+    const total = safeContent.length;
     if (total === 0) {
       onComplete();
       return;
@@ -146,7 +211,7 @@ function StreamingAssistantContent({
 
     const timer = window.setInterval(() => {
       current = Math.min(total, current + stepChars);
-      while (current < total && !/\s/.test(content[current])) {
+      while (current < total && !/\s/.test(safeContent[current])) {
         current += 1;
       }
       setRevealedCount(current);
@@ -159,15 +224,15 @@ function StreamingAssistantContent({
     return () => {
       window.clearInterval(timer);
     };
-  }, [content, isStreaming, onComplete]);
+  }, [safeContent, isStreaming, onComplete]);
 
-  if (!isStreaming || revealedCount >= content.length) {
-    return <MarkdownContent content={content} />;
+  if (!isStreaming || revealedCount >= safeContent.length) {
+    return <MarkdownContent content={safeContent} />;
   }
 
   return (
     <div className="space-y-2">
-      <MarkdownContent content={content.slice(0, revealedCount)} />
+      <MarkdownContent content={safeContent.slice(0, revealedCount)} />
       <div className="flex items-center justify-between gap-2 pt-0.5">
         <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-teal-700 dark:text-teal-400">
           <span className="h-1.5 w-1.5 animate-ping rounded-full bg-teal-600 dark:bg-teal-400" />
@@ -176,7 +241,7 @@ function StreamingAssistantContent({
         <button
           type="button"
           onClick={() => {
-            setRevealedCount(content.length);
+            setRevealedCount(safeContent.length);
             onComplete();
           }}
           className="text-[11px] font-medium text-zinc-500 underline hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200"
@@ -219,6 +284,8 @@ export function AiCoachPage() {
   const [proposalFilter, setProposalFilter] = useState<ProposalFilter>('all');
   const [railTab, setRailTab] = useState<RailTab>('proposals');
   const [mobileView, setMobileView] = useState<MobileView>('chat');
+  const [isDesktopRailDismissed, setIsDesktopRailDismissed] = useState(false);
+  const [isDesktopRailForcedOpen, setIsDesktopRailForcedOpen] = useState(false);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [isToolsOpen, setIsToolsOpen] = useState(false);
   const [isMemoryOpen, setIsMemoryOpen] = useState(false);
@@ -296,6 +363,20 @@ export function AiCoachPage() {
     [activeConversationId, conversations],
   );
 
+  const isDesktopRailVisible = useMemo(() => {
+    if (isDesktopRailForcedOpen) return true;
+    if (isDesktopRailDismissed) return false;
+    return proposals.length > 0 || railTab === 'reports';
+  }, [isDesktopRailDismissed, isDesktopRailForcedOpen, proposals.length, railTab]);
+
+  const prevProposalsLenRef = useRef(proposals.length);
+  useEffect(() => {
+    if (proposals.length > prevProposalsLenRef.current) {
+      setIsDesktopRailDismissed(false);
+    }
+    prevProposalsLenRef.current = proposals.length;
+  }, [proposals.length]);
+
   useEffect(() => {
     if (!isSending) {
       setThinkingStepIndex(0);
@@ -357,6 +438,7 @@ export function AiCoachPage() {
       const ok = await sendMessage(trimmed, [selectedScope]);
       if (ok) {
         setRailTab('proposals');
+        setIsDesktopRailDismissed(false);
       } else {
         awaitingStreamAfterSendRef.current = false;
         setPromptText(trimmed);
@@ -402,6 +484,8 @@ export function AiCoachPage() {
       if (ok) {
         setRailTab('reports');
         setMobileView('rail');
+        setIsDesktopRailDismissed(false);
+        setIsDesktopRailForcedOpen(true);
       }
     } finally {
       setIsGeneratingBriefing(false);
@@ -416,6 +500,8 @@ export function AiCoachPage() {
       if (ok) {
         setRailTab('reports');
         setMobileView('rail');
+        setIsDesktopRailDismissed(false);
+        setIsDesktopRailForcedOpen(true);
       }
     } finally {
       setIsGeneratingWeekly(false);
@@ -431,86 +517,87 @@ export function AiCoachPage() {
   }
 
   return (
-    <div className="space-y-3 sm:space-y-5">
-      {/* En-tête studio */}
-      <header className="flex flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2.5">
-            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-teal-700 text-white sm:h-9 sm:w-9 dark:bg-teal-600">
-              <Icon icon={AiChat02Icon} size={17} />
-            </div>
-            <div className="min-w-0">
-              <h1 className="text-lg font-semibold tracking-tight text-zinc-900 sm:text-xl dark:text-zinc-100">
-                Copilote
-              </h1>
-              {activeConversation && (
-                <p className="truncate text-xs text-zinc-500 dark:text-zinc-400">
-                  {activeConversation.title}
-                </p>
-              )}
-            </div>
+    <div className="space-y-3">
+      {/* Barre supérieure compacte & sans distraction */}
+      <header className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-zinc-200/70 bg-white px-3.5 py-2.5 shadow-2xs sm:px-4 dark:border-zinc-800/80 dark:bg-zinc-900">
+        <div className="flex min-w-0 items-center gap-2.5">
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-teal-700 text-white dark:bg-teal-600">
+            <Icon icon={AiChat02Icon} size={16} />
+          </div>
+          <div className="flex min-w-0 items-center gap-2">
+            <h1 className="text-base font-semibold tracking-tight text-zinc-900 dark:text-zinc-100">
+              Copilote
+            </h1>
+            {activeConversation && (
+              <span className="hidden max-w-[200px] truncate rounded-lg bg-zinc-100 px-2 py-0.5 text-xs text-zinc-600 sm:inline-block md:max-w-[260px] dark:bg-zinc-800 dark:text-zinc-400">
+                {activeConversation.title}
+              </span>
+            )}
           </div>
         </div>
 
-        <div className="no-scrollbar flex items-center gap-1.5 overflow-x-auto pb-0.5 sm:flex-wrap sm:overflow-visible sm:pb-0">
+        <div className="no-scrollbar flex items-center gap-1 overflow-x-auto">
           <Button
             type="button"
             variant="primary"
             size="sm"
-            className="shrink-0"
+            className="h-8 shrink-0 px-2.5 text-xs"
             onClick={() => void handleNewConversation()}
           >
-            <Icon icon={MessageAdd01Icon} size={15} />
+            <Icon icon={MessageAdd01Icon} size={14} />
             Nouvelle conversation
           </Button>
 
           {conversations.length > 0 && (
             <Button
               type="button"
-              variant={isHistoryOpen ? 'primary' : 'secondary'}
+              variant={isHistoryOpen ? 'primary' : 'ghost'}
               size="sm"
-              className="shrink-0"
+              className="h-8 shrink-0 px-2.5 text-xs"
               aria-label="Historique des conversations"
               aria-expanded={isHistoryOpen}
               onClick={() => {
                 setIsHistoryOpen((prev) => !prev);
                 setIsToolsOpen(false);
+                setIsMemoryOpen(false);
               }}
             >
-              <Icon icon={HistoryIcon} size={15} />
+              <Icon icon={HistoryIcon} size={14} />
               Historique
             </Button>
           )}
 
+          <div className="mx-0.5 hidden h-4 w-px bg-zinc-200 sm:block dark:bg-zinc-800" />
+
           <Button
             type="button"
-            variant="secondary"
+            variant="ghost"
             size="sm"
-            className="shrink-0"
+            className="h-8 shrink-0 px-2.5 text-xs"
             isLoading={isGeneratingBriefing}
             onClick={() => void handleGenerateBriefing()}
           >
-            <Icon icon={File02Icon} size={15} />
+            <Icon icon={File02Icon} size={14} />
             Briefing du jour
           </Button>
 
           <Button
             type="button"
-            variant="secondary"
+            variant="ghost"
             size="sm"
-            className="shrink-0"
+            className="h-8 shrink-0 px-2.5 text-xs"
             isLoading={isGeneratingWeekly}
             onClick={() => void handleGenerateWeekly()}
           >
-            <Icon icon={File02Icon} size={15} />
+            <Icon icon={File02Icon} size={14} />
             Bilan hebdo
           </Button>
 
           <Button
             type="button"
-            variant={isMemoryOpen ? 'primary' : 'secondary'}
+            variant={isMemoryOpen ? 'primary' : 'ghost'}
             size="sm"
-            className="shrink-0"
+            className="h-8 shrink-0 px-2.5 text-xs"
             aria-expanded={isMemoryOpen}
             onClick={() => {
               setIsMemoryOpen((prev) => !prev);
@@ -518,7 +605,7 @@ export function AiCoachPage() {
               setIsToolsOpen(false);
             }}
           >
-            <Icon icon={SparklesIcon} size={15} />
+            <Icon icon={SparklesIcon} size={14} />
             Mémoire IA
           </Button>
 
@@ -526,7 +613,7 @@ export function AiCoachPage() {
             type="button"
             variant={isToolsOpen ? 'primary' : 'ghost'}
             size="sm"
-            className="shrink-0"
+            className="h-8 shrink-0 px-2.5 text-xs"
             aria-expanded={isToolsOpen}
             onClick={() => {
               setIsToolsOpen((prev) => !prev);
@@ -534,9 +621,37 @@ export function AiCoachPage() {
               setIsMemoryOpen(false);
             }}
           >
-            <Icon icon={SlidersHorizontalIcon} size={15} />
+            <Icon icon={SlidersHorizontalIcon} size={14} />
             Outils ({tools.length})
           </Button>
+
+          {(proposals.length > 0 || reports.length > 0) && (
+            <button
+              type="button"
+              onClick={() => {
+                if (isDesktopRailVisible) {
+                  setIsDesktopRailDismissed(true);
+                  setIsDesktopRailForcedOpen(false);
+                } else {
+                  setIsDesktopRailDismissed(false);
+                  setIsDesktopRailForcedOpen(true);
+                }
+              }}
+              className={cn(
+                'hidden h-8 shrink-0 items-center gap-1.5 rounded-xl px-2.5 text-xs font-medium transition-colors lg:inline-flex',
+                isDesktopRailVisible
+                  ? 'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900'
+                  : 'bg-zinc-100 text-zinc-700 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-300',
+              )}
+            >
+              <span>Panneau</span>
+              {pendingProposalsCount > 0 && (
+                <span className="rounded-full bg-amber-400/90 px-1.5 py-0.2 text-[10px] font-bold text-zinc-950">
+                  {pendingProposalsCount}
+                </span>
+              )}
+            </button>
+          )}
         </div>
       </header>
 
@@ -620,7 +735,7 @@ export function AiCoachPage() {
               </h2>
               <span className="inline-flex items-center gap-1 rounded-full bg-teal-50 px-2.5 py-0.5 text-xs font-medium text-teal-800 dark:bg-teal-950/50 dark:text-teal-300">
                 <Icon icon={ShieldCheckIcon} size={13} />
-                Validation requise avant toute action
+                Validation requise
               </span>
             </div>
             <div className="flex items-center gap-2">
@@ -651,7 +766,7 @@ export function AiCoachPage() {
                     {tool.access === 'read' ? 'Lecture' : 'Proposition'}
                   </Badge>
                 </div>
-                <p className="mt-1 text-xs leading-relaxed text-zinc-600 dark:text-zinc-400">
+                <p className="mt-1 line-clamp-1 text-xs leading-relaxed text-zinc-600 dark:text-zinc-400">
                   {tool.description}
                 </p>
               </div>
@@ -666,14 +781,9 @@ export function AiCoachPage() {
           className="rounded-2xl bg-white p-4 dark:bg-zinc-900"
         >
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-            <div>
-              <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
-                Mémoire personnelle & préférences d’autonomie
-              </h2>
-              <p className="text-xs text-zinc-500 dark:text-zinc-400">
-                Informations conservées pour personnaliser chaque planification sans tout redemander.
-              </p>
-            </div>
+            <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+              Mémoire IA
+            </h2>
             <Button type="button" variant="ghost" size="sm" onClick={() => setIsMemoryOpen(false)}>
               Fermer
             </Button>
@@ -682,10 +792,10 @@ export function AiCoachPage() {
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl bg-zinc-50 px-3 py-2.5 dark:bg-zinc-800/70">
             <div className="space-y-0.5">
               <p className="text-xs font-semibold text-zinc-900 dark:text-zinc-100">
-                Exécuter directement les actions simples demandées
+                Exécution directe des actions simples
               </p>
               <p className="text-[11px] text-zinc-600 dark:text-zinc-400">
-                Les créations multi-étapes, suppressions et validations de compétences restent toujours soumises à confirmation.
+                Créations complexes et validations soumises à confirmation.
               </p>
             </div>
             <Button
@@ -725,11 +835,11 @@ export function AiCoachPage() {
                 htmlFor="memory-constraints"
                 className="mb-1 block text-xs font-medium text-zinc-700 dark:text-zinc-300"
               >
-                Contraintes (séparées par virgule)
+                Contraintes
               </label>
               <Input
                 id="memory-constraints"
-                placeholder="Ex : Pas le dimanche, Cours L3 matin"
+                placeholder="Ex : Pas le dimanche"
                 value={memoryConstraintsDraft}
                 onChange={(e) => setMemoryConstraintsDraft(e.target.value)}
               />
@@ -744,17 +854,17 @@ export function AiCoachPage() {
               </label>
               <Input
                 id="memory-goals"
-                placeholder="Ex : Stage Fullstack React & Python"
+                placeholder="Ex : Stage Fullstack"
                 value={memoryGoalsDraft}
                 onChange={(e) => setMemoryGoalsDraft(e.target.value)}
               />
             </div>
 
             <div className="flex flex-wrap items-center justify-between gap-2 sm:col-span-3">
-              <div className="text-[11px] text-zinc-500 dark:text-zinc-400">
+              <div className="min-w-0 flex-1 line-clamp-1 text-[11px] text-zinc-500 dark:text-zinc-400">
                 {aiMemory.recentDecisions.length > 0
                   ? `Dernière décision mémorisée : ${aiMemory.recentDecisions[0]?.summary ?? ''}`
-                  : 'Aucune décision stratégique récente enregistrée.'}
+                  : 'Aucune décision récente.'}
               </div>
               <Button type="submit" variant="primary" size="sm" isLoading={isSavingMemory}>
                 Enregistrer la mémoire
@@ -838,51 +948,63 @@ export function AiCoachPage() {
         </button>
       </nav>
 
-      {/* Studio 2 colonnes : flux de conversation + panneau latéral unique */}
-      <div className="grid grid-cols-1 gap-4 sm:gap-5 lg:grid-cols-12 lg:items-start">
-        {/* Colonne gauche : fil de discussion & compositeur */}
+      {/* Studio adaptatif : pleine largeur sans distraction par défaut, tiroir contextuel à droite si actif */}
+      <div className="grid grid-cols-1 gap-3.5 lg:grid-cols-12 lg:items-start">
+        {/* Flux de discussion & compositeur */}
         <section
           aria-label="Fil de discussion du copilote"
           className={cn(
-            'flex-col overflow-hidden rounded-2xl bg-white lg:col-span-7 lg:min-h-[600px] dark:bg-zinc-900',
+            'min-w-0 flex-col overflow-hidden rounded-2xl border border-zinc-200/70 bg-white shadow-2xs lg:min-h-[640px] dark:border-zinc-800/80 dark:bg-zinc-900',
+            isDesktopRailVisible ? 'lg:col-span-7' : 'lg:col-span-12',
             mobileView === 'chat' ? 'flex' : 'hidden lg:flex',
           )}
         >
           <ScrollArea
             className={cn(
               'flex-1',
-              (messages.length > 0 || isSending) && 'max-h-[48dvh] sm:max-h-[60dvh]',
+              (messages.length > 0 || isSending) && 'max-h-[54dvh] sm:max-h-[64dvh]',
             )}
-            viewportClassName="space-y-4 p-3.5 sm:space-y-5 sm:p-6"
+            viewportClassName="p-4 sm:p-6"
           >
             {messages.length === 0 && !isSending ? (
-              <div className="py-2 sm:py-6">
-                <div className="max-w-lg">
+              <div className="mx-auto flex max-w-2xl flex-col justify-center py-6 sm:py-12">
+                <div className="text-center">
+                  <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-2xl bg-teal-50 text-teal-700 dark:bg-teal-950/60 dark:text-teal-400">
+                    <Icon icon={SparklesIcon} size={20} />
+                  </div>
                   <h2 className="text-base font-semibold tracking-tight text-zinc-900 sm:text-lg dark:text-zinc-100">
                     Que souhaitez-vous organiser ?
                   </h2>
+                  <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+                    Planification, création de cours, priorisation ou suivi de compétences.
+                  </p>
                 </div>
 
-                <div className="mt-3 grid grid-cols-1 gap-2 sm:mt-4 sm:grid-cols-2">
+                <div className="mt-5 grid grid-cols-1 gap-2 sm:grid-cols-2">
                   {STARTER_PROMPTS.map((item) => (
                     <button
                       key={item.title}
                       type="button"
                       onClick={() => handleUseStarterPrompt(item.prompt)}
-                      className="flex items-center gap-2.5 rounded-2xl bg-zinc-50 p-2.5 text-left transition-colors hover:bg-zinc-100 sm:gap-3 sm:p-3 dark:bg-zinc-800/70 dark:hover:bg-zinc-800"
+                      className="flex items-center gap-3 rounded-xl border border-zinc-200/70 bg-zinc-50/60 p-3 text-left transition-all hover:border-teal-600/40 hover:bg-white hover:shadow-2xs dark:border-zinc-800 dark:bg-zinc-800/50 dark:hover:border-teal-500/40 dark:hover:bg-zinc-800"
                     >
-                      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-white text-teal-700 dark:bg-zinc-900 dark:text-teal-400">
+                      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-white text-teal-700 shadow-2xs dark:bg-zinc-900 dark:text-teal-400">
                         <Icon icon={item.icon} size={16} />
                       </span>
-                      <span className="truncate text-sm font-semibold text-zinc-900 dark:text-zinc-100">
-                        {item.title}
-                      </span>
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-xs font-semibold text-zinc-900 dark:text-zinc-100">
+                          {item.title}
+                        </p>
+                        <p className="truncate text-[11px] text-zinc-500 dark:text-zinc-400">
+                          {item.subtitle}
+                        </p>
+                      </div>
                     </button>
                   ))}
                 </div>
               </div>
             ) : (
-              <div className="space-y-5">
+              <div className="mx-auto w-full max-w-3xl space-y-6">
                 {messages.map((message) => {
                   const isUser = message.role === 'user';
                   const hasMissingData =
@@ -893,7 +1015,7 @@ export function AiCoachPage() {
                   if (isUser) {
                     return (
                       <div key={message.id} className="flex justify-end">
-                        <div className="max-w-[85%] rounded-2xl bg-zinc-900 px-4 py-3 text-sm leading-relaxed text-white dark:bg-zinc-100 dark:text-zinc-900">
+                        <div className="max-w-[82%] rounded-2xl rounded-tr-sm bg-zinc-900 px-4 py-2.5 text-sm leading-relaxed text-white shadow-2xs dark:bg-zinc-100 dark:text-zinc-900">
                           <p className="whitespace-pre-wrap">{message.content}</p>
                         </div>
                       </div>
@@ -902,33 +1024,39 @@ export function AiCoachPage() {
 
                   return (
                     <div key={message.id} className="flex items-start gap-3">
-                      <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-xl bg-teal-50 text-teal-700 dark:bg-teal-950/50 dark:text-teal-400">
+                      <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-xl bg-teal-50 text-teal-700 dark:bg-teal-950/60 dark:text-teal-400">
                         <Icon icon={AiChat02Icon} size={15} />
                       </div>
-                      <div className="min-w-0 flex-1 space-y-2.5">
-                        <StreamingAssistantContent
-                          content={message.content}
-                          isStreaming={streamingMessageId === message.id}
-                          onComplete={() =>
-                            setStreamingMessageId((prev) => (prev === message.id ? null : prev))
-                          }
-                        />
+                      <div className="min-w-0 flex-1 space-y-2">
+                        <div className="text-sm leading-relaxed text-zinc-800 dark:text-zinc-200">
+                          <StreamingAssistantContent
+                            content={message.content}
+                            isStreaming={streamingMessageId === message.id}
+                            onComplete={() =>
+                              setStreamingMessageId((prev) => (prev === message.id ? null : prev))
+                            }
+                          />
+                        </div>
 
-                        {hasMissingData && (
-                          <div className="flex items-start gap-2 rounded-xl bg-amber-50/90 px-3 py-2 text-xs leading-relaxed text-amber-900 dark:bg-amber-950/35 dark:text-amber-200">
-                            <Icon icon={Alert02Icon} size={15} className="mt-0.5 shrink-0" />
-                            <div>
-                              <span className="font-semibold">Indication AI-06 : Données partielles :</span>{' '}
-                              {(message.metadata.missingData?.length ?? 0) > 0
-                                ? message.metadata.missingData?.join(' • ')
-                                : 'Réponse calculée à titre estimatif à partir des données disponibles.'}
-                            </div>
-                          </div>
-                        )}
+                        <div className="flex flex-wrap items-center gap-2 pt-0.5">
+                          <span className="text-[11px] text-zinc-400 dark:text-zinc-500">
+                            {formatDateTimeFr(message.createdAt)}
+                          </span>
 
-                        <p className="text-[11px] text-zinc-400 dark:text-zinc-500">
-                          {formatDateTimeFr(message.createdAt)}
-                        </p>
+                          {hasMissingData && (
+                            <details className="group inline-block">
+                              <summary className="inline-flex cursor-pointer list-none items-center gap-1 rounded-full bg-zinc-100 px-2 py-0.5 text-[11px] font-medium text-zinc-500 transition-colors hover:bg-zinc-200/70 dark:bg-zinc-800 dark:text-zinc-400">
+                                <Icon icon={Alert02Icon} size={12} className="shrink-0 text-amber-600 dark:text-amber-400" />
+                                <span>Indication AI-06 · Contexte partiel</span>
+                              </summary>
+                              <p className="mt-1.5 rounded-xl bg-zinc-50 px-3 py-2 text-[11px] leading-relaxed text-zinc-600 dark:bg-zinc-800/80 dark:text-zinc-300">
+                                {(message.metadata.missingData?.length ?? 0) > 0
+                                  ? message.metadata.missingData?.join(' • ')
+                                  : 'Réponse calculée à titre estimatif à partir des données disponibles.'}
+                              </p>
+                            </details>
+                          )}
+                        </div>
                       </div>
                     </div>
                   );
@@ -938,7 +1066,7 @@ export function AiCoachPage() {
                   pendingUserPrompt &&
                   !messages.some((m) => m.role === 'user' && m.content === pendingUserPrompt) && (
                     <div className="flex justify-end">
-                      <div className="max-w-[85%] rounded-2xl bg-zinc-900 px-4 py-3 text-sm leading-relaxed text-white dark:bg-zinc-100 dark:text-zinc-900">
+                      <div className="max-w-[82%] rounded-2xl rounded-tr-sm bg-zinc-900 px-4 py-2.5 text-sm leading-relaxed text-white shadow-2xs dark:bg-zinc-100 dark:text-zinc-900">
                         <p className="whitespace-pre-wrap">{pendingUserPrompt}</p>
                       </div>
                     </div>
@@ -956,7 +1084,7 @@ export function AiCoachPage() {
                       <Icon icon={SparklesIcon} size={14} className="relative" />
                     </div>
 
-                    <div className="min-w-0 flex-1 space-y-3 rounded-2xl bg-zinc-50/95 p-4 dark:bg-zinc-800/70">
+                    <div className="min-w-0 flex-1 space-y-2.5 rounded-2xl border border-zinc-200/60 bg-zinc-50/70 p-3.5 dark:border-zinc-800 dark:bg-zinc-800/50">
                       <div className="flex flex-wrap items-center justify-between gap-2">
                         <div className="flex items-center gap-2">
                           <span className="inline-flex items-center gap-1">
@@ -975,11 +1103,11 @@ export function AiCoachPage() {
                         )}
                       </div>
 
-                      <p className="text-xs leading-relaxed text-zinc-600 dark:text-zinc-300">
+                      <p className="text-xs text-zinc-600 dark:text-zinc-300">
                         {THINKING_STEPS[thinkingStepIndex].detail}
                       </p>
 
-                      <div className="grid grid-cols-1 gap-1.5 pt-0.5 sm:grid-cols-2">
+                      <div className="flex flex-wrap gap-1.5 pt-0.5">
                         {THINKING_STEPS.map((step, index) => {
                           const isDone = index < thinkingStepIndex;
                           const isCurrent = index === thinkingStepIndex;
@@ -987,7 +1115,7 @@ export function AiCoachPage() {
                             <div
                               key={step.label}
                               className={cn(
-                                'flex items-center gap-2 rounded-xl px-2.5 py-1.5 text-[11px] transition-colors',
+                                'inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-[11px] transition-colors',
                                 isCurrent
                                   ? 'bg-teal-50/90 font-semibold text-teal-900 dark:bg-teal-950/50 dark:text-teal-200'
                                   : isDone
@@ -996,9 +1124,9 @@ export function AiCoachPage() {
                               )}
                             >
                               {isDone ? (
-                                <Icon icon={CheckmarkCircle02Icon} size={13} className="shrink-0" />
+                                <Icon icon={CheckmarkCircle02Icon} size={12} className="shrink-0" />
                               ) : isCurrent ? (
-                                <span className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-teal-600 dark:bg-teal-400" />
+                                <span className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-teal-600 dark:bg-teal-400" />
                               ) : (
                                 <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-zinc-300 dark:bg-zinc-600" />
                               )}
@@ -1006,11 +1134,6 @@ export function AiCoachPage() {
                             </div>
                           );
                         })}
-                      </div>
-
-                      <div className="space-y-1.5 pt-1" aria-hidden="true">
-                        <div className="h-2 w-4/5 animate-pulse rounded-full bg-zinc-200/80 dark:bg-zinc-700/70" />
-                        <div className="h-2 w-3/5 animate-pulse rounded-full bg-zinc-200/60 dark:bg-zinc-700/50" />
                       </div>
                     </div>
                   </div>
@@ -1043,9 +1166,9 @@ export function AiCoachPage() {
             </div>
           )}
 
-          {/* Compositeur intégré */}
-          <form onSubmit={handleFormSubmit} className="p-3 pt-1.5 sm:px-6 sm:pb-6">
-            <div className="rounded-2xl bg-zinc-50 p-2.5 transition-colors focus-within:bg-zinc-100/90 sm:p-3 dark:bg-zinc-800/70 dark:focus-within:bg-zinc-800">
+          {/* Compositeur flottant centré */}
+          <form onSubmit={handleFormSubmit} className="border-t border-zinc-100 p-3 sm:px-6 sm:py-4 dark:border-zinc-800/70">
+            <div className="mx-auto w-full max-w-3xl rounded-2xl border border-zinc-200/80 bg-zinc-50/70 p-2.5 transition-all focus-within:border-teal-600/50 focus-within:bg-white focus-within:shadow-xs sm:p-3 dark:border-zinc-800 dark:bg-zinc-800/60 dark:focus-within:border-teal-500/50 dark:focus-within:bg-zinc-900">
               <label htmlFor="copilot-prompt" className="sr-only">
                 Votre message au Copilote
               </label>
@@ -1066,7 +1189,7 @@ export function AiCoachPage() {
                     aria-label="Périmètre du contexte transmis"
                     value={selectedScope}
                     onChange={(e) => setSelectedScope(e.target.value as AiContextScope)}
-                    className="h-8 shrink-0 rounded-xl bg-white px-2.5 text-xs font-medium text-zinc-700 focus-visible:outline-2 focus-visible:outline-teal-600 dark:bg-zinc-900 dark:text-zinc-200"
+                    className="min-h-7 max-w-[150px] shrink-0 truncate rounded-xl border border-zinc-200/70 bg-white px-2.5 py-1 text-xs font-medium text-zinc-700 focus-visible:outline-2 focus-visible:outline-teal-600 sm:max-w-none dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200"
                   >
                     {SCOPE_OPTIONS.map((scope) => (
                       <option key={scope.value} value={scope.value}>
@@ -1079,21 +1202,21 @@ export function AiCoachPage() {
                     type="button"
                     onClick={() => setIsTimetableImportOpen((prev) => !prev)}
                     className={cn(
-                      'inline-flex h-8 shrink-0 items-center gap-1.5 rounded-xl px-2.5 text-xs font-medium transition-colors',
+                      'inline-flex h-7 shrink-0 items-center gap-1.5 rounded-xl border px-2.5 text-xs font-medium transition-colors',
                       isTimetableImportOpen
-                        ? 'bg-teal-700 text-white dark:bg-teal-500 dark:text-zinc-950'
-                        : 'bg-white text-zinc-600 hover:text-zinc-900 dark:bg-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100',
+                        ? 'border-teal-700 bg-teal-700 text-white dark:border-teal-500 dark:bg-teal-500 dark:text-zinc-950'
+                        : 'border-zinc-200/70 bg-white text-zinc-600 hover:text-zinc-900 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100',
                     )}
                   >
-                    <Icon icon={Calendar03Icon} size={14} />
+                    <Icon icon={Calendar03Icon} size={13} />
                     Emploi du temps
                   </button>
 
                   <Link
                     to="/settings"
-                    className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-xl bg-white px-2.5 text-xs font-medium text-zinc-600 transition-colors hover:text-zinc-900 dark:bg-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
+                    className="inline-flex h-7 shrink-0 items-center gap-1.5 rounded-xl border border-zinc-200/70 bg-white px-2.5 text-xs font-medium text-zinc-600 transition-colors hover:text-zinc-900 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
                   >
-                    <Icon icon={Settings02Icon} size={14} />
+                    <Icon icon={Settings02Icon} size={13} />
                     Consignes
                   </Link>
                 </div>
@@ -1114,57 +1237,73 @@ export function AiCoachPage() {
           </form>
         </section>
 
-        {/* Colonne droite : actions proposées et synthèses (DOM unique) */}
+        {/* Tiroir contextuel droit : affiché uniquement lorsqu'utile ou ouvert */}
         <aside
           aria-label="Panneau d’actions et de synthèses"
           className={cn(
-            'flex-col gap-4 rounded-2xl bg-white p-4 sm:p-5 lg:col-span-5 dark:bg-zinc-900',
-            mobileView === 'rail' ? 'flex' : 'hidden lg:flex',
+            'min-w-0 flex-col gap-3.5 rounded-2xl border border-zinc-200/70 bg-white p-4 shadow-2xs sm:p-5 lg:col-span-5 dark:border-zinc-800/80 dark:bg-zinc-900',
+            mobileView === 'rail'
+              ? 'flex'
+              : isDesktopRailVisible
+                ? 'hidden lg:flex'
+                : 'hidden',
           )}
         >
           {/* Sélecteur de panneau desktop */}
-          <div
-            role="tablist"
-            aria-label="Onglets du panneau latéral"
-            className="hidden grid-cols-2 gap-1 rounded-xl bg-zinc-100 p-1 lg:grid dark:bg-zinc-800/80"
-          >
+          <div className="hidden items-center justify-between gap-2 lg:flex">
+            <div
+              role="tablist"
+              aria-label="Onglets du panneau latéral"
+              className="grid flex-1 grid-cols-2 gap-1 rounded-xl bg-zinc-100 p-1 dark:bg-zinc-800/80"
+            >
+              <button
+                type="button"
+                role="tab"
+                aria-selected={railTab === 'proposals'}
+                onClick={() => setRailTab('proposals')}
+                className={cn(
+                  'flex items-center justify-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors',
+                  railTab === 'proposals'
+                    ? 'bg-white text-zinc-900 shadow-2xs dark:bg-zinc-900 dark:text-zinc-100'
+                    : 'text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-200',
+                )}
+              >
+                <span>Actions</span>
+                {pendingProposalsCount > 0 && (
+                  <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800 dark:bg-amber-950/60 dark:text-amber-300">
+                    {pendingProposalsCount}
+                  </span>
+                )}
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={railTab === 'reports'}
+                onClick={() => setRailTab('reports')}
+                className={cn(
+                  'flex items-center justify-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors',
+                  railTab === 'reports'
+                    ? 'bg-white text-zinc-900 shadow-2xs dark:bg-zinc-900 dark:text-zinc-100'
+                    : 'text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-200',
+                )}
+              >
+                <span>Synthèses</span>
+                {reports.length > 0 && (
+                  <span className="rounded-full bg-zinc-200 px-1.5 py-0.5 text-[10px] font-semibold text-zinc-700 dark:bg-zinc-700 dark:text-zinc-200">
+                    {reports.length}
+                  </span>
+                )}
+              </button>
+            </div>
             <button
               type="button"
-              role="tab"
-              aria-selected={railTab === 'proposals'}
-              onClick={() => setRailTab('proposals')}
-              className={cn(
-                'flex items-center justify-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors',
-                railTab === 'proposals'
-                  ? 'bg-white text-zinc-900 dark:bg-zinc-900 dark:text-zinc-100'
-                  : 'text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-200',
-              )}
+              onClick={() => {
+                setIsDesktopRailDismissed(true);
+                setIsDesktopRailForcedOpen(false);
+              }}
+              className="rounded-xl px-2 py-1 text-xs font-medium text-zinc-500 hover:bg-zinc-100 hover:text-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
             >
-              <span>Actions</span>
-              {pendingProposalsCount > 0 && (
-                <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800 dark:bg-amber-950/60 dark:text-amber-300">
-                  {pendingProposalsCount}
-                </span>
-              )}
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={railTab === 'reports'}
-              onClick={() => setRailTab('reports')}
-              className={cn(
-                'flex items-center justify-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors',
-                railTab === 'reports'
-                  ? 'bg-white text-zinc-900 dark:bg-zinc-900 dark:text-zinc-100'
-                  : 'text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-200',
-              )}
-            >
-              <span>Synthèses</span>
-              {reports.length > 0 && (
-                <span className="rounded-full bg-zinc-200 px-1.5 py-0.5 text-[10px] font-semibold text-zinc-700 dark:bg-zinc-700 dark:text-zinc-200">
-                  {reports.length}
-                </span>
-              )}
+              Masquer
             </button>
           </div>
 

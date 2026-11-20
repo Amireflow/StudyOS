@@ -99,6 +99,7 @@ describe('ThemeContext et contrôles de thème', () => {
     expect(document.documentElement).toHaveClass('dark');
     expect(document.documentElement.dataset.theme).toBe('dark');
     expect(document.documentElement.style.colorScheme).toBe('dark');
+    expect(document.querySelector('meta[name="theme-color"]')?.getAttribute('content')).toBe('#09090b');
 
     act(() => {
       controller.setMatches(false);
@@ -108,6 +109,7 @@ describe('ThemeContext et contrôles de thème', () => {
     expect(document.documentElement).not.toHaveClass('dark');
     expect(document.documentElement.dataset.theme).toBe('light');
     expect(document.documentElement.style.colorScheme).toBe('light');
+    expect(document.querySelector('meta[name="theme-color"]')?.getAttribute('content')).toBe('#f5f5f3');
   });
 
   it('persiste la préférence dans localStorage et met à jour la classe .dark', async () => {

@@ -216,7 +216,7 @@ export function TasksPage() {
     <div className="space-y-3.5 sm:space-y-5">
       {/* En-tête */}
       <header className="flex flex-wrap items-center justify-between gap-2.5">
-        <div>
+        <div className="min-w-0">
           <h1 className="text-xl font-semibold tracking-tight text-zinc-900 sm:text-2xl dark:text-zinc-50">
             Tâches
           </h1>
@@ -442,41 +442,43 @@ export function TasksPage() {
         {!isCreating && !editingTask && (
           <form
             onSubmit={handleQuickAddSubmit}
-            className="flex items-center gap-1.5 rounded-xl bg-zinc-50 p-2 sm:gap-2 sm:p-2.5 dark:bg-zinc-800/70"
+            className="flex flex-col gap-2 rounded-xl bg-zinc-50 p-2 sm:flex-row sm:items-center sm:p-2.5 dark:bg-zinc-800/70"
           >
             <Input
               aria-label="Capture rapide de tâche"
               placeholder="Ajouter une tâche rapidement…"
               value={quickTitle}
               onChange={(e) => setQuickTitle(e.target.value)}
-              className="min-w-0 flex-1 bg-white dark:bg-zinc-900"
+              className="min-w-0 w-full flex-1 bg-white dark:bg-zinc-900"
             />
-            <Select
-              aria-label="Priorité de la tâche rapide"
-              value={quickPriority}
-              onChange={(e) => setQuickPriority(e.target.value as TaskPriority)}
-              className="w-24 shrink-0 bg-white px-2 text-xs sm:w-32 sm:px-3 sm:text-sm dark:bg-zinc-900"
-            >
-              <option value="normal">Normale</option>
-              <option value="high">Haute</option>
-              <option value="critical">Critique</option>
-              <option value="low">Basse</option>
-            </Select>
-            <Button
-              type="submit"
-              variant="primary"
-              size="sm"
-              className="shrink-0"
-              isLoading={isQuickSubmitting}
-              disabled={quickTitle.trim().length < 2 || isQuickSubmitting}
-            >
-              Ajouter
-            </Button>
+            <div className="flex items-center gap-2 sm:contents">
+              <Select
+                aria-label="Priorité de la tâche rapide"
+                value={quickPriority}
+                onChange={(e) => setQuickPriority(e.target.value as TaskPriority)}
+                className="min-w-0 flex-1 bg-white px-2.5 text-xs sm:w-32 sm:flex-none sm:px-3 sm:text-sm dark:bg-zinc-900"
+              >
+                <option value="normal">Normale</option>
+                <option value="high">Haute</option>
+                <option value="critical">Critique</option>
+                <option value="low">Basse</option>
+              </Select>
+              <Button
+                type="submit"
+                variant="primary"
+                size="sm"
+                className="shrink-0"
+                isLoading={isQuickSubmitting}
+                disabled={quickTitle.trim().length < 2 || isQuickSubmitting}
+              >
+                Ajouter
+              </Button>
+            </div>
           </form>
         )}
 
         <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-          <div className="relative">
+          <div className="relative min-w-0">
             <label htmlFor="filter-search" className="sr-only">
               Recherche
             </label>
@@ -495,8 +497,8 @@ export function TasksPage() {
             />
           </div>
 
-          <div className="grid grid-cols-3 gap-1.5 sm:contents">
-            <div>
+          <div className="grid grid-cols-2 gap-2 sm:contents">
+            <div className="min-w-0">
               <label htmlFor="filter-status" className="sr-only">
                 Filtrer par statut
               </label>
@@ -506,7 +508,7 @@ export function TasksPage() {
                 onChange={(e) =>
                   setFilters((prev) => ({ ...prev, status: e.target.value as TaskStatusFilter }))
                 }
-                className="px-2 text-xs sm:px-3 sm:text-sm"
+                className="px-2.5 text-xs sm:px-3 sm:text-sm"
               >
                 <option value="all">Tous les statuts</option>
                 <option value="active">Actives</option>
@@ -518,7 +520,7 @@ export function TasksPage() {
               </Select>
             </div>
 
-            <div>
+            <div className="min-w-0">
               <label htmlFor="filter-priority" className="sr-only">
                 Filtrer par priorité
               </label>
@@ -531,7 +533,7 @@ export function TasksPage() {
                     priority: e.target.value as 'all' | TaskPriority,
                   }))
                 }
-                className="px-2 text-xs sm:px-3 sm:text-sm"
+                className="px-2.5 text-xs sm:px-3 sm:text-sm"
               >
                 <option value="all">Toutes priorités</option>
                 <option value="critical">Critique</option>
@@ -541,7 +543,7 @@ export function TasksPage() {
               </Select>
             </div>
 
-            <div>
+            <div className="col-span-2 min-w-0 sm:col-span-1">
               <label htmlFor="filter-due" className="sr-only">
                 Filtrer par échéance
               </label>
@@ -551,7 +553,7 @@ export function TasksPage() {
                 onChange={(e) =>
                   setFilters((prev) => ({ ...prev, due: e.target.value as TaskDueFilter }))
                 }
-                className="px-2 text-xs sm:px-3 sm:text-sm"
+                className="px-2.5 text-xs sm:px-3 sm:text-sm"
               >
                 <option value="all">Toutes échéances</option>
                 <option value="overdue">En retard</option>
@@ -668,7 +670,7 @@ export function TasksPage() {
             return (
               <div
                 key={status}
-                className="flex flex-col gap-2.5 rounded-2xl bg-white p-4 dark:bg-zinc-900"
+                className="flex min-w-0 flex-col gap-2.5 rounded-2xl bg-white p-4 dark:bg-zinc-900"
               >
                 <div className="flex items-center justify-between gap-2 pb-1">
                   <div className="flex items-center gap-2">

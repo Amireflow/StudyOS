@@ -592,14 +592,14 @@ export function SettingsPage() {
             </h2>
           </div>
 
-          <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">
+          <div className="grid grid-cols-2 gap-2 min-[380px]:grid-cols-3 sm:grid-cols-6">
             {workspaceStats.map((item) => (
               <div
                 key={item.label}
-                className="rounded-xl bg-zinc-50/90 p-2.5 dark:bg-zinc-800/60"
+                className="min-w-0 rounded-xl bg-zinc-50/90 p-2.5 dark:bg-zinc-800/60"
               >
                 <div className="flex items-center gap-1 text-zinc-500 dark:text-zinc-400">
-                  <Icon icon={item.icon} size={12} />
+                  <Icon icon={item.icon} size={12} className="shrink-0" />
                   <span className="truncate text-[11px] font-medium">{item.label}</span>
                 </div>
                 <p className="mt-1 text-base font-semibold tabular-nums text-zinc-900 dark:text-zinc-50">
@@ -621,21 +621,21 @@ export function SettingsPage() {
         </h2>
 
         <div className="grid gap-3 sm:grid-cols-3">
-          <div className="rounded-xl bg-zinc-50/90 p-3 dark:bg-zinc-800/60">
+          <div className="min-w-0 rounded-xl bg-zinc-50/90 p-3 dark:bg-zinc-800/60">
             <p className="text-[11px] font-medium text-zinc-500 dark:text-zinc-400">API</p>
             <p className="mt-0.5 truncate font-mono text-xs text-zinc-800 dark:text-zinc-200">
               {env.VITE_API_BASE_URL}
             </p>
           </div>
 
-          <div className="rounded-xl bg-zinc-50/90 p-3 dark:bg-zinc-800/60">
+          <div className="min-w-0 rounded-xl bg-zinc-50/90 p-3 dark:bg-zinc-800/60">
             <p className="text-[11px] font-medium text-zinc-500 dark:text-zinc-400">Supabase</p>
             <p className="mt-0.5 truncate font-mono text-xs text-zinc-800 dark:text-zinc-200">
               {env.VITE_SUPABASE_URL}
             </p>
           </div>
 
-          <div className="rounded-xl bg-zinc-50/90 p-3 dark:bg-zinc-800/60">
+          <div className="min-w-0 rounded-xl bg-zinc-50/90 p-3 dark:bg-zinc-800/60">
             <p className="text-[11px] font-medium text-zinc-500 dark:text-zinc-400">
               Clé publique
             </p>

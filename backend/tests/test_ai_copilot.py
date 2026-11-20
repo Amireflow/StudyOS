@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from app.ai.context_builder import BoundedUserContext
 from app.ai.prompt_manager import PromptManager
-from app.ai.provider import ProviderResult
+from app.ai.provider import ProviderResult, _parse_llm_json_output
 from app.schemas.ai import RawProposalCandidate
 
 
@@ -203,3 +203,50 @@ def test_ai_daily_briefing_and_weekly_review_generation(
 
     # Isolation utilisateur B
     assert client.get("/api/v1/ai/reports", headers=user_b_headers).json() == []
+
+
+def test_parse_llm_json_output_extracts_fenced_and_multiline_json_without_leaking_json() -> None:
+    dummy_context = BoundedUserContext(
+        profile={},
+        included_scopes=["auto"],
+        is_partial_data=True,
+        missing_data=["Aucune tâche enregistrée."],
+    )
+    raw_llm_output = (
+        "J'ai analysé tes 8 cours importés et identifié tes créneaux libres.\n\n"
+        "```json\n"
+        "{\n"
+        '  "reply": "Voici ma recommandation pour organiser ta semaine autour de tes cours.",\n'
+        '  "is_estimate": true,\n'
+        '  "missing_data": ["Aucune tâche enregistrée."],\n'
+        '  "proposals": [\n'
+        "    {\n"
+        '      "action_type": "generate_learning_plan",\n'
+        '      "title": "Générer un programme sur les créneaux libres",\n'
+        '      "explanation": "Planifie tes séances sans chevaucher tes 8 cours universitaires.",\n'
+        '      "payload": {\n'
+        '        "horizon_days": null,\n'
+        '        "create_missing_courses": false,\n'
+        '        "apply_immediately": false,\n'
+        '        "replace_future_planned": false,\n'
+        '        "instruction": "Planifier uniquement sur les créneaux recommandés"\n'
+        "      }\n"
+        "    }\n"
+        "  ]\n"
+        "}\n"
+        "```"
+    )
+    parsed = _parse_llm_json_output(raw_llm_output, dummy_context, "river", "gpt-4o-mini")
+    assert "```" not in parsed.reply
+    assert "create_missing_courses" not in parsed.reply
+    assert "J'ai analysé tes 8 cours importés" in parsed.reply
+    assert "Voici ma recommandation" in parsed.reply
+    assert len(parsed.proposals) == 1
+    assert parsed.proposals[0].action_type == "generate_learning_plan"
+    assert parsed.proposals[0].payload == {
+        "create_missing_courses": False,
+        "apply_immediately": False,
+        "replace_future_planned": False,
+        "instruction": "Planifier uniquement sur les créneaux recommandés",
+    }
+

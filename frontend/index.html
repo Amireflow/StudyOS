@@ -2,7 +2,17 @@
 <html lang="fr">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#f5f5f3" />
+    <meta name="application-name" content="Amireflow" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="Amireflow" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="format-detection" content="telephone=no" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
     <title>Amireflow Study OS</title>
     <script>
       (function () {
@@ -18,6 +28,10 @@
           root.classList.toggle('dark', Boolean(isDark));
           root.dataset.theme = isDark ? 'dark' : 'light';
           root.style.colorScheme = isDark ? 'dark' : 'light';
+          var metaTheme = document.querySelector('meta[name="theme-color"]');
+          if (metaTheme) {
+            metaTheme.setAttribute('content', isDark ? '#09090b' : '#f5f5f3');
+          }
         } catch (_e) {
           // Ignore storage/matchMedia errors in restricted environments.
         }

@@ -357,7 +357,7 @@ export function DashboardPage() {
       {/* Grille asymétrique 12 colonnes */}
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-12 lg:items-start">
         {/* Colonne principale */}
-        <div className="space-y-5 lg:col-span-7">
+        <div className="min-w-0 space-y-5 lg:col-span-7">
           <PriorityHero
             activePriorityTitle={activePriorityTitle}
             activePriorityTaskId={activePriorityTaskId}
@@ -611,7 +611,7 @@ export function DashboardPage() {
         </div>
 
         {/* Colonne secondaire */}
-        <div className="space-y-5 lg:col-span-5">
+        <div className="min-w-0 space-y-5 lg:col-span-5">
           {/* Planning d'aujourd'hui */}
           <section
             aria-labelledby="dashboard-today-heading"

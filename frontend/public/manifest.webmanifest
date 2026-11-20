@@ -1,0 +1,73 @@
+{
+  "id": "/",
+  "name": "Amireflow Study OS",
+  "short_name": "Amireflow",
+  "description": "Copilote IA d'étude, planification intelligente, cours multi-niveaux et suivi de compétences.",
+  "lang": "fr",
+  "dir": "ltr",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
+  "orientation": "portrait-primary",
+  "background_color": "#f5f5f3",
+  "theme_color": "#f5f5f3",
+  "categories": ["education", "productivity"],
+  "prefer_related_applications": false,
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/maskable-icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Copilote IA",
+      "short_name": "Copilote",
+      "description": "Ouvrir le Copilote IA personnel",
+      "url": "/ai-coach",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" }]
+    },
+    {
+      "name": "Planning",
+      "short_name": "Planning",
+      "description": "Consulter l'emploi du temps et le programme",
+      "url": "/planning",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" }]
+    },
+    {
+      "name": "Tâches",
+      "short_name": "Tâches",
+      "description": "Gérer mes tâches et priorités",
+      "url": "/tasks",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" }]
+    },
+    {
+      "name": "Cours",
+      "short_name": "Cours",
+      "description": "Accéder à mes cours multi-niveaux",
+      "url": "/courses",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" }]
+    }
+  ]
+}

@@ -36,6 +36,11 @@ function getSystemPrefersDark(): boolean {
   }
 }
 
+export const THEME_CHROME_COLORS = {
+  light: '#f5f5f3',
+  dark: '#09090b',
+} as const;
+
 function applyThemeToDocument(resolved: ResolvedTheme): void {
   if (typeof document === 'undefined') {
     return;
@@ -44,6 +49,16 @@ function applyThemeToDocument(resolved: ResolvedTheme): void {
   root.classList.toggle('dark', resolved === 'dark');
   root.dataset.theme = resolved;
   root.style.colorScheme = resolved;
+
+  let metaTheme = document.querySelector('meta[name="theme-color"]');
+  if (!metaTheme && document.head) {
+    metaTheme = document.createElement('meta');
+    metaTheme.setAttribute('name', 'theme-color');
+    document.head.appendChild(metaTheme);
+  }
+  if (metaTheme) {
+    metaTheme.setAttribute('content', THEME_CHROME_COLORS[resolved]);
+  }
 }
 
 export function ThemeProvider({ children }: { children: ReactNode }) {

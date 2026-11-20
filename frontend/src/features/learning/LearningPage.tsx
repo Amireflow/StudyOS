@@ -398,7 +398,7 @@ export function LearningPage() {
               aria-label="Rechercher un parcours"
               type="search"
               value={searchQuery}
-              placeholder="Rechercher un parcours, module ou leçon…"
+              placeholder="Rechercher un parcours…"
               onChange={(e) => setSearchQuery(e.target.value)}
               className="pl-9"
             />

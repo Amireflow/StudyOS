@@ -396,7 +396,7 @@ export function CourseDetailView({ courseId }: CourseDetailViewProps) {
               aria-selected={activeTab === 'chapters'}
               onClick={() => setActiveTab('chapters')}
               className={cn(
-                'truncate rounded-xl px-2.5 py-1.5 text-xs font-semibold transition-colors sm:px-4 sm:py-2 cursor-pointer',
+                'min-w-0 truncate rounded-xl px-2 py-1.5 text-xs font-semibold transition-colors sm:px-4 sm:py-2 cursor-pointer',
                 activeTab === 'chapters'
                   ? 'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-950'
                   : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800',
@@ -411,7 +411,7 @@ export function CourseDetailView({ courseId }: CourseDetailViewProps) {
               aria-selected={activeTab === 'project'}
               onClick={() => setActiveTab('project')}
               className={cn(
-                'truncate rounded-xl px-2.5 py-1.5 text-xs font-semibold transition-colors sm:px-4 sm:py-2 cursor-pointer',
+                'min-w-0 truncate rounded-xl px-2 py-1.5 text-xs font-semibold transition-colors sm:px-4 sm:py-2 cursor-pointer',
                 activeTab === 'project'
                   ? 'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-950'
                   : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800',
@@ -426,7 +426,7 @@ export function CourseDetailView({ courseId }: CourseDetailViewProps) {
               aria-selected={activeTab === 'resources'}
               onClick={() => setActiveTab('resources')}
               className={cn(
-                'truncate rounded-xl px-2.5 py-1.5 text-xs font-semibold transition-colors sm:px-4 sm:py-2 cursor-pointer',
+                'min-w-0 truncate rounded-xl px-2 py-1.5 text-xs font-semibold transition-colors sm:px-4 sm:py-2 cursor-pointer',
                 activeTab === 'resources'
                   ? 'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-950'
                   : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800',

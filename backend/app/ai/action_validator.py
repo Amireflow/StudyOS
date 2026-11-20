@@ -129,6 +129,9 @@ class ActionValidator:
         _skip_fks: set[str] | None = None,
     ) -> dict[str, Any]:
         skip_fks = _skip_fks or set()
+        raw_payload = {
+            k: v for k, v in (raw_payload or {}).items() if v is not None
+        }
         try:
             if action_type == AiActionType.create_task:
                 model = CreateTaskProposalPayload.model_validate(raw_payload)

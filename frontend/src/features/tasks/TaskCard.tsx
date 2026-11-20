@@ -90,7 +90,7 @@ export function TaskCard({
           <div className="flex flex-wrap items-center gap-1.5">
             <h3
               className={cn(
-                'text-sm font-semibold leading-snug text-zinc-900 dark:text-zinc-50',
+                'break-words text-sm font-semibold leading-snug text-zinc-900 dark:text-zinc-50',
                 isClosed && 'line-through text-zinc-400 dark:text-zinc-500',
               )}
             >
@@ -100,21 +100,21 @@ export function TaskCard({
             {overdue && <Badge variant="danger">En retard</Badge>}
             {isPrimary && <Badge variant="primary">Priorité</Badge>}
             {linkedProjectName && (
-              <span className="inline-flex items-center gap-1 rounded-full bg-zinc-100 px-2 py-0.5 text-[11px] font-medium text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
-                <Icon icon={FolderKanbanIcon} size={12} />
-                {linkedProjectName}
+              <span className="inline-flex max-w-full min-w-0 items-center gap-1 rounded-full bg-zinc-100 px-2 py-0.5 text-[11px] font-medium text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
+                <Icon icon={FolderKanbanIcon} size={12} className="shrink-0" />
+                <span className="truncate">{linkedProjectName}</span>
               </span>
             )}
             {linkedModuleTitle && (
-              <span className="inline-flex items-center gap-1 rounded-full bg-zinc-100 px-2 py-0.5 text-[11px] font-medium text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
-                <Icon icon={BookOpen01Icon} size={12} />
-                {linkedModuleTitle}
+              <span className="inline-flex max-w-full min-w-0 items-center gap-1 rounded-full bg-zinc-100 px-2 py-0.5 text-[11px] font-medium text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
+                <Icon icon={BookOpen01Icon} size={12} className="shrink-0" />
+                <span className="truncate">{linkedModuleTitle}</span>
               </span>
             )}
           </div>
 
           {task.description && (
-            <p className="line-clamp-2 text-xs leading-relaxed text-zinc-600 dark:text-zinc-400">
+            <p className="line-clamp-2 break-words text-xs leading-relaxed text-zinc-600 dark:text-zinc-400">
               {task.description}
             </p>
           )}
