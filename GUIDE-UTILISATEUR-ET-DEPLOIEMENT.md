@@ -7,7 +7,7 @@ Ce guide synthétise l’utilisation quotidienne d’**Amireflow Study OS** (Par
 ## 1. Guide Utilisateur succinct (Parcours quotidiens)
 
 ### Parcours A — Démarrer sa journée (3 minutes)
-1. Connectez-vous sur `/login` (compte serveur JWT/Supabase ou mode local autonome).
+1. Connectez-vous ou créez votre compte sur `/login`.
 2. Sur le **Tableau de bord** (`/`), définissez ou vérifiez votre **Priorité principale** (liée à une tâche active ou à un projet prioritaire).
 3. Consultez la colonne **Planning d’aujourd’hui** et les **5 tâches actives les plus urgentes**.
 4. Optionnel : ouvrez le **Copilote IA** (`/ai-coach`) et cliquez sur **Briefing du jour**.
@@ -39,17 +39,18 @@ Ce guide synthétise l’utilisation quotidienne d’**Amireflow Study OS** (Par
 ### Architecture cible
 - **Base de données & Auth :** Supabase (PostgreSQL managé + Supabase Auth JWKS).
 - **Backend API :** Conteneur Docker Python 3.12 (`backend/Dockerfile`) déployé sur Render, Railway, Fly.io ou Google Cloud Run.
-- **Frontend SPA :** Build statique Vite (`frontend/dist` + `frontend/vercel.json`) déployé sur Vercel, Netlify ou Cloudflare Pages.
+- **Frontend SPA :** Build statique Vite (`frontend/dist`) déployé sur Render Static Site (via `render.yaml`), Vercel (`frontend/vercel.json`), Netlify (`netlify.toml`) ou Cloudflare Pages.
 - **Intégration continue (CI) :** GitHub Actions (`.github/workflows/ci.yml`) exécutant automatiquement Alembic (`upgrade head`, réversibilité `downgrade base -> upgrade head`), Pytest, TypeScript strict, Vitest et le build de production.
 
 ### Étape 1 — Préparer la base PostgreSQL (Supabase)
 1. Créez un projet Supabase et récupérez l’URL de connexion PostgreSQL (`postgresql+psycopg://...`), l’URL JWKS (`https://<PROJECT_REF>.supabase.co/auth/v1/.well-known/jwks.json`) et l’Issuer (`https://<PROJECT_REF>.supabase.co/auth/v1`).
-2. Exécutez les migrations Alembic (`0001` à `0010_personal_goals_planning`) :
+   - *Important pour Render :* Render émet ses connexions sortantes uniquement en **IPv4**. Avec Supabase, utilisez l’URL **Session Pooler** (port `5432`, hôte `*.pooler.supabase.com`) ou **Transaction Pooler** (port `6543`) plutôt que l’hôte direct `db.<ref>.supabase.co:5432` (IPv6-first).
+2. Exécutez les migrations Alembic (`0001` à `0013_schedule_event_links`) :
    ```bash
    cd backend
    DATABASE_URL="postgresql+psycopg://..." python -m alembic upgrade head
    ```
-3. Appliquez les politiques Row-Level Security idempotentes (couvrant les 27 tables applicatives/auth ainsi que `alembic_version`) dans l’éditeur SQL Supabase en exécutant [backend/alembic/rls_supabase.sql](./backend/alembic/rls_supabase.sql) ou les migrations incrémentales dans [supabase/migrations/](./supabase/migrations/).
+3. Appliquez les politiques Row-Level Security idempotentes (couvrant les 30 tables applicatives/auth) dans l’éditeur SQL Supabase en exécutant [backend/alembic/rls_supabase.sql](./backend/alembic/rls_supabase.sql) ou les migrations incrémentales dans [supabase/migrations/](./supabase/migrations/).
 4. Vérifiez l’état de préparation avant bascule :
    ```bash
    cd backend
@@ -65,11 +66,12 @@ AI_KEY_ENCRYPTION_KEY=<cle-aes256-32-octets-base64-ou-hex>
 # Optionnel pour rotation sans coupure : AI_KEY_ENCRYPTION_FALLBACK_KEYS=k0:<ancienne_cle>
 ALLOW_LOCAL_DEV_AUTH=false
 ALLOW_INSECURE_LOCAL_AI_URL=false
-DATABASE_URL=postgresql+psycopg://postgres:PASSWORD@HOST:5432/postgres
+DATABASE_URL=postgresql+psycopg://postgres.PROJECT_REF:PASSWORD@aws-0-eu-west-3.pooler.supabase.com:5432/postgres
 AUTH_JWKS_URL=https://PROJECT_REF.supabase.co/auth/v1/.well-known/jwks.json
 AUTH_ISSUER=https://PROJECT_REF.supabase.co/auth/v1
 AUTH_AUDIENCE=authenticated
-AUTH_COOKIE_SAMESITE=lax
+# Utilisez "none" si frontend et backend sont sur des domaines distincts (*.onrender.com), ou "lax" sur le même domaine racine
+AUTH_COOKIE_SAMESITE=none
 FRONTEND_ORIGIN=https://votre-domaine-frontend.app
 AI_PROVIDER=local
 # Optionnel : AI_PROVIDER=openai ou gemini, AI_API_KEY=..., AI_MODEL=...
@@ -85,6 +87,30 @@ VITE_SUPABASE_ANON_KEY=votre-cle-publique-anon-supabase
 ```
 Commande de build : `npm ci && npm run build` (répertoire de sortie : `frontend/dist`).
 
+### Étape 4 — Déploiement sur Render (Blueprint `render.yaml`)
+Le fichier [render.yaml](./render.yaml) provisionne en une fois les deux services :
+- `amireflow-study-os-api` (Web Service Docker, région `frankfurt`, `rootDir: backend`, `healthCheckPath: /health`).
+- `amireflow-study-os-web` (Static Site CDN, `rootDir: frontend`, Node `22`, réécriture SPA `/* -> /index.html`).
+
+1. **Créer le Blueprint** : dans Render Dashboard, cliquez sur **New → Blueprint**, sélectionnez le dépôt GitHub `AmireflowStudyOS` (branche `main`) et laissez Render détecter [render.yaml](./render.yaml).
+2. **Renseigner les variables synchronisées manuellement (`sync: false`)** :
+   - Générer une clé AES-256-GCM 32 octets pour `AI_KEY_ENCRYPTION_KEY` :
+     ```bash
+     python -c "import secrets; print('k1:' + secrets.token_hex(32))"
+     ```
+   - Sur `amireflow-study-os-api` : `DATABASE_URL` (Session/Transaction Pooler Supabase en IPv4 ou PostgreSQL Render managé), `AI_KEY_ENCRYPTION_KEY`, `FRONTEND_ORIGIN` (laissez une URL temporaire si besoin au 1er déploiement puis mettez l’URL finale exacte du frontend sans slash final).
+   - Sur `amireflow-study-os-web` : `VITE_API_BASE_URL` = `<URL_HTTPS_API>/api/v1` (ex. `https://amireflow-study-os-api.onrender.com/api/v1`). *Note : `VITE_*` est injecté au build — relancez **Manual Deploy** sur `amireflow-study-os-web` si vous modifiez `VITE_API_BASE_URL` après le premier déploiement.*
+3. **Finaliser le câblage CORS** : vérifiez que `FRONTEND_ORIGIN` sur l’API correspond exactement à l’URL HTTPS publique du Static Site (et inversement que `VITE_API_BASE_URL` pointe vers l’API publique), sans slash final.
+4. **Spécificités du plan Render Free** :
+   - *Mise en veille (cold start)* : le service Docker Free se met en veille après ~15 min d’inactivité et redémarre en ~30–50 s à la première requête HTTP.
+   - *Migrations Alembic* : le plan Free ne supporte pas `preDeployCommand` ; `backend/Dockerfile` exécute `python -m alembic upgrade head` automatiquement au démarrage du conteneur avant Uvicorn.
+   - *Cookies de session (`refresh_token` HttpOnly)* : `AUTH_COOKIE_SAMESITE=none` + `Secure` est configuré dans `render.yaml` pour les sous-domaines distincts `*.onrender.com`. Pour éviter tout blocage des cookies tiers sur Safari/Brave, associez un domaine personnalisé commun (ex. `app.votredomaine.com` et `api.votredomaine.com`) puis passez `AUTH_COOKIE_SAMESITE=lax`.
+5. **Checklist de validation post-déploiement** :
+   - `GET https://<votre-api>.onrender.com/` → `200` `{"service": "Amireflow Study OS API", "status": "ok", "health": "/health"}`.
+   - `GET https://<votre-api>.onrender.com/health` → `200` `{"status": "ok", "env": "production", "database": "ok"}`.
+   - Dans le Shell Render du service API : `python scripts/verify_cloud_config.py` → révision Alembic `0013_schedule_event_links` et `30/30` tables.
+   - Ouvrir `https://<votre-web>.onrender.com/login` (et tester un rechargement direct sur `/tasks` ou `/planning` pour valider le rewrite SPA), créer/connecter un compte, puis rafraîchir la page (`F5`).
+
 ---
 
 ## 3. Sauvegarde & Restauration de la base de données (CdC §9)
@@ -98,4 +124,4 @@ pg_dump --format=custom --no-owner --no-privileges "$DATABASE_URL" --file="backu
 ```bash
 pg_restore --clean --if-exists --no-owner --no-privileges --dbname="$RESTORE_DATABASE_URL" "backup_amireflow_YYYYMMDD.dump"
 ```
-Après restauration, vérifiez l’état de la révision Alembic (`python -m alembic current` → `0010_personal_goals_planning (head)`) et l’endpoint de santé `GET /health` (`database: ok`).
+Après restauration, vérifiez l’état de la révision Alembic (`python -m alembic current` → `0013_schedule_event_links (head)`) et l’endpoint de santé `GET /health` (`database: ok`).

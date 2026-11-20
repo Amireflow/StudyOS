@@ -59,7 +59,6 @@ function capitalizeFirst(value: string): string {
 export function PlanningPage() {
   const {
     scheduleEvents,
-    dataMode,
     isLoading,
     error,
     mutationError,
@@ -69,7 +68,6 @@ export function PlanningPage() {
     updateScheduleEvent,
     deleteScheduleEvent,
     duplicateWeekEvents,
-    loadDemoData,
   } = useStudyStore();
 
   const [weekStart, setWeekStart] = useState<Date>(() => getMondayOfWeek(new Date()));
@@ -661,19 +659,6 @@ export function PlanningPage() {
               >
                 Importer mon emploi du temps
               </Button>
-              {dataMode === 'local_demo' && (
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => {
-                    loadDemoData();
-                    setFeedback('Données d’exemple chargées.');
-                  }}
-                >
-                  Charger des données d’exemple
-                </Button>
-              )}
             </div>
           }
         />

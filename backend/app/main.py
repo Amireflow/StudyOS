@@ -155,6 +155,14 @@ def create_app(
         )
         return response
 
+    @application.get("/", include_in_schema=False)
+    def service_root() -> dict[str, str]:
+        return {
+            "service": "Amireflow Study OS API",
+            "status": "ok",
+            "health": "/health",
+        }
+
     @application.get("/health", tags=["Santé"], summary="Vérifier la disponibilité de l'API")
     def health_check(request: Request) -> Response:
         engine = getattr(request.app.state, "db_engine", None)

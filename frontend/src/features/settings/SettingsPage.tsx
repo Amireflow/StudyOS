@@ -16,7 +16,7 @@ import { z } from 'zod';
 import { PageHeader } from '../../components/layout/PageHeader';
 import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
-import { FormField, InlineConfirm, Input, Select, Textarea } from '../../components/ui/FormFields';
+import { FormField, Input, Select, Textarea } from '../../components/ui/FormFields';
 import { Icon } from '../../components/ui/Icon';
 import {
   ErrorState,
@@ -130,7 +130,6 @@ export function SettingsPage() {
   const { session } = useAuth();
   const {
     profile,
-    dataMode,
     tasks,
     sessions,
     scheduleEvents,
@@ -140,8 +139,6 @@ export function SettingsPage() {
     clearMutationError,
     retry,
     updateProfile,
-    loadDemoData,
-    clearAllData,
   } = useStudyStore();
   const { paths, skills, projects } = useLearningStore();
 
@@ -244,16 +241,6 @@ export function SettingsPage() {
     } finally {
       setIsSaving(false);
     }
-  };
-
-  const handleLoadDemoData = () => {
-    loadDemoData();
-    setFeedback('Données de démonstration chargées dans l’espace de travail.');
-  };
-
-  const handleClearLocalData = () => {
-    clearAllData();
-    setFeedback('Données locales réinitialisées.');
   };
 
   if (isLoading) {
@@ -603,23 +590,6 @@ export function SettingsPage() {
             <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-50">
               Espace de travail
             </h2>
-            {dataMode === 'local_demo' && (
-              <div className="flex flex-wrap items-center gap-2">
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="sm"
-                  onClick={handleLoadDemoData}
-                >
-                  Charger des exemples
-                </Button>
-                <InlineConfirm
-                  triggerLabel="Réinitialiser"
-                  ariaLabel="Réinitialiser toutes les données locales"
-                  onConfirm={handleClearLocalData}
-                />
-              </div>
-            )}
           </div>
 
           <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">

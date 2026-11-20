@@ -135,3 +135,123 @@ def test_cors_allows_idempotency_key_and_rls_covers_all_tables(client: TestClien
     )
     orm_tables = set(Base.metadata.tables.keys())
     assert enabled_tables == orm_tables
+
+
+def test_root_endpoint_returns_service_metadata(client: TestClient) -> None:
+    response = client.get("/")
+    assert response.status_code == 200
+    assert response.json() == {
+        "service": "Amireflow Study OS API",
+        "status": "ok",
+        "health": "/health",
+    }
+
+
+def test_normalize_postgres_schemes_for_render_and_supabase() -> None:
+    from app.core.database import normalize_database_url
+
+    assert (
+        normalize_database_url("postgres://user:pass@host:5432/db")
+        == "postgresql+psycopg://user:pass@host:5432/db"
+    )
+    assert (
+        normalize_database_url("postgresql://user:pass@host:5432/db")
+        == "postgresql+psycopg://user:pass@host:5432/db"
+    )
+
+
+def test_render_production_app_dry_run_cors_and_docs_disabled(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    from app.core.config import Settings
+    from app.main import create_app
+
+    prod_app = create_app(
+        settings=Settings(
+            app_env="production",
+            allow_local_dev_auth=False,
+            allow_insecure_local_ai_url=False,
+            app_secret_key="render-production-secret-key-at-least-32-chars",
+            ai_key_encryption_key="k1:MDAxMTIyMzM0NDU1NjY3Nzg4OTlhYWJiY2NkZGVlZmY=",
+            auth_cookie_samesite="none",
+            auth_jwks_url="https://example.supabase.co/auth/v1/.well-known/jwks.json",
+            auth_issuer="https://example.supabase.co/auth/v1",
+            frontend_origin="https://amireflow-study-os-web.onrender.com",
+            database_url=f"sqlite:///{(tmp_path / 'render_prod.db').as_posix()}",
+        ),
+        auto_create_tables=False,
+    )
+    with TestClient(prod_app) as prod_client:
+        root_res = prod_client.get("/")
+        assert root_res.status_code == 200
+        assert root_res.json()["status"] == "ok"
+
+        health_res = prod_client.get("/health")
+        assert health_res.status_code == 200
+        assert health_res.json()["env"] == "production"
+        assert health_res.json()["database"] == "ok"
+
+        assert prod_client.get("/docs").status_code == 404
+
+        cors_res = prod_client.options(
+            "/api/v1/auth/login",
+            headers={
+                "Origin": "https://amireflow-study-os-web.onrender.com",
+                "Access-Control-Request-Method": "POST",
+                "Access-Control-Request-Headers": "authorization,content-type",
+            },
+        )
+        assert cors_res.status_code == 200
+        assert (
+            cors_res.headers.get("access-control-allow-origin")
+            == "https://amireflow-study-os-web.onrender.com"
+        )
+        assert cors_res.headers.get("access-control-allow-credentials") == "true"
+
+
+def test_render_blueprint_declares_api_and_static_spa() -> None:
+    from pathlib import Path
+
+    render_yaml = Path(__file__).resolve().parents[2] / "render.yaml"
+    content = render_yaml.read_text(encoding="utf-8")
+
+    try:
+        import yaml  # type: ignore[import-not-found]
+    except ImportError:
+        yaml = None
+
+    if yaml is not None:
+        parsed = yaml.safe_load(content)
+        services = {svc["name"]: svc for svc in parsed["services"]}
+        api = services["amireflow-study-os-api"]
+        assert api["runtime"] == "docker"
+        assert api["rootDir"] == "backend"
+        assert api["healthCheckPath"] == "/health"
+        assert "preDeployCommand" not in api
+        api_env = {item["key"]: item for item in api["envVars"]}
+        assert api_env["APP_ENV"]["value"] == "production"
+        assert api_env["ALLOW_LOCAL_DEV_AUTH"]["value"] == "false"
+        assert api_env["AUTH_COOKIE_SAMESITE"]["value"] == "none"
+
+        web = services["amireflow-study-os-web"]
+        assert web["runtime"] == "static"
+        assert web["rootDir"] == "frontend"
+        assert web["staticPublishPath"] == "./dist"
+        web_env = {item["key"]: item for item in web["envVars"]}
+        assert web_env["NODE_VERSION"]["value"] == "22"
+        assert web_env["VITE_API_BASE_URL"]["sync"] is False
+        assert any(
+            route.get("type") == "rewrite"
+            and route.get("source") == "/*"
+            and route.get("destination") == "/index.html"
+            for route in web["routes"]
+        )
+    else:
+        assert "name: amireflow-study-os-api" in content
+        assert "runtime: docker" in content
+        assert "healthCheckPath: /health" in content
+        assert "preDeployCommand" not in content
+        assert "name: amireflow-study-os-web" in content
+        assert "runtime: static" in content
+        assert "staticPublishPath: ./dist" in content
+        assert "destination: /index.html" in content
+        assert "key: NODE_VERSION" in content
+        assert "key: VITE_API_BASE_URL" in content

@@ -54,15 +54,6 @@ import { ProjectCard } from './ProjectCard';
 import { ProjectForm, type ProjectSubmitPayload } from './ProjectForm';
 import { PROJECT_STATUS_META } from './projectsSchema';
 import { UnifiedPlanPanel } from './UnifiedPlanPanel';
-import {
-  analyzeLocalConversationalIntake,
-  computeGoalScheduleMetrics,
-  createLocalPersonalGoal,
-  deleteLocalPersonalGoal,
-  generateLocalUnifiedPlan,
-  readLocalPersonalGoals,
-  updateLocalPersonalGoal,
-} from './objectivesLocalEngine';
 
 type ViewMode = 'list' | 'board';
 
@@ -131,19 +122,12 @@ export function ProjectsPage() {
   const {
     tasks,
     sessions,
-    scheduleEvents,
     activePriorityTitle,
     activePriorityProjectId,
     setActivePriority,
     createTask,
-    createScheduleEvent,
-    deleteScheduleEvent,
-    dataMode,
   } = useStudyStore();
 
-  const [rawLocalGoals, setRawLocalGoals] = useState<PersonalGoal[]>(() =>
-    readLocalPersonalGoals([]),
-  );
   const [statusFilter, setStatusFilter] = useState<'all' | ProjectStatus>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [viewMode, setViewMode] = useState<ViewMode>('list');
@@ -162,21 +146,15 @@ export function ProjectsPage() {
     enabled: isApiMode,
   });
 
-  const personalGoals = useMemo(() => {
-    if (isApiMode) {
-      return overviewQuery.data?.personalGoals ?? [];
-    }
-    return rawLocalGoals.map((g) => computeGoalScheduleMetrics(g, sessions));
-  }, [isApiMode, overviewQuery.data, rawLocalGoals, sessions]);
+  const personalGoals = useMemo(
+    () => (isApiMode ? (overviewQuery.data?.personalGoals ?? []) : []),
+    [isApiMode, overviewQuery.data],
+  );
 
-  const academicObligationsCount = useMemo(() => {
-    if (isApiMode && overviewQuery.data) {
-      return overviewQuery.data.academicObligations.length;
-    }
-    return scheduleEvents.filter(
-      (ev) => ev.type === 'course' || ev.source === 'timetable_import',
-    ).length;
-  }, [isApiMode, overviewQuery.data, scheduleEvents]);
+  const academicObligationsCount = useMemo(
+    () => (isApiMode ? (overviewQuery.data?.academicObligations.length ?? 0) : 0),
+    [isApiMode, overviewQuery.data],
+  );
 
   const refreshObjectivesQueries = async () => {
     await Promise.all([
@@ -188,10 +166,6 @@ export function ProjectsPage() {
       queryClient.invalidateQueries({ queryKey: ['schedule'] }),
       queryClient.invalidateQueries({ queryKey: ['tasks'] }),
     ]);
-  };
-
-  const refreshLocalGoals = () => {
-    setRawLocalGoals(readLocalPersonalGoals([]));
   };
 
   const summary = useMemo(() => {
@@ -273,17 +247,13 @@ export function ProjectsPage() {
   const handleProjectSubmit = async (payload: ProjectSubmitPayload) => {
     if (editingProject) {
       if (await updateProject(editingProject.id, payload)) {
-        if (activePriorityProjectId === editingProject.id) {
-          if (
-            dataMode === 'local_demo' &&
-            (payload.status === 'paused' ||
-              payload.status === 'completed' ||
-              payload.status === 'archived')
-          ) {
-            await setActivePriority(null, null, null);
-          } else if (payload.status !== 'paused' && payload.status !== 'completed' && payload.status !== 'archived') {
-            await setActivePriority(payload.name.trim(), null, editingProject.id);
-          }
+        if (
+          activePriorityProjectId === editingProject.id &&
+          payload.status !== 'paused' &&
+          payload.status !== 'completed' &&
+          payload.status !== 'archived'
+        ) {
+          await setActivePriority(payload.name.trim(), null, editingProject.id);
         }
         setFeedback(`Projet « ${payload.name} » mis à jour.`);
         setIsFormOpen(false);
@@ -308,13 +278,6 @@ export function ProjectsPage() {
       return;
     }
     if (await setProjectStatus(project.id, nextStatus)) {
-      if (
-        dataMode === 'local_demo' &&
-        activePriorityProjectId === project.id &&
-        (nextStatus === 'paused' || nextStatus === 'completed' || nextStatus === 'archived')
-      ) {
-        await setActivePriority(null, null, null);
-      }
       const label = PROJECT_STATUS_META[nextStatus].label.toLowerCase();
       setFeedback(`Projet « ${project.name} » passé à ${label}.`);
     }
@@ -327,9 +290,6 @@ export function ProjectsPage() {
   };
 
   const handleDeleteProject = async (project: Project) => {
-    if (activePriorityProjectId === project.id && dataMode === 'local_demo') {
-      await setActivePriority(null, null, null);
-    }
     if (await deleteProject(project.id)) {
       setFeedback(`Projet « ${project.name} » supprimé.`);
     }
@@ -372,41 +332,29 @@ export function ProjectsPage() {
   };
 
   const handleGoalSubmit = async (payload: PersonalGoalCreateInput) => {
-    if (isApiMode) {
-      if (editingGoal) {
-        await updatePersonalGoalApi(accessToken, editingGoal.id, payload);
-        setFeedback(`Objectif « ${payload.title} » mis à jour.`);
-      } else {
-        await createPersonalGoalApi(accessToken, payload);
-        setFeedback(`Objectif « ${payload.title} » créé et relié aux parcours.`);
-      }
-      await refreshObjectivesQueries();
-    } else {
-      if (editingGoal) {
-        updateLocalPersonalGoal(editingGoal.id, payload);
-        setFeedback(`Objectif « ${payload.title} » mis à jour.`);
-      } else {
-        createLocalPersonalGoal(payload);
-        setFeedback(`Objectif « ${payload.title} » créé hors emploi du temps universitaire.`);
-      }
-      if (payload.isPrimary) {
-        await setActivePriority(payload.title, null, null);
-      }
-      refreshLocalGoals();
+    if (!isApiMode) {
+      throw new Error('Connexion requise.');
     }
+    if (editingGoal) {
+      await updatePersonalGoalApi(accessToken, editingGoal.id, payload);
+      setFeedback(`Objectif « ${payload.title} » mis à jour.`);
+    } else {
+      await createPersonalGoalApi(accessToken, payload);
+      setFeedback(`Objectif « ${payload.title} » créé et relié aux parcours.`);
+    }
+    await refreshObjectivesQueries();
     setIsGoalFormOpen(false);
     setEditingGoal(null);
   };
 
   const handleToggleGoalPause = async (goal: PersonalGoal) => {
-    const nextStatus = goal.status === 'paused' ? 'active' : 'paused';
-    if (isApiMode) {
-      await updatePersonalGoalApi(accessToken, goal.id, { status: nextStatus });
-      await refreshObjectivesQueries();
-    } else {
-      updateLocalPersonalGoal(goal.id, { status: nextStatus });
-      refreshLocalGoals();
+    if (!isApiMode) {
+      setInlineWarning('Connexion requise.');
+      return;
     }
+    const nextStatus = goal.status === 'paused' ? 'active' : 'paused';
+    await updatePersonalGoalApi(accessToken, goal.id, { status: nextStatus });
+    await refreshObjectivesQueries();
     setFeedback(
       nextStatus === 'paused'
         ? `Objectif « ${goal.title} » suspendu.`
@@ -415,25 +363,22 @@ export function ProjectsPage() {
   };
 
   const handleSetGoalPriority = async (goal: PersonalGoal) => {
-    if (isApiMode) {
-      await updatePersonalGoalApi(accessToken, goal.id, { isPrimary: true });
-      await refreshObjectivesQueries();
-    } else {
-      updateLocalPersonalGoal(goal.id, { isPrimary: true });
-      await setActivePriority(goal.title, null, null);
-      refreshLocalGoals();
+    if (!isApiMode) {
+      setInlineWarning('Connexion requise.');
+      return;
     }
+    await updatePersonalGoalApi(accessToken, goal.id, { isPrimary: true });
+    await refreshObjectivesQueries();
     setFeedback(`Objectif « ${goal.title} » défini comme priorité principale.`);
   };
 
   const handleDeleteGoal = async (goal: PersonalGoal) => {
-    if (isApiMode) {
-      await deletePersonalGoalApi(accessToken, goal.id);
-      await refreshObjectivesQueries();
-    } else {
-      deleteLocalPersonalGoal(goal.id);
-      refreshLocalGoals();
+    if (!isApiMode) {
+      setInlineWarning('Connexion requise.');
+      return;
     }
+    await deletePersonalGoalApi(accessToken, goal.id);
+    await refreshObjectivesQueries();
     setFeedback(`Objectif « ${goal.title} » supprimé.`);
   };
 
@@ -441,10 +386,10 @@ export function ProjectsPage() {
     message: string,
     knownAnswers: Record<string, unknown>,
   ): Promise<ConversationalIntakeRecap> => {
-    if (isApiMode) {
-      return analyzeObjectivesIntakeApi(accessToken, { message, knownAnswers });
+    if (!isApiMode) {
+      throw new Error('Connexion requise.');
     }
-    return analyzeLocalConversationalIntake(message, knownAnswers);
+    return analyzeObjectivesIntakeApi(accessToken, { message, knownAnswers });
   };
 
   const handleConfirmIntake = async ({
@@ -454,99 +399,32 @@ export function ProjectsPage() {
     recap: ConversationalIntakeRecap;
     knownAnswers: Record<string, unknown>;
   }) => {
-    if (isApiMode) {
-      const res = await confirmObjectivesIntakeApi(accessToken, {
-        objectives: recap.objectives,
-        availableTimeWeeklyMinutes:
-          typeof knownAnswers.available_time_weekly_minutes === 'number'
-            ? knownAnswers.available_time_weekly_minutes
-            : recap.availableTimeWeeklyMinutes,
-        motivation:
-          typeof knownAnswers.motivation === 'string'
-            ? knownAnswers.motivation
-            : recap.motivation,
-        targetDate:
-          typeof knownAnswers.target_date === 'string'
-            ? knownAnswers.target_date
-            : recap.targetDate,
-        primaryTitle:
-          typeof knownAnswers.primary_title === 'string'
-            ? knownAnswers.primary_title
-            : null,
-      });
-      await refreshObjectivesQueries();
-      setFeedback(
-        `${res.createdGoals.length} objectif(s) et ${res.createdProjects.length} projet(s) enregistrés après confirmation.`,
-      );
-    } else {
-      const primaryTitle =
-        typeof knownAnswers.primary_title === 'string' ? knownAnswers.primary_title : null;
-      const weeklyMins =
+    if (!isApiMode) {
+      throw new Error('Connexion requise.');
+    }
+    const res = await confirmObjectivesIntakeApi(accessToken, {
+      objectives: recap.objectives,
+      availableTimeWeeklyMinutes:
         typeof knownAnswers.available_time_weekly_minutes === 'number'
           ? knownAnswers.available_time_weekly_minutes
-          : recap.availableTimeWeeklyMinutes ?? 120;
-      const motiv =
+          : recap.availableTimeWeeklyMinutes,
+      motivation:
         typeof knownAnswers.motivation === 'string'
           ? knownAnswers.motivation
-          : recap.motivation;
-      const targetDate =
+          : recap.motivation,
+      targetDate:
         typeof knownAnswers.target_date === 'string'
           ? knownAnswers.target_date
-          : recap.targetDate;
-      const currentLvl =
-        typeof knownAnswers.current_level === 'number' ? knownAnswers.current_level : null;
-      const targetLvl =
-        typeof knownAnswers.target_level === 'number' ? knownAnswers.target_level : null;
-
-      let activeProjCount = projects.filter((p) => p.status === 'active').length;
-      let createdGoalsCount = 0;
-      let createdProjectsCount = 0;
-
-      for (const candidate of recap.objectives) {
-        if (candidate.kind === 'project') {
-          const canActivate = activeProjCount < 3;
-          const ok = await createProject({
-            name: candidate.title,
-            goal: candidate.goal,
-            status: canActivate ? 'active' : 'planned',
-            priority: candidate.priority,
-            nextAction: candidate.nextAction || 'Définir le premier livrable',
-            deliverables: candidate.deliverables,
-            targetDate: targetDate ? targetDate.slice(0, 10) : undefined,
-          });
-          if (ok) {
-            createdProjectsCount += 1;
-            if (canActivate) activeProjCount += 1;
-          }
-        } else {
-          createLocalPersonalGoal({
-            title: candidate.title,
-            category: 'learning_goal',
-            goal: candidate.goal,
-            currentLevel: currentLvl ?? candidate.currentLevel,
-            targetLevel: targetLvl ?? candidate.targetLevel,
-            priority: candidate.priority,
-            isPrimary:
-              primaryTitle !== null &&
-              primaryTitle.toLowerCase() === candidate.title.toLowerCase(),
-            motivation: motiv,
-            targetDate,
-            weeklyTargetMinutes: weeklyMins,
-            deliverables: candidate.deliverables,
-            successCriteria: candidate.validationConditions,
-            nextAction: candidate.nextAction,
-          });
-          createdGoalsCount += 1;
-        }
-      }
-      if (primaryTitle) {
-        await setActivePriority(primaryTitle, null, null);
-      }
-      refreshLocalGoals();
-      setFeedback(
-        `${createdGoalsCount} objectif(s) et ${createdProjectsCount} projet(s) enregistrés après confirmation.`,
-      );
-    }
+          : recap.targetDate,
+      primaryTitle:
+        typeof knownAnswers.primary_title === 'string'
+          ? knownAnswers.primary_title
+          : null,
+    });
+    await refreshObjectivesQueries();
+    setFeedback(
+      `${res.createdGoals.length} objectif(s) et ${res.createdProjects.length} projet(s) enregistrés après confirmation.`,
+    );
     setIsIntakeOpen(false);
   };
 
@@ -554,19 +432,10 @@ export function ProjectsPage() {
     weeklyAvailableMinutes: number;
     primaryPriorityTitle: string | null;
   }): Promise<UnifiedPlan> => {
-    if (isApiMode) {
-      return generateUnifiedPlanApi(accessToken, {
-        weeklyAvailableMinutes: params.weeklyAvailableMinutes,
-        primaryPriorityTitle: params.primaryPriorityTitle,
-        includeDailyRecovery: true,
-      });
+    if (!isApiMode) {
+      throw new Error('Connexion requise.');
     }
-    return generateLocalUnifiedPlan({
-      goals: personalGoals,
-      projects,
-      tasks,
-      scheduleEvents,
-      sessions,
+    return generateUnifiedPlanApi(accessToken, {
       weeklyAvailableMinutes: params.weeklyAvailableMinutes,
       primaryPriorityTitle: params.primaryPriorityTitle,
       includeDailyRecovery: true,
@@ -574,78 +443,19 @@ export function ProjectsPage() {
   };
 
   const handleApplyPlan = async (plan: UnifiedPlan) => {
-    if (isApiMode) {
-      const res = await applyUnifiedPlanApi(accessToken, {
-        flexibleStudySlots: plan.flexibleStudySlots,
-        primaryPriorityTitle: plan.primaryPriorityTitle,
-        replaceExistingFlexibleWeek: true,
-        weekStart: plan.weekStart,
-      });
-      await refreshObjectivesQueries();
-      setFeedback(
-        `Programme validé : ${res.createdEventsCount} séance(s) planifiée(s) et ${res.linkedTasksCreatedCount} tâche(s) liée(s).`,
-      );
-    } else {
-      if (plan.primaryPriorityTitle) {
-        await setActivePriority(plan.primaryPriorityTitle, null, null);
-      }
-
-      // Déplacer ou remplacer d'anciens créneaux flexibles en conflit avec les cours ou les nouveaux blocs
-      const fixedAndNewRanges = [...plan.academicFixedSlots, ...plan.flexibleStudySlots].map(
-        (s) => ({
-          start: new Date(s.startsAt).getTime(),
-          end: new Date(s.endsAt).getTime(),
-        }),
-      );
-      for (const existing of scheduleEvents) {
-        const isFixed = existing.type === 'course' || existing.source === 'timetable_import';
-        if (isFixed) continue;
-        const eStart = new Date(existing.startsAt).getTime();
-        const eEnd = new Date(existing.endsAt).getTime();
-        if (fixedAndNewRanges.some((r) => eStart < r.end && r.start < eEnd)) {
-          await deleteScheduleEvent(existing.id);
-        }
-      }
-
-      const existingTaskTitles = new Set(tasks.map((t) => t.title.toLowerCase()));
-      let eventsCount = 0;
-      let tasksCount = 0;
-      for (const slot of plan.flexibleStudySlots) {
-        const createdEv = await createScheduleEvent({
-          title: slot.title,
-          type: slot.sourceCategory === 'project' ? 'project' : 'learning',
-          date: slot.localDate,
-          startTime: slot.localStartTime,
-          endTime: slot.localEndTime,
-          notes: `Résultat attendu : ${slot.expectedOutcome}`,
-        });
-        if (createdEv) eventsCount += 1;
-
-        if (!existingTaskTitles.has(slot.title.toLowerCase())) {
-          const createdTask = await createTask({
-            title: slot.title,
-            description: `Résultat attendu : ${slot.expectedOutcome}`,
-            priority:
-              plan.primaryPriorityTitle &&
-              slot.title.toLowerCase().includes(plan.primaryPriorityTitle.toLowerCase())
-                ? 'high'
-                : 'normal',
-            status: 'todo',
-            dueDate: slot.localDate,
-            projectId: slot.linkedProjectId ?? '',
-            moduleId: '',
-          });
-          if (createdTask) {
-            tasksCount += 1;
-            existingTaskTitles.add(slot.title.toLowerCase());
-          }
-        }
-      }
-
-      setFeedback(
-        `Programme unifié validé : ${eventsCount} créneau(x) flexible(s) ajouté(s) au planning et ${tasksCount} tâche(s) créée(s).`,
-      );
+    if (!isApiMode) {
+      throw new Error('Connexion requise.');
     }
+    const res = await applyUnifiedPlanApi(accessToken, {
+      flexibleStudySlots: plan.flexibleStudySlots,
+      primaryPriorityTitle: plan.primaryPriorityTitle,
+      replaceExistingFlexibleWeek: true,
+      weekStart: plan.weekStart,
+    });
+    await refreshObjectivesQueries();
+    setFeedback(
+      `Programme validé : ${res.createdEventsCount} séance(s) planifiée(s) et ${res.linkedTasksCreatedCount} tâche(s) liée(s).`,
+    );
     setIsUnifiedPlanOpen(false);
   };
 

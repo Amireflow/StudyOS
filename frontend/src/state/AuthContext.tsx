@@ -9,14 +9,11 @@ import {
   type ReactNode,
 } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
-import {
-  configureApiAuthHandlers,
-} from '../lib/api-client';
-import { STORAGE_KEYS } from '../lib/storage';
+import { configureApiAuthHandlers } from '../lib/api-client';
+import { purgeLegacyLocalBusinessStorage, STORAGE_KEYS } from '../lib/storage';
 import {
   changePasswordApi,
   loginAccountApi,
-  loginLocalApi,
   loginSupabasePasswordApi,
   logoutAllSessionsApi,
   logoutSessionApi,
@@ -24,22 +21,14 @@ import {
   registerAccountApi,
 } from '../lib/studyApi';
 
-export type AuthSession =
-  | {
-      mode: 'api';
-      accessToken: string;
-      userId: string;
-      email: string;
-      displayName: string;
-      authProvider?: 'password' | 'supabase' | 'local_dev';
-    }
-  | {
-      mode: 'local_demo';
-      accessToken: null;
-      userId: 'local-user';
-      email: 'local@amireflow.local';
-      displayName: string;
-    };
+export interface AuthSession {
+  mode: 'api';
+  accessToken: string;
+  userId: string;
+  email: string;
+  displayName: string;
+  authProvider?: 'password' | 'supabase' | 'local_dev';
+}
 
 export interface AuthContextValue {
   session: AuthSession | null;
@@ -53,9 +42,7 @@ export interface AuthContextValue {
     timezone?: string;
   }) => Promise<void>;
   loginAccount: (email: string, password: string) => Promise<void>;
-  loginLocalServer: (email: string, displayName?: string) => Promise<void>;
   loginSupabase: (email: string, password: string) => Promise<void>;
-  enterLocalDemoMode: (displayName?: string) => void;
   changePassword: (currentPassword: string, newPassword: string) => Promise<void>;
   logoutAllSessions: () => Promise<void>;
   updateSessionDisplayName: (displayName: string) => void;
@@ -66,12 +53,7 @@ export interface AuthContextValue {
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 function sanitizeStoredSession(): AuthSession | null {
-  // Aucun mode démo/local ou jeton d'accès n'est restauré depuis localStorage.
-  try {
-    window.localStorage.removeItem(STORAGE_KEYS.authSession);
-  } catch {
-    // Ignore les erreurs de stockage en navigation privée stricte.
-  }
+  purgeLegacyLocalBusinessStorage();
   return null;
 }
 
@@ -121,11 +103,7 @@ export function AuthProvider({ children, initialSession }: AuthProviderProps) {
     if (initialSession !== undefined) {
       return;
     }
-    try {
-      window.localStorage.removeItem(STORAGE_KEYS.authSession);
-    } catch {
-      // Ignore les erreurs de stockage en navigation privée stricte.
-    }
+    purgeLegacyLocalBusinessStorage();
     if (session?.mode === 'api' && session.authProvider !== 'supabase') {
       setApiSessionHint(true);
     }
@@ -198,24 +176,6 @@ export function AuthProvider({ children, initialSession }: AuthProviderProps) {
     [queryClient],
   );
 
-  const loginLocalServer = useCallback(
-    async (email: string, displayName?: string) => {
-      const cleanEmail = email.trim();
-      const result = await loginLocalApi(cleanEmail, displayName);
-      queryClient.clear();
-      setAuthMessage(null);
-      setSession({
-        mode: 'api',
-        accessToken: result.accessToken,
-        userId: result.profile.id,
-        email: result.email ?? cleanEmail.toLowerCase(),
-        displayName: result.profile.displayName,
-        authProvider: 'local_dev',
-      });
-    },
-    [queryClient],
-  );
-
   const loginSupabase = useCallback(
     async (email: string, password: string) => {
       const cleanEmail = email.trim();
@@ -229,21 +189,6 @@ export function AuthProvider({ children, initialSession }: AuthProviderProps) {
         email: cleanEmail.toLowerCase(),
         displayName: result.profile.displayName,
         authProvider: 'supabase',
-      });
-    },
-    [queryClient],
-  );
-
-  const enterLocalDemoMode = useCallback(
-    (displayName = 'Mode local') => {
-      queryClient.clear();
-      setAuthMessage(null);
-      setSession({
-        mode: 'local_demo',
-        accessToken: null,
-        userId: 'local-user',
-        email: 'local@amireflow.local',
-        displayName: displayName.trim() || 'Mode local',
       });
     },
     [queryClient],
@@ -280,6 +225,7 @@ export function AuthProvider({ children, initialSession }: AuthProviderProps) {
         });
       }
       setApiSessionHint(false);
+      purgeLegacyLocalBusinessStorage();
       queryClient.clear();
       setSession(null);
       setAuthMessage(reason ?? null);
@@ -314,6 +260,7 @@ export function AuthProvider({ children, initialSession }: AuthProviderProps) {
       },
       onSessionExpired: (reason?: string) => {
         setApiSessionHint(false);
+        purgeLegacyLocalBusinessStorage();
         queryClient.clear();
         setSession(null);
         setAuthMessage(reason ?? 'Votre session a expiré. Reconnectez-vous.');
@@ -333,6 +280,7 @@ export function AuthProvider({ children, initialSession }: AuthProviderProps) {
       }
     }
     setApiSessionHint(false);
+    purgeLegacyLocalBusinessStorage();
     queryClient.clear();
     setSession(null);
     setAuthMessage('Toutes vos sessions ont été déconnectées.');
@@ -358,9 +306,7 @@ export function AuthProvider({ children, initialSession }: AuthProviderProps) {
       authMessage,
       registerAccount,
       loginAccount,
-      loginLocalServer,
       loginSupabase,
-      enterLocalDemoMode,
       changePassword,
       logoutAllSessions,
       updateSessionDisplayName,
@@ -373,9 +319,7 @@ export function AuthProvider({ children, initialSession }: AuthProviderProps) {
       authMessage,
       registerAccount,
       loginAccount,
-      loginLocalServer,
       loginSupabase,
-      enterLocalDemoMode,
       changePassword,
       logoutAllSessions,
       updateSessionDisplayName,

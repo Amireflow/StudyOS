@@ -90,161 +90,6 @@ function normalizeClientBaseUrl(provider: AiProviderKind, rawUrl: string): strin
   return (withScheme || 'https://api.openai.com/v1').replace(/\/+$/, '');
 }
 
-async function fetchModelsDirectClient(
-  provider: AiProviderKind,
-  apiKey: string,
-  baseUrl: string,
-): Promise<{ baseUrl: string; models: AiProviderModel[] }> {
-  if (provider === 'local') {
-    return {
-      baseUrl: '',
-      models: [
-        {
-          id: 'local-coach-v1',
-          label: 'Local Coach v1 (déterministe, hors-ligne)',
-          ownedBy: 'study-os',
-          contextWindow: null,
-        },
-      ],
-    };
-  }
-
-  const trimmedKey = apiKey.trim();
-  if (!trimmedKey) {
-    throw new Error('Veuillez saisir une clé API pour récupérer les modèles disponibles.');
-  }
-
-  const resolvedUrl = normalizeClientBaseUrl(provider, baseUrl);
-  let parsedUrl: URL;
-  try {
-    parsedUrl = new URL(resolvedUrl);
-  } catch {
-    throw new Error('L’URL du fournisseur IA est invalide.');
-  }
-  const hostname = parsedUrl.hostname.toLowerCase();
-  const isLoopback =
-    hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '[::1]';
-  const isPrivateIpv4 =
-    /^10\./.test(hostname) ||
-    /^192\.168\./.test(hostname) ||
-    /^169\.254\./.test(hostname) ||
-    /^127\./.test(hostname) ||
-    /^0\./.test(hostname) ||
-    /^172\.(1[6-9]|2\d|3[0-1])\./.test(hostname);
-  const isForbiddenHost =
-    isPrivateIpv4 ||
-    hostname.endsWith('.local') ||
-    hostname.endsWith('.internal') ||
-    hostname === 'metadata.google.internal' ||
-    hostname === '[::1]';
-
-  if (isForbiddenHost && !(isLoopback && import.meta.env.DEV)) {
-    throw new Error('Destination réseau privée ou interne interdite.');
-  }
-  if (parsedUrl.protocol !== 'https:' && !(parsedUrl.protocol === 'http:' && isLoopback && import.meta.env.DEV)) {
-    throw new Error('L’URL du fournisseur IA doit utiliser HTTPS (ou http://localhost en développement local).');
-  }
-
-  const headers: Record<string, string> =
-    provider === 'gemini'
-      ? { 'x-goog-api-key': trimmedKey, Accept: 'application/json' }
-      : { Authorization: `Bearer ${trimmedKey}`, Accept: 'application/json' };
-
-  let response: Response;
-  try {
-    response = await fetch(`${resolvedUrl}/models`, { method: 'GET', headers });
-  } catch {
-    throw new Error(
-      'Impossible de contacter le fournisseur directement depuis le navigateur (réseau ou CORS). Connectez le serveur backend API pour relayer la requête.',
-    );
-  }
-
-  if (response.status === 401 || response.status === 403) {
-    throw new Error(
-      provider === 'river'
-        ? 'Clé API refusée par River AI (console.river.ai). Vérifiez votre clé.'
-        : 'Clé API refusée par le fournisseur IA.',
-    );
-  }
-  if (!response.ok) {
-    throw new Error(`Erreur HTTP ${response.status} lors de la récupération des modèles.`);
-  }
-
-  const payload = (await response.json()) as Record<string, unknown>;
-  const seen = new Set<string>();
-  const collected: AiProviderModel[] = [];
-
-  if (provider === 'gemini') {
-    const items = Array.isArray(payload.models) ? payload.models : [];
-    for (const rawItem of items) {
-      if (!rawItem || typeof rawItem !== 'object') continue;
-      const item = rawItem as Record<string, unknown>;
-      const methods = Array.isArray(item.supportedGenerationMethods)
-        ? item.supportedGenerationMethods
-        : null;
-      if (methods && !methods.includes('generateContent')) continue;
-      const rawName = typeof item.name === 'string' ? item.name.trim() : '';
-      const id = rawName.replace(/^models\//, '').trim();
-      if (!id || seen.has(id)) continue;
-      seen.add(id);
-      collected.push({
-        id,
-        label: (typeof item.displayName === 'string' && item.displayName.trim()) || id,
-        ownedBy: 'google',
-        contextWindow: typeof item.inputTokenLimit === 'number' ? item.inputTokenLimit : null,
-      });
-    }
-  } else {
-    const rawItems = Array.isArray(payload)
-      ? payload
-      : Array.isArray(payload.data)
-        ? payload.data
-        : Array.isArray(payload.models)
-          ? payload.models
-          : [];
-
-    for (const rawItem of rawItems) {
-      if (typeof rawItem === 'string') {
-        const id = rawItem.trim();
-        if (!id || seen.has(id)) continue;
-        seen.add(id);
-        collected.push({
-          id,
-          label: id,
-          ownedBy: provider === 'river' ? 'river' : null,
-          contextWindow: null,
-        });
-        continue;
-      }
-      if (!rawItem || typeof rawItem !== 'object') continue;
-      const item = rawItem as Record<string, unknown>;
-      const id =
-        typeof item.id === 'string'
-          ? item.id.trim()
-          : typeof item.name === 'string'
-            ? item.name.trim()
-            : '';
-      if (!id || seen.has(id)) continue;
-      seen.add(id);
-      const label =
-        (typeof item.display_name === 'string' && item.display_name.trim()) ||
-        (typeof item.label === 'string' && item.label.trim()) ||
-        id;
-      const ownedBy = typeof item.owned_by === 'string' && item.owned_by.trim() ? item.owned_by.trim() : null;
-      const contextWindow =
-        typeof item.context_window === 'number'
-          ? item.context_window
-          : typeof item.context_length === 'number'
-            ? item.context_length
-            : null;
-      collected.push({ id, label, ownedBy, contextWindow });
-    }
-  }
-
-  collected.sort((a, b) => a.id.localeCompare(b.id));
-  return { baseUrl: resolvedUrl, models: collected };
-}
-
 export function AiProviderSettingsCard() {
   const { session } = useAuth();
   const isApiMode = session?.mode === 'api' && Boolean(session.accessToken);
@@ -324,17 +169,16 @@ export function AiProviderSettingsCard() {
       setErrorMessage(null);
 
       try {
-        let result: { baseUrl: string; models: AiProviderModel[] };
-        if (isApiMode && session?.accessToken) {
-          const apiRes = await fetchAiProviderModelsApi(session.accessToken, {
-            provider,
-            apiKey: keyToUse || null,
-            baseUrl: baseUrl.trim() || null,
-          });
-          result = { baseUrl: apiRes.baseUrl, models: apiRes.models };
-        } else {
-          result = await fetchModelsDirectClient(provider, keyToUse, baseUrl);
+        if (!isApiMode || !session?.accessToken) {
+          setErrorMessage('Connexion requise pour récupérer les modèles disponibles.');
+          return;
         }
+        const apiRes = await fetchAiProviderModelsApi(session.accessToken, {
+          provider,
+          apiKey: keyToUse || null,
+          baseUrl: baseUrl.trim() || null,
+        });
+        const result = { baseUrl: apiRes.baseUrl, models: apiRes.models };
 
         if (requestId !== fetchRequestIdRef.current) return;
 
@@ -424,11 +268,7 @@ export function AiProviderSettingsCard() {
     }
 
     if (!isApiMode || !session?.accessToken) {
-      setStatusMessage(
-        provider === 'local'
-          ? 'Mode local actif : le copilote utilise le moteur déterministe hors-ligne.'
-          : `Modèle « ${selectedModel} » sélectionné pour ${selectedCatalogItem.label}. Connectez-vous au serveur API pour enregistrer la clé côté serveur.`,
-      );
+      setErrorMessage('Connexion requise pour enregistrer la configuration IA.');
       return;
     }
 
@@ -462,11 +302,7 @@ export function AiProviderSettingsCard() {
 
   const handleClearApiKey = async () => {
     if (!isApiMode || !session?.accessToken) {
-      setApiKeyInput('');
-      setModels([]);
-      setProvider('local');
-      setBaseUrl('');
-      setSelectedModel('local-coach-v1');
+      setErrorMessage('Connexion requise pour modifier la configuration IA.');
       return;
     }
 

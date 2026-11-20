@@ -1,14 +1,14 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AppProviders } from '../../app/providers';
-import { STORAGE_KEYS } from '../../lib/storage';
+import { installMockStudyApi, TEST_API_SESSION } from '../../test/mockStudyApi';
 import { SettingsPage } from './SettingsPage';
 
 function renderSettingsPage() {
   return render(
-    <AppProviders>
+    <AppProviders initialSession={TEST_API_SESSION}>
       <MemoryRouter initialEntries={['/settings']}>
         <SettingsPage />
       </MemoryRouter>
@@ -17,22 +17,21 @@ function renderSettingsPage() {
 }
 
 describe('SettingsPage', () => {
-  beforeEach(() => {
-    window.localStorage.clear();
-  });
-
   afterEach(() => {
     vi.restoreAllMocks();
   });
 
-  it('permet d’appliquer un fuseau rapide, un préréglage de consignes Copilote, d’enregistrer le profil et de gérer les données locales', async () => {
+  it('permet d’appliquer un fuseau rapide, un préréglage de consignes Copilote et d’enregistrer le profil via l’API sans boutons d’exemple', async () => {
+    const api = installMockStudyApi();
     const user = userEvent.setup();
     renderSettingsPage();
 
-    // État initial à jour
-    expect(screen.getByText('Profil à jour')).toBeInTheDocument();
+    expect(await screen.findByText('Profil à jour')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Charger des exemples' })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Réinitialiser toutes les données locales' }),
+    ).not.toBeInTheDocument();
 
-    // Validation sur nom d'affichage trop court
     const nameInput = screen.getByLabelText(/Nom d’affichage/);
     await user.clear(nameInput);
     await user.type(nameInput, 'A');
@@ -41,9 +40,8 @@ describe('SettingsPage', () => {
       'Le nom d’affichage doit contenir au moins 2 caractères.',
     );
 
-    // Saisie valide + pilule de fuseau rapide + préréglage Copilote
     await user.clear(nameInput);
-    await user.type(nameInput, 'Khadim');
+    await user.type(nameInput, 'Khadim Ndiaye');
     await user.click(screen.getByRole('button', { name: 'Europe/Paris' }));
     await user.click(screen.getByRole('button', { name: 'Concis' }));
 
@@ -53,56 +51,18 @@ describe('SettingsPage', () => {
     );
 
     await user.click(screen.getByRole('button', { name: 'Enregistrer les paramètres' }));
-    expect(screen.getByRole('status')).toHaveTextContent('Paramètres du profil enregistrés.');
-    expect(screen.getByText('Profil à jour')).toBeInTheDocument();
-
-    // Chargement des données d'exemple puis réinitialisation locale
-    await user.click(screen.getByRole('button', { name: 'Charger des exemples' }));
-    expect(screen.getByRole('status')).toHaveTextContent(
-      'Données de démonstration chargées dans l’espace de travail.',
-    );
-
-    const studyAfterSeed = JSON.parse(
-      window.localStorage.getItem(STORAGE_KEYS.studyState) ?? '{}',
-    );
-    expect((studyAfterSeed.tasks ?? []).length).toBeGreaterThan(0);
-
-    await user.click(
-      screen.getByRole('button', { name: 'Réinitialiser toutes les données locales' }),
-    );
-    await user.click(screen.getByRole('button', { name: 'Confirmer' }));
-
-    const studyAfterClear = JSON.parse(
-      window.localStorage.getItem(STORAGE_KEYS.studyState) ?? '{}',
-    );
-    expect(studyAfterClear.tasks ?? []).toHaveLength(0);
+    expect(await screen.findByRole('status')).toHaveTextContent('Paramètres du profil enregistrés.');
+    expect(await screen.findByText('Profil à jour')).toBeInTheDocument();
+    expect(api.state.profile.display_name).toBe('Khadim Ndiaye');
+    expect(api.state.profile.timezone).toBe('Europe/Paris');
   });
 
-  it('sélectionne River AI (console.river.ai), récupère automatiquement les modèles disponibles via la clé API et permet de choisir un modèle', async () => {
-    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(
-        JSON.stringify({
-          data: [
-            { id: 'gpt-4o', owned_by: 'openai', context_window: 128000 },
-            {
-              id: 'claude-3-7-sonnet',
-              display_name: 'Claude 3.7 Sonnet',
-              owned_by: 'anthropic',
-              context_window: 200000,
-            },
-          ],
-        }),
-        {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        },
-      ),
-    );
-
+  it('sélectionne River AI (console.river.ai), récupère automatiquement les modèles disponibles via le relais backend et permet de choisir un modèle', async () => {
+    const api = installMockStudyApi();
     const user = userEvent.setup();
     renderSettingsPage();
 
-    const providerSelect = screen.getByLabelText('Fournisseur IA');
+    const providerSelect = await screen.findByLabelText('Fournisseur IA');
     await user.selectOptions(providerSelect, 'river');
 
     expect(screen.getByRole('link', { name: 'console.river.ai' })).toBeInTheDocument();
@@ -113,12 +73,14 @@ describe('SettingsPage', () => {
 
     await waitFor(
       () => {
-        expect(fetchMock).toHaveBeenCalledWith(
-          'https://api.river.ai/v1/models',
+        expect(api.requests).toContainEqual(
           expect.objectContaining({
-            method: 'GET',
-            headers: expect.objectContaining({
-              Authorization: 'Bearer rk_live_test_key_1234',
+            method: 'POST',
+            url: 'http://localhost:8000/api/v1/ai/provider/models',
+            body: expect.objectContaining({
+              provider: 'river',
+              api_key: 'rk_live_test_key_1234',
+              base_url: 'https://api.river.ai/v1',
             }),
           }),
         );

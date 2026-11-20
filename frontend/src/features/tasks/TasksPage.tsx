@@ -47,7 +47,6 @@ export function TasksPage() {
   const {
     tasks,
     activePriorityTaskId,
-    dataMode,
     isLoading,
     error,
     mutationError,
@@ -58,7 +57,6 @@ export function TasksPage() {
     setTaskStatus,
     deleteTask,
     setActivePriority,
-    loadDemoData,
   } = useStudyStore();
   const { projects, modules } = useLearningStore();
 
@@ -593,19 +591,6 @@ export function TasksPage() {
               <Button type="button" variant="primary" size="sm" onClick={handleOpenCreate}>
                 Créer une tâche
               </Button>
-              {dataMode === 'local_demo' && (
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => {
-                    loadDemoData();
-                    setFeedback('Données d’exemple chargées.');
-                  }}
-                >
-                  Charger des données d’exemple
-                </Button>
-              )}
             </div>
           }
         />

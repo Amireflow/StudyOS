@@ -1,18 +1,31 @@
 /**
- * Couche de persistance locale (localStorage) utilisée aux Lots 2 et 3
- * avant le branchement à l'API PostgreSQL au Lot 5.
+ * Stockage technique minimal côté navigateur (thème d'affichage et indicateur
+ * de session API HTTP-only). Aucune donnée métier n'est stockée localement.
  */
 
 export const STORAGE_KEYS = {
-  studyState: 'amireflow.studyOs.v1.state',
-  learningState: 'amireflow.studyOs.v1.learning',
-  coursesState: 'amireflow.studyOs.v1.courses',
-  objectivesState: 'amireflow.study_os.objectives.v1',
-  aiState: 'amireflow.studyOs.v1.ai',
-  authSession: 'amireflow.studyOs.v1.session',
   apiSessionHint: 'amireflow.studyos.api_session_hint',
   theme: 'amireflow.studyOs.v1.theme',
 } as const;
+
+export const LEGACY_LOCAL_DATA_KEYS = [
+  'amireflow.studyOs.v1.state',
+  'amireflow.studyOs.v1.learning',
+  'amireflow.studyOs.v1.courses',
+  'amireflow.study_os.objectives.v1',
+  'amireflow.studyOs.v1.ai',
+  'amireflow.studyOs.v1.session',
+] as const;
+
+export function purgeLegacyLocalBusinessStorage(): void {
+  try {
+    for (const key of LEGACY_LOCAL_DATA_KEYS) {
+      window.localStorage.removeItem(key);
+    }
+  } catch {
+    // Ignore les erreurs de stockage en navigation privée stricte.
+  }
+}
 
 export function readFromStorage<T>(key: string, fallback: T): T {
   try {

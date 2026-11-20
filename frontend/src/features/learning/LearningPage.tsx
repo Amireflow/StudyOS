@@ -57,7 +57,6 @@ export function LearningPage() {
     createLesson,
     setLessonStatus,
     deleteLesson,
-    seedStarterPaths,
   } = useLearningStore();
   const { tasks, sessions } = useStudyStore();
 
@@ -272,22 +271,6 @@ export function LearningPage() {
         </div>
 
         <div className="no-scrollbar flex items-center gap-1.5 overflow-x-auto pb-0.5 sm:flex-wrap sm:overflow-visible sm:pb-0">
-          {paths.length === 0 && (
-            <Button
-              type="button"
-              variant="secondary"
-              size="sm"
-              className="shrink-0"
-              onClick={async () => {
-                if (await seedStarterPaths()) {
-                  setFeedback('Parcours modèle « Socle Python & FastAPI » chargé.');
-                }
-              }}
-            >
-              <Icon icon={BookOpen01Icon} size={15} />
-              Charger un parcours exemple
-            </Button>
-          )}
           <Button type="button" variant="primary" size="sm" className="shrink-0" onClick={openCreatePath}>
             <Icon icon={Add01Icon} size={15} />
             Nouveau parcours

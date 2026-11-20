@@ -1,15 +1,15 @@
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AppProviders } from '../../app/providers';
-import { STORAGE_KEYS } from '../../lib/storage';
+import { installMockStudyApi, TEST_API_SESSION } from '../../test/mockStudyApi';
 import { AiCoachPage } from '../ai-coach/AiCoachPage';
 import { CoursesPage } from './CoursesPage';
 
 function renderCoursesApp(initialPath = '/courses') {
   return render(
-    <AppProviders>
+    <AppProviders initialSession={TEST_API_SESSION}>
       <MemoryRouter initialEntries={[initialPath]}>
         <Routes>
           <Route path="/courses" element={<CoursesPage />} />
@@ -21,36 +21,34 @@ function renderCoursesApp(initialPath = '/courses') {
 }
 
 describe('CoursesPage & verrou pédagogique multi-niveaux', () => {
-  beforeEach(() => {
-    window.localStorage.clear();
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
 
   it('prévisualise et crée un cours Python complet au Niveau 1, puis applique le verrou pédagogique avant de débloquer le Niveau 2', async () => {
+    const api = installMockStudyApi();
     const user = userEvent.setup();
     renderCoursesApp();
 
-    await user.click(screen.getByRole('button', { name: 'Nouveau cours' }));
+    await user.click(await screen.findByRole('button', { name: 'Nouveau cours' }));
 
     const subjectInput = screen.getByLabelText(/Sujet ou langage/);
     await user.type(subjectInput, 'Python');
 
     await user.click(screen.getByRole('button', { name: 'Prévisualiser le plan' }));
-    expect(screen.getByText(/Programme des niveaux/)).toBeInTheDocument();
+    expect(await screen.findByText(/Programme des niveaux/)).toBeInTheDocument();
     expect(screen.getByText(/Aperçu du Niveau 1 \(4 chapitres \+ projet\)/)).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Créer le cours complet' }));
 
-    // Détail du cours créé : Niveau 1/3 débloqué avec 4 chapitres et code copiable
     expect(await screen.findByRole('tab', { name: 'Chapitres (4)' })).toBeInTheDocument();
     expect(screen.getByText('Niveau 1/3')).toBeInTheDocument();
     expect(screen.getAllByRole('button', { name: 'Copier le code' }).length).toBeGreaterThanOrEqual(1);
 
-    // Le Niveau 2 est verrouillé dès le départ
     const level2Nav = screen.getByRole('button', { name: /Niveau 2 :/ });
     await user.click(level2Nav);
     expect(screen.getByText(/Niveau 2 verrouillé/)).toBeInTheDocument();
 
-    // Compléter tous les chapitres + réussir au moins 1 exercice avant de pouvoir valider le niveau 1
     await user.click(screen.getByRole('button', { name: /Aller au projet du Niveau 1/ }));
     expect(screen.getByRole('tab', { name: 'Projet & validation' })).toHaveAttribute(
       'aria-selected',
@@ -64,7 +62,6 @@ describe('CoursesPage & verrou pédagogique multi-niveaux', () => {
 
     await user.click(screen.getByRole('tab', { name: 'Chapitres (4)' }));
 
-    // Réussir l'exercice du Chapitre 1 puis lire les 4 chapitres
     const exAnswer = screen.getAllByLabelText(/Votre explication technique/)[0];
     await user.click(exAnswer);
     await user.paste(
@@ -99,17 +96,15 @@ describe('CoursesPage & verrou pédagogique multi-niveaux', () => {
     });
     expect(validateBtnLocked).toBeDisabled();
 
-    // Soumission purement déclarative -> refusée (< 70/100)
     const explanationBox = screen.getByLabelText(/Explication technique et démarche/);
     await user.type(explanationBox, 'J’ai bien compris tout le niveau 1, c’est acquis.');
     await user.click(screen.getByRole('button', { name: 'Soumettre le projet pour correction' }));
 
-    expect(screen.getByText('Insuffisant')).toBeInTheDocument();
+    expect(await screen.findByText('Insuffisant')).toBeInTheDocument();
     expect(
       screen.getByRole('button', { name: 'Valider le niveau 1 et débloquer le niveau 2' }),
     ).toBeDisabled();
 
-    // Soumission technique concrète + code -> réussie (>= 70/100)
     await user.clear(explanationBox);
     await user.click(explanationBox);
     await user.paste(
@@ -133,13 +128,12 @@ describe('CoursesPage & verrou pédagogique multi-niveaux', () => {
     );
     await user.click(screen.getByRole('button', { name: 'Soumettre le projet pour correction' }));
 
-    expect(screen.getByText('Seuil atteint')).toBeInTheDocument();
+    expect(await screen.findByText('Seuil atteint')).toBeInTheDocument();
     const validateBtnReady = screen.getByRole('button', {
       name: 'Valider le niveau 1 et débloquer le niveau 2',
     });
-    expect(validateBtnReady).toBeEnabled();
+    await waitFor(() => expect(validateBtnReady).toBeEnabled());
 
-    // Valider le Niveau 1 -> débloque et génère automatiquement les 4 chapitres du Niveau 2
     await user.click(validateBtnReady);
     expect(await screen.findByText('Niveau 2/3')).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Chapitres (4)' })).toBeInTheDocument();
@@ -150,17 +144,12 @@ describe('CoursesPage & verrou pédagogique multi-niveaux', () => {
       }),
     ).toBeInTheDocument();
 
-    // Compétence liée créée à 0/5 avec preuve de projet (aucune augmentation directe du niveau)
-    const learningState = JSON.parse(
-      window.localStorage.getItem(STORAGE_KEYS.learningState) ?? '{}',
-    );
-    expect(learningState.skills).toHaveLength(1);
-    expect(learningState.skills[0].name).toBe('Python');
-    expect(learningState.skills[0].currentLevel).toBe(0);
-    expect(learningState.evidence).toHaveLength(1);
-    expect(learningState.evidence[0].type).toBe('project');
+    expect(api.state.skills).toHaveLength(1);
+    expect(api.state.skills[0].name).toBe('Python');
+    expect(api.state.skills[0].current_level).toBe(0);
+    expect(api.state.evidence).toHaveLength(1);
+    expect(api.state.evidence[0].type).toBe('project');
 
-    // Vérifier l'onglet Docs & vidéos + ajout/suppression de ressource
     await user.click(screen.getByRole('tab', { name: 'Docs & vidéos' }));
     expect(screen.getByText(/Documentation officielle Python/)).toBeInTheDocument();
     expect(screen.getByText(/Harvard CS50/)).toBeInTheDocument();
@@ -173,7 +162,7 @@ describe('CoursesPage & verrou pédagogique multi-niveaux', () => {
     );
     await user.click(screen.getByRole('button', { name: 'Enregistrer la ressource' }));
 
-    expect(screen.getByText('Guide Pathlib Python')).toBeInTheDocument();
+    expect(await screen.findByText('Guide Pathlib Python')).toBeInTheDocument();
 
     const deleteResBtn = screen.getByRole('button', {
       name: 'Supprimer la ressource Guide Pathlib Python',
@@ -185,13 +174,16 @@ describe('CoursesPage & verrou pédagogique multi-niveaux', () => {
         { name: 'Confirmer' },
       ),
     );
-    expect(screen.queryByText('Guide Pathlib Python')).not.toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.queryByText('Guide Pathlib Python')).not.toBeInTheDocument();
+    });
   });
 
   it('permet de créer un cours depuis le Copilote IA uniquement après validation explicite', async () => {
+    const api = installMockStudyApi();
     const user = userEvent.setup();
     render(
-      <AppProviders>
+      <AppProviders initialSession={TEST_API_SESSION}>
         <MemoryRouter initialEntries={['/ai-coach']}>
           <Routes>
             <Route path="/ai-coach" element={<AiCoachPage />} />
@@ -202,28 +194,21 @@ describe('CoursesPage & verrou pédagogique multi-niveaux', () => {
     );
 
     await user.type(
-      screen.getByLabelText(/Votre message au Copilote/),
+      await screen.findByLabelText(/Votre message au Copilote/),
       'Crée un cours complet pour apprendre Python',
     );
     await user.click(screen.getByRole('button', { name: 'Envoyer au Copilote' }));
 
-    expect(screen.getByText('Nouveau cours complet')).toBeInTheDocument();
+    expect(await screen.findByText('Nouveau cours complet')).toBeInTheDocument();
     expect(screen.getByText('En attente de validation')).toBeInTheDocument();
-
-    const beforeAccept = JSON.parse(
-      window.localStorage.getItem(STORAGE_KEYS.coursesState) ?? '{"courses":[]}',
-    );
-    expect(beforeAccept.courses).toHaveLength(0);
+    expect(api.state.courses).toHaveLength(0);
 
     await user.click(screen.getByRole('button', { name: 'Valider et exécuter' }));
-    expect(screen.getByText('Exécutée')).toBeInTheDocument();
+    expect(await screen.findByText('Exécutée')).toBeInTheDocument();
 
-    const afterAccept = JSON.parse(
-      window.localStorage.getItem(STORAGE_KEYS.coursesState) ?? '{"courses":[]}',
-    );
-    expect(afterAccept.courses).toHaveLength(1);
-    expect(afterAccept.courses[0].subject).toBe('Python');
-    expect(afterAccept.courses[0].currentLevel).toBe(1);
+    expect(api.state.courses).toHaveLength(1);
+    expect(api.state.courses[0].subject).toBe('Python');
+    expect(api.state.courses[0].current_level).toBe(1);
     expect(screen.getByRole('link', { name: 'Ouvrir le cours' })).toBeInTheDocument();
   });
 });

@@ -12,18 +12,14 @@ import {
 import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
 import { Icon } from '../../components/ui/Icon';
-import { addDays, formatDateFr, formatTimeFr, toLocalDateKey } from '../../lib/date';
+import { formatDateFr, formatTimeFr } from '../../lib/date';
 import {
   planningApi,
-  type AvailabilityRule,
   type AvailabilityRuleType,
   type LearningPlanVersion,
-  type PlannedSessionProposal,
 } from '../../lib/planningApi';
-import { generateId } from '../../lib/storage';
 import { useAuth } from '../../state/AuthContext';
 import { useStudyStore } from '../../state/StudyStoreContext';
-import type { ScheduleEventType } from '../../types/domain';
 
 const DAY_LABELS = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'];
 
@@ -33,20 +29,6 @@ const RULE_TYPE_LABELS: Record<AvailabilityRuleType, string> = {
   recovery_time: 'Récupération',
 };
 
-function toJsDayFromMondayIndex(mondayIndex: number): number {
-  return mondayIndex === 6 ? 0 : mondayIndex + 1;
-}
-
-function toMondayIndexFromDate(d: Date): number {
-  const js = d.getDay();
-  return js === 0 ? 6 : js - 1;
-}
-
-function hhmmToMinutes(value: string): number {
-  const [h, m] = value.split(':').map((part) => Number.parseInt(part, 10));
-  return (Number.isFinite(h) ? h : 0) * 60 + (Number.isFinite(m) ? m : 0);
-}
-
 export interface IntelligentPlanStudioProps {
   onClose: () => void;
   onApplied?: (message: string) => void;
@@ -54,10 +36,10 @@ export interface IntelligentPlanStudioProps {
 
 export function IntelligentPlanStudio({ onClose, onApplied }: IntelligentPlanStudioProps) {
   const { session } = useAuth();
-  const { dataMode, scheduleEvents, tasks, createScheduleEvent, retry } = useStudyStore();
+  const { retry } = useStudyStore();
   const queryClient = useQueryClient();
 
-  const isApiMode = session?.mode === 'api' && dataMode === 'api';
+  const isApiMode = session?.mode === 'api' && Boolean(session.accessToken);
   const accessToken = session?.mode === 'api' ? session.accessToken : '';
 
   // États formulaire de règle de disponibilité
@@ -73,9 +55,6 @@ export function IntelligentPlanStudio({ onClose, onApplied }: IntelligentPlanStu
   const [weeklyHoursOverride, setWeeklyHoursOverride] = useState('');
   const [adjustInstruction, setAdjustInstruction] = useState('');
 
-  // États démo locale (Vitest & mode démo sans serveur)
-  const [localRules, setLocalRules] = useState<AvailabilityRule[]>([]);
-  const [localVersions, setLocalVersions] = useState<LearningPlanVersion[]>([]);
   const [activeVersion, setActiveVersion] = useState<LearningPlanVersion | null>(null);
   const [localFeedback, setLocalFeedback] = useState<string | null>(null);
   const [localError, setLocalError] = useState<string | null>(null);
@@ -99,8 +78,8 @@ export function IntelligentPlanStudio({ onClose, onApplied }: IntelligentPlanStu
     enabled: isApiMode && Boolean(accessToken),
   });
 
-  const rules = isApiMode ? (rulesQuery.data ?? []) : localRules;
-  const versions = isApiMode ? (versionsQuery.data ?? []) : localVersions;
+  const rules = rulesQuery.data ?? [];
+  const versions = versionsQuery.data ?? [];
   const currentPlan = activeVersion ?? versions[0] ?? null;
 
   const invalidatePlanningCaches = async () => {
@@ -122,358 +101,160 @@ export function IntelligentPlanStudio({ onClose, onApplied }: IntelligentPlanStu
       return;
     }
 
-    if (isApiMode) {
-      setIsBusy(true);
-      try {
-        await planningApi.createAvailabilityRule(accessToken, {
-          label: ruleLabel.trim(),
-          rule_type: ruleType,
-          day_of_week: ruleDay,
-          start_time: ruleStart,
-          end_time: ruleEnd,
-          recurrence: 'weekly',
-        });
-        await invalidatePlanningCaches();
-        setLocalFeedback(`Règle « ${ruleLabel.trim()} » enregistrée.`);
-      } catch (err) {
-        setLocalError(err instanceof Error ? err.message : 'Erreur lors de la création.');
-      } finally {
-        setIsBusy(false);
-      }
+    if (!isApiMode) {
+      setLocalError('Connexion requise.');
       return;
     }
 
-    const nowIso = new Date().toISOString();
-    const created: AvailabilityRule = {
-      id: generateId(),
-      user_id: 'local-user',
-      label: ruleLabel.trim(),
-      rule_type: ruleType,
-      day_of_week: ruleDay,
-      start_time: ruleStart,
-      end_time: ruleEnd,
-      starts_at: null,
-      ends_at: null,
-      timezone: 'Europe/Paris',
-      recurrence: 'weekly',
-      active: true,
-      notes: null,
-      created_at: nowIso,
-      updated_at: nowIso,
-    };
-    setLocalRules((prev) => [...prev, created]);
-    setLocalFeedback(`Règle « ${created.label} » enregistrée.`);
+    setIsBusy(true);
+    try {
+      await planningApi.createAvailabilityRule(accessToken, {
+        label: ruleLabel.trim(),
+        rule_type: ruleType,
+        day_of_week: ruleDay,
+        start_time: ruleStart,
+        end_time: ruleEnd,
+        recurrence: 'weekly',
+      });
+      await invalidatePlanningCaches();
+      setLocalFeedback(`Règle « ${ruleLabel.trim()} » enregistrée.`);
+    } catch (err) {
+      setLocalError(err instanceof Error ? err.message : 'Erreur lors de la création.');
+    } finally {
+      setIsBusy(false);
+    }
   };
 
   const handleDeleteRule = async (ruleId: string) => {
     setLocalError(null);
-    if (isApiMode) {
-      setIsBusy(true);
-      try {
-        await planningApi.deleteAvailabilityRule(accessToken, ruleId);
-        await invalidatePlanningCaches();
-      } catch (err) {
-        setLocalError(err instanceof Error ? err.message : 'Erreur lors de la suppression.');
-      } finally {
-        setIsBusy(false);
-      }
+    if (!isApiMode) {
+      setLocalError('Connexion requise.');
       return;
     }
-    setLocalRules((prev) => prev.filter((r) => r.id !== ruleId));
-  };
-
-  const buildLocalPlan = (instruction?: string): LearningPlanVersion => {
-    const now = new Date();
-    const nextVersionNum = (localVersions[0]?.version_number ?? 0) + 1;
-    const weeklyCapHours = Number.parseFloat(weeklyHoursOverride);
-    const weeklyCapMinutes = Number.isFinite(weeklyCapHours) && weeklyCapHours > 0
-      ? Math.round(weeklyCapHours * 60)
-      : instruction && /allège|allege/i.test(instruction)
-        ? 180
-        : 360;
-
-    const openTasks = tasks.filter((t) => t.status === 'todo' || t.status === 'in_progress');
-    const subjectLabel = focusSubject.trim() || openTasks[0]?.title || 'React & Architecture Python';
-    const sessionDuration = 60;
-    const maxSessions = Math.max(1, Math.min(4, Math.floor(weeklyCapMinutes / sessionDuration)));
-
-    const planned: PlannedSessionProposal[] = [];
-    for (let dayOffset = 0; dayOffset < horizonDays && planned.length < maxSessions; dayOffset += 1) {
-      const targetDay = addDays(now, dayOffset);
-      const mondayIdx = toMondayIndexFromDate(targetDay);
-      const dateKey = toLocalDateKey(targetDay);
-      const candidateWindows = [
-        { s: '09:00', e: '10:00' },
-        { s: '15:00', e: '16:00' },
-        { s: '18:30', e: '19:30' },
-      ];
-      for (const win of candidateWindows) {
-        if (planned.length >= maxSessions) break;
-        const wsMin = hhmmToMinutes(win.s);
-        const weMin = hhmmToMinutes(win.e);
-        const blockedByRule = localRules.some((r) => {
-          if (r.rule_type === 'confirmed_availability' || r.day_of_week !== mondayIdx || !r.start_time || !r.end_time) {
-            return false;
-          }
-          return wsMin < hhmmToMinutes(r.end_time) && weMin > hhmmToMinutes(r.start_time);
-        });
-        if (blockedByRule) continue;
-
-        const startDt = new Date(`${dateKey}T${win.s}:00`);
-        const endDt = new Date(`${dateKey}T${win.e}:00`);
-        const conflictFixed = scheduleEvents.some((ev) => {
-          const evS = new Date(ev.startsAt).getTime();
-          const evE = new Date(ev.endsAt).getTime();
-          return startDt.getTime() < evE && endDt.getTime() > evS;
-        });
-        if (conflictFixed) continue;
-
-        const idx = planned.length;
-        planned.push({
-          slot_id: `slot-${idx + 1}`,
-          title: `${subjectLabel} — Session ${idx + 1}`,
-          session_type: 'learning',
-          starts_at: startDt.toISOString(),
-          ends_at: endDt.toISOString(),
-          duration_minutes: 60,
-          priority_source_type: openTasks[idx] ? 'task' : 'personal_goal',
-          priority_source_id: openTasks[idx]?.id ?? null,
-          priority_score: 78 - idx * 4,
-          subject: subjectLabel,
-          task_id: openTasks[idx]?.id ?? null,
-          project_id: null,
-          skill_id: null,
-          course_id: null,
-          lesson_id: null,
-          module_id: null,
-          slot_category: 'potential_availability',
-          rationale: `Créneau sans conflit (${DAY_LABELS[mondayIdx]} ${win.s}–${win.e}) respectant vos indisponibilités et vos cours.`,
-          pedagogical_content: {
-            content_source: 'course_generator_preview',
-            course_id: null,
-            course_title: subjectLabel,
-            level_id: null,
-            level_number: 1,
-            level_title: 'Niveau 1 — Fondamentaux',
-            lesson_id: null,
-            lesson_title: `Module pratique ${idx + 1}`,
-            module_id: null,
-            module_title: null,
-            skill_id: null,
-            skill_name: subjectLabel,
-            remediation_needed: false,
-            remediation_reason: null,
-            blocked_prerequisites: [],
-            exercises_focus: [`Exercice guidé ${idx + 1} sur ${subjectLabel}`],
-            deliverables: ['Validation pratique complétée'],
-            recommended_session_type: 'deep_work',
-            next_step_summary: `Progression structurée sur ${subjectLabel} (étape ${idx + 1}).`,
-          },
-        });
-        break;
-      }
+    setIsBusy(true);
+    try {
+      await planningApi.deleteAvailabilityRule(accessToken, ruleId);
+      await invalidatePlanningCaches();
+    } catch (err) {
+      setLocalError(err instanceof Error ? err.message : 'Erreur lors de la suppression.');
+    } finally {
+      setIsBusy(false);
     }
-
-    const totalMins = planned.reduce((acc, item) => acc + item.duration_minutes, 0);
-    return {
-      id: generateId(),
-      user_id: 'local-user',
-      version_number: nextVersionNum,
-      status: 'proposed',
-      horizon_days: horizonDays,
-      timezone: 'Europe/Paris',
-      rationale: `Programme généré (${planned.length} séance(s), ${totalMins} min) après filtrage des cours fixes et de ${localRules.length} règle(s) de disponibilité.`,
-      priorities: [
-        {
-          source_type: 'personal_goal',
-          source_id: null,
-          title: subjectLabel,
-          subject: subjectLabel,
-          domain: 'Apprentissage',
-          score: 80,
-          urgency_score: 20,
-          blocking_score: 15,
-          strategic_score: 25,
-          effort_score: 10,
-          deficit_score: 10,
-          deadline_at: null,
-          recommended_minutes: weeklyCapMinutes,
-          reasons: ['Priorité active détectée sans surcharge hebdomadaire.'],
-        },
-      ],
-      planned_sessions: planned,
-      arbitrage_items: [],
-      load_summary: {
-        daily_minutes: {},
-        daily_cap_minutes: 240,
-        weekly_planned_minutes: totalMins,
-        weekly_cap_minutes: weeklyCapMinutes,
-        recovery_preserved_minutes: 0,
-        overloaded_days: [],
-        is_overloaded: false,
-      },
-      availability_summary: null,
-      missing_info: [],
-      warnings:
-        localRules.some((r) => r.rule_type === 'confirmed_availability')
-          ? []
-          : ['Créneaux basés sur les plages libres potentielles en attente de confirmation.'],
-      applied_event_ids: [],
-      applied_task_ids: [],
-      applied_course_ids: [],
-      parent_version_id: localVersions[0]?.id ?? null,
-      applied_at: null,
-      created_at: now.toISOString(),
-      updated_at: now.toISOString(),
-    };
   };
 
   const handleGenerate = async () => {
     setLocalError(null);
     setLocalFeedback(null);
-
-    const parsedHours = Number.parseFloat(weeklyHoursOverride);
-    if (isApiMode) {
-      setIsBusy(true);
-      try {
-        const version = await planningApi.generatePlan(accessToken, {
-          horizon_days: horizonDays,
-          focus_subject: focusSubject.trim() || null,
-          weekly_hours_override: Number.isFinite(parsedHours) && parsedHours > 0 ? parsedHours : null,
-          include_potential_slots: true,
-        });
-        setActiveVersion(version);
-        await invalidatePlanningCaches();
-      } catch (err) {
-        setLocalError(err instanceof Error ? err.message : 'Erreur lors de la génération.');
-      } finally {
-        setIsBusy(false);
-      }
+    if (!isApiMode) {
+      setLocalError('Connexion requise.');
       return;
     }
 
-    const version = buildLocalPlan();
-    setLocalVersions((prev) => [version, ...prev]);
-    setActiveVersion(version);
+    const parsedHours = Number.parseFloat(weeklyHoursOverride);
+    setIsBusy(true);
+    try {
+      const version = await planningApi.generatePlan(accessToken, {
+        horizon_days: horizonDays,
+        focus_subject: focusSubject.trim() || null,
+        weekly_hours_override: Number.isFinite(parsedHours) && parsedHours > 0 ? parsedHours : null,
+        include_potential_slots: true,
+      });
+      setActiveVersion(version);
+      await invalidatePlanningCaches();
+    } catch (err) {
+      setLocalError(err instanceof Error ? err.message : 'Erreur lors de la génération.');
+    } finally {
+      setIsBusy(false);
+    }
   };
 
   const handleAdjust = async () => {
     if (!adjustInstruction.trim()) return;
     setLocalError(null);
     setLocalFeedback(null);
-
-    if (isApiMode) {
-      setIsBusy(true);
-      try {
-        const version = await planningApi.adjustPlan(accessToken, adjustInstruction.trim());
-        setActiveVersion(version);
-        setAdjustInstruction('');
-        await invalidatePlanningCaches();
-      } catch (err) {
-        setLocalError(err instanceof Error ? err.message : 'Erreur lors de l’ajustement.');
-      } finally {
-        setIsBusy(false);
-      }
+    if (!isApiMode) {
+      setLocalError('Connexion requise.');
       return;
     }
 
-    const version = buildLocalPlan(adjustInstruction.trim());
-    setLocalVersions((prev) => [version, ...prev]);
-    setActiveVersion(version);
-    setAdjustInstruction('');
+    setIsBusy(true);
+    try {
+      const version = await planningApi.adjustPlan(accessToken, adjustInstruction.trim());
+      setActiveVersion(version);
+      setAdjustInstruction('');
+      await invalidatePlanningCaches();
+    } catch (err) {
+      setLocalError(err instanceof Error ? err.message : 'Erreur lors de l’ajustement.');
+    } finally {
+      setIsBusy(false);
+    }
   };
 
   const handleApply = async () => {
     if (!currentPlan) return;
     setLocalError(null);
-
-    if (isApiMode) {
-      setIsBusy(true);
-      try {
-        const applied = await planningApi.applyVersion(accessToken, currentPlan.id, true);
-        setActiveVersion(applied);
-        await invalidatePlanningCaches();
-        await retry();
-        const msg = `Programme v${applied.version_number} appliqué (${applied.applied_event_ids.length} séance(s) ajoutée(s)).`;
-        setLocalFeedback(msg);
-        onApplied?.(msg);
-      } catch (err) {
-        setLocalError(err instanceof Error ? err.message : 'Conflit ou erreur lors de l’application.');
-      } finally {
-        setIsBusy(false);
-      }
+    if (!isApiMode) {
+      setLocalError('Connexion requise.');
       return;
     }
 
-    let createdCount = 0;
-    for (const sess of currentPlan.planned_sessions) {
-      const evType: ScheduleEventType = sess.session_type === 'project' ? 'project' : 'learning';
-      const ok = await createScheduleEvent({
-        title: sess.title,
-        type: evType,
-        date: toLocalDateKey(sess.starts_at),
-        startTime: formatTimeFr(sess.starts_at),
-        endTime: formatTimeFr(sess.ends_at),
-        notes: sess.rationale,
-      });
-      if (ok) createdCount += 1;
+    setIsBusy(true);
+    try {
+      const applied = await planningApi.applyVersion(accessToken, currentPlan.id, true);
+      setActiveVersion(applied);
+      await invalidatePlanningCaches();
+      await retry();
+      const msg = `Programme v${applied.version_number} appliqué (${applied.applied_event_ids.length} séance(s) ajoutée(s)).`;
+      setLocalFeedback(msg);
+      onApplied?.(msg);
+    } catch (err) {
+      setLocalError(err instanceof Error ? err.message : 'Conflit ou erreur lors de l’application.');
+    } finally {
+      setIsBusy(false);
     }
-    const updated: LearningPlanVersion = {
-      ...currentPlan,
-      status: 'applied',
-      applied_at: new Date().toISOString(),
-    };
-    setLocalVersions((prev) => prev.map((v) => (v.id === updated.id ? updated : v)));
-    setActiveVersion(updated);
-    const msg = `Programme v${updated.version_number} appliqué (${createdCount} séance(s) ajoutée(s)).`;
-    setLocalFeedback(msg);
-    onApplied?.(msg);
   };
 
   const handleReject = async () => {
     if (!currentPlan) return;
     setLocalError(null);
-    if (isApiMode) {
-      setIsBusy(true);
-      try {
-        const rejected = await planningApi.rejectVersion(accessToken, currentPlan.id);
-        setActiveVersion(rejected);
-        await invalidatePlanningCaches();
-        setLocalFeedback(`Proposition v${rejected.version_number} rejetée sans modifier le calendrier.`);
-      } catch (err) {
-        setLocalError(err instanceof Error ? err.message : 'Erreur lors du rejet.');
-      } finally {
-        setIsBusy(false);
-      }
+    if (!isApiMode) {
+      setLocalError('Connexion requise.');
       return;
     }
-    const rejected: LearningPlanVersion = { ...currentPlan, status: 'rejected' };
-    setLocalVersions((prev) => prev.map((v) => (v.id === rejected.id ? rejected : v)));
-    setActiveVersion(rejected);
-    setLocalFeedback(`Proposition v${rejected.version_number} rejetée sans modifier le calendrier.`);
+    setIsBusy(true);
+    try {
+      const rejected = await planningApi.rejectVersion(accessToken, currentPlan.id);
+      setActiveVersion(rejected);
+      await invalidatePlanningCaches();
+      setLocalFeedback(`Proposition v${rejected.version_number} rejetée sans modifier le calendrier.`);
+    } catch (err) {
+      setLocalError(err instanceof Error ? err.message : 'Erreur lors du rejet.');
+    } finally {
+      setIsBusy(false);
+    }
   };
 
   const handleRestore = async (versionId: string) => {
     setLocalError(null);
-    if (isApiMode) {
-      setIsBusy(true);
-      try {
-        const restored = await planningApi.restoreVersion(accessToken, versionId);
-        setActiveVersion(restored);
-        await invalidatePlanningCaches();
-        await retry();
-        const msg = `Version v${restored.version_number} restaurée.`;
-        setLocalFeedback(msg);
-        onApplied?.(msg);
-      } catch (err) {
-        setLocalError(err instanceof Error ? err.message : 'Erreur lors de la restauration.');
-      } finally {
-        setIsBusy(false);
-      }
+    if (!isApiMode) {
+      setLocalError('Connexion requise.');
+      return;
+    }
+    setIsBusy(true);
+    try {
+      const restored = await planningApi.restoreVersion(accessToken, versionId);
+      setActiveVersion(restored);
+      await invalidatePlanningCaches();
+      await retry();
+      const msg = `Version v${restored.version_number} restaurée.`;
+      setLocalFeedback(msg);
+      onApplied?.(msg);
+    } catch (err) {
+      setLocalError(err instanceof Error ? err.message : 'Erreur lors de la restauration.');
+    } finally {
+      setIsBusy(false);
     }
   };
-
-  void toJsDayFromMondayIndex;
 
   return (
     <section
@@ -782,7 +563,7 @@ export function IntelligentPlanStudio({ onClose, onApplied }: IntelligentPlanStu
                   size="sm"
                   variant="ghost"
                   disabled={isBusy || v.id === currentPlan.id}
-                  onClick={() => (isApiMode ? void handleRestore(v.id) : setActiveVersion(v))}
+                  onClick={() => void handleRestore(v.id)}
                 >
                   Restaurer v{v.version_number} ({v.status})
                 </Button>

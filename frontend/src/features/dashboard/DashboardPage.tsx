@@ -79,7 +79,6 @@ export function DashboardPage() {
     tasks,
     sessions,
     scheduleEvents,
-    dataMode,
     isLoading,
     error,
     mutationError,
@@ -89,7 +88,6 @@ export function DashboardPage() {
     setTaskStatus,
     createTask,
     startSession,
-    loadDemoData,
   } = useStudyStore();
   const { paths, lessons, skills, projects } = useLearningStore();
   const { proposals, reports } = useAiStore();
@@ -162,12 +160,6 @@ export function DashboardPage() {
   );
   const learningProgressPct =
     lessons.length > 0 ? Math.round((completedLessonsCount / lessons.length) * 100) : 0;
-
-  const isWorkspaceEmpty =
-    tasks.length === 0 &&
-    sessions.length === 0 &&
-    scheduleEvents.length === 0 &&
-    activePriorityTitle === null;
 
   const hasLearningOverview =
     paths.length > 0 || activeProjects.length > 0 || skills.length > 0;
@@ -246,21 +238,6 @@ export function DashboardPage() {
         </div>
 
         <div className="no-scrollbar flex items-center gap-1.5 overflow-x-auto pb-0.5 sm:flex-wrap sm:overflow-visible sm:pb-0">
-          {dataMode === 'local_demo' && isWorkspaceEmpty && (
-            <Button
-              type="button"
-              variant="secondary"
-              size="sm"
-              className="shrink-0"
-              onClick={() => {
-                loadDemoData();
-                setFeedback('Données d’exemple chargées.');
-              }}
-            >
-              Charger des données d’exemple
-            </Button>
-          )}
-
           <Button
             type="button"
             variant={isQuickAddOpen ? 'primary' : 'secondary'}

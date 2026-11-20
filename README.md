@@ -50,9 +50,13 @@ Documentation Swagger locale : `http://localhost:8000/docs`
 ### Bascule vers Supabase / PostgreSQL
 
 1. Renseigner `DATABASE_URL` (`postgresql+psycopg://...`), `APP_SECRET_KEY` (32+ caractères aléatoires), `AI_KEY_ENCRYPTION_KEY` (clé AES-256-GCM 32 octets encodée base64 ou hex pour le chiffrement des clés IA), `AUTH_JWKS_URL`, `AUTH_ISSUER`, `AUTH_AUDIENCE=authenticated`, `ALLOW_LOCAL_DEV_AUTH=false` et `ALLOW_INSECURE_LOCAL_AI_URL=false` dans `.env` (ainsi que `VITE_SUPABASE_URL` et `VITE_SUPABASE_ANON_KEY` côté frontend).
-2. Exécuter `.\.venv\Scripts\python.exe -m alembic upgrade head` (applique les migrations réversibles `0001` à `0010_personal_goals_planning`).
-3. Appliquer les politiques idempotentes de défense en profondeur dans Supabase via [backend/alembic/rls_supabase.sql](./backend/alembic/rls_supabase.sql) (couvre les 27 tables applicatives/auth et `alembic_version`).
+2. Exécuter `.\.venv\Scripts\python.exe -m alembic upgrade head` (applique les migrations réversibles `0001` à `0013_schedule_event_links`).
+3. Appliquer les politiques idempotentes de défense en profondeur dans Supabase via [backend/alembic/rls_supabase.sql](./backend/alembic/rls_supabase.sql) (couvre les 30 tables applicatives/auth).
 4. Vérifier la configuration cloud avant déploiement avec `.\.venv\Scripts\python.exe scripts/verify_cloud_config.py` et contrôler `/health` (vérifie la connectivité réelle à la base et renvoie `503` sans fuite de secret en cas de panne).
+
+### Déploiement sur Render
+
+Un Blueprint full-stack prêt à l'emploi ([render.yaml](./render.yaml)) déploie simultanément l'API Docker (`amireflow-study-os-api`) et le site statique SPA (`amireflow-study-os-web`). Consultez la section **Déploiement sur Render** dans [GUIDE-UTILISATEUR-ET-DEPLOIEMENT.md](./GUIDE-UTILISATEUR-ET-DEPLOIEMENT.md) pour la configuration des secrets et du Session Pooler IPv4 Supabase.
 
 ## Verrou pédagogique & Validation réelle des compétences
 

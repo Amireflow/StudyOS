@@ -367,25 +367,6 @@ function mapSession(dto: ApiSession): StudySession {
   };
 }
 
-export async function loginLocalApi(
-  email: string,
-  displayName?: string,
-): Promise<{ accessToken: string; email: string | null; profile: UserProfile }> {
-  const response = await apiRequest<ApiLocalAuthResponse>('/auth/local-login', {
-    method: 'POST',
-    skipAuthRefresh: true,
-    body: {
-      email: email.trim(),
-      display_name: displayName?.trim() || null,
-    },
-  });
-  return {
-    accessToken: response.access_token,
-    email: response.email ?? email.trim().toLowerCase(),
-    profile: mapProfile(response.profile),
-  };
-}
-
 export async function registerAccountApi(payload: {
   email: string;
   password: string;

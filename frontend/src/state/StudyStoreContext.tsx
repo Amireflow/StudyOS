@@ -10,24 +10,10 @@ import {
   type ReactNode,
 } from 'react';
 import type { ScheduleEventFormValues } from '../features/schedule/scheduleSchema';
-import { buildDuplicatedWeekEvents, getEventsForWeek } from '../features/schedule/scheduleUtils';
-import {
-  DAY_LABELS_FR,
-  detectClientTimetableAnomalies,
-  parseLocalTimetableFile,
-  SUBTYPE_LABELS_FR,
-} from '../features/schedule/timetableClientParser';
 import type { ManualSessionValues, StartSessionValues } from '../features/sessions/sessionSchema';
 import type { TaskFormValues } from '../features/tasks/taskSchema';
 import { ApiError } from '../lib/api-client';
-import {
-  addDays,
-  dateInputToDueIso,
-  getMondayOfWeek,
-  localDateAndTimeToIso,
-  toLocalDateKey,
-} from '../lib/date';
-import { generateId, readFromStorage, STORAGE_KEYS, writeToStorage } from '../lib/storage';
+import { toLocalDateKey } from '../lib/date';
 import {
   analyzeTimetableFileApi,
   cancelSessionApi,
@@ -65,9 +51,7 @@ import type {
 import { useAuth } from './AuthContext';
 import { useTheme, type ThemePreference } from './ThemeContext';
 
-const LOCAL_USER_ID = 'local-user';
-
-export interface LocalProfile {
+export interface StudyProfile {
   displayName: string;
   timezone: string;
   aiInstructions: string | null;
@@ -75,7 +59,7 @@ export interface LocalProfile {
 }
 
 export interface StudyState {
-  profile: LocalProfile;
+  profile: StudyProfile;
   activePriorityTitle: string | null;
   activePriorityTaskId: string | null;
   activePriorityProjectId: string | null;
@@ -84,261 +68,19 @@ export interface StudyState {
   scheduleEvents: ScheduleEvent[];
 }
 
-const DEFAULT_LOCAL_PROFILE: LocalProfile = {
-  displayName: 'Utilisateur',
-  timezone: 'Africa/Dakar',
-  aiInstructions: null,
-};
-
-const DEFAULT_STUDY_STATE: StudyState = {
-  profile: DEFAULT_LOCAL_PROFILE,
-  activePriorityTitle: null,
-  activePriorityTaskId: null,
-  activePriorityProjectId: null,
-  tasks: [],
-  sessions: [],
-  scheduleEvents: [],
-};
-
-function sanitizeStoredState(raw: unknown): StudyState {
-  if (!raw || typeof raw !== 'object') {
-    return DEFAULT_STUDY_STATE;
-  }
-  const candidate = raw as Partial<StudyState>;
-  const rawProfile =
-    candidate.profile && typeof candidate.profile === 'object' ? candidate.profile : null;
-
-  return {
-    profile: {
-      displayName:
-        rawProfile && typeof rawProfile.displayName === 'string' && rawProfile.displayName.trim()
-          ? rawProfile.displayName.trim()
-          : DEFAULT_LOCAL_PROFILE.displayName,
-      timezone:
-        rawProfile && typeof rawProfile.timezone === 'string' && rawProfile.timezone.trim()
-          ? rawProfile.timezone.trim()
-          : DEFAULT_LOCAL_PROFILE.timezone,
-      aiInstructions:
-        rawProfile && typeof rawProfile.aiInstructions === 'string'
-          ? rawProfile.aiInstructions
-          : null,
-      ...(rawProfile &&
-      rawProfile.preferences &&
-      typeof rawProfile.preferences === 'object' &&
-      !Array.isArray(rawProfile.preferences)
-        ? { preferences: rawProfile.preferences as Record<string, unknown> }
-        : {}),
-    },
-    activePriorityTitle:
-      typeof candidate.activePriorityTitle === 'string' && candidate.activePriorityTitle.trim()
-        ? candidate.activePriorityTitle
-        : null,
-    activePriorityTaskId:
-      typeof candidate.activePriorityTaskId === 'string' ? candidate.activePriorityTaskId : null,
-    activePriorityProjectId:
-      typeof candidate.activePriorityProjectId === 'string'
-        ? candidate.activePriorityProjectId
-        : null,
-    tasks: Array.isArray(candidate.tasks) ? candidate.tasks : [],
-    sessions: Array.isArray(candidate.sessions) ? candidate.sessions : [],
-    scheduleEvents: Array.isArray(candidate.scheduleEvents) ? candidate.scheduleEvents : [],
-  };
-}
-
-function buildDemoState(now = new Date()): StudyState {
-  const nowIso = now.toISOString();
-  const todayDue = new Date(
-    now.getFullYear(),
-    now.getMonth(),
-    now.getDate(),
-    23,
-    59,
-    0,
-    0,
-  ).toISOString();
-  const tomorrowDue = new Date(
-    now.getFullYear(),
-    now.getMonth(),
-    now.getDate() + 1,
-    23,
-    59,
-    0,
-    0,
-  ).toISOString();
-  const yesterdayIso = new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString();
-
-  const primaryTaskId = generateId();
-  const secondTaskId = generateId();
-  const doneTaskId = generateId();
-  const parkedTaskId = generateId();
-
-  const session1Start = new Date(now.getTime() - 5 * 60 * 60 * 1000);
-  const session1End = new Date(session1Start.getTime() + 75 * 60 * 1000);
-  const session2Start = new Date(now.getTime() - 26 * 60 * 60 * 1000);
-  const session2End = new Date(session2Start.getTime() + 50 * 60 * 1000);
-
-  return {
-    profile: DEFAULT_LOCAL_PROFILE,
-    activePriorityTitle: 'Consolider les formulaires React et la validation Zod',
-    activePriorityTaskId: primaryTaskId,
-    activePriorityProjectId: null,
-    tasks: [
-      {
-        id: primaryTaskId,
-        userId: LOCAL_USER_ID,
-        title: 'Consolider les formulaires React et la validation Zod',
-        description: 'Implémenter et tester les formulaires Tâches et Séances du Lot 2.',
-        status: 'in_progress',
-        priority: 'critical',
-        dueAt: todayDue,
-        completedAt: null,
-        source: 'manual',
-        proposalId: null,
-        projectId: null,
-        moduleId: null,
-        createdAt: yesterdayIso,
-        updatedAt: nowIso,
-      },
-      {
-        id: secondTaskId,
-        userId: LOCAL_USER_ID,
-        title: 'Préparer les exercices sur les dictionnaires Python',
-        description: 'Revoir les compréhensions de dictionnaires avant le module Backend.',
-        status: 'todo',
-        priority: 'high',
-        dueAt: tomorrowDue,
-        completedAt: null,
-        source: 'manual',
-        proposalId: null,
-        projectId: null,
-        moduleId: null,
-        createdAt: yesterdayIso,
-        updatedAt: yesterdayIso,
-      },
-      {
-        id: doneTaskId,
-        userId: LOCAL_USER_ID,
-        title: 'Mettre en place la navigation responsive React Router',
-        description: 'Barre latérale desktop et tiroir mobile accessible validés.',
-        status: 'done',
-        priority: 'normal',
-        dueAt: yesterdayIso,
-        completedAt: yesterdayIso,
-        source: 'manual',
-        proposalId: null,
-        projectId: null,
-        moduleId: null,
-        createdAt: yesterdayIso,
-        updatedAt: yesterdayIso,
-      },
-      {
-        id: parkedTaskId,
-        userId: LOCAL_USER_ID,
-        title: 'Explorer un thème sombre optionnel après le MVP',
-        description: 'Idée mise au parking pour protéger la priorité principale.',
-        status: 'parked',
-        priority: 'low',
-        dueAt: null,
-        completedAt: null,
-        source: 'manual',
-        proposalId: null,
-        projectId: null,
-        moduleId: null,
-        createdAt: yesterdayIso,
-        updatedAt: yesterdayIso,
-      },
-    ],
-    sessions: [
-      {
-        id: generateId(),
-        userId: LOCAL_USER_ID,
-        title: 'Atelier composants UI et accessibilité',
-        category: 'Apprentissage',
-        status: 'completed',
-        startedAt: session1Start.toISOString(),
-        endedAt: session1End.toISOString(),
-        result: '4 états visuels (loading, empty, error, success) implémentés et testés.',
-        taskId: doneTaskId,
-        projectId: null,
-        moduleId: null,
-        lessonId: null,
-        skillId: null,
-        createdAt: session1End.toISOString(),
-        updatedAt: session1End.toISOString(),
-      },
-      {
-        id: generateId(),
-        userId: LOCAL_USER_ID,
-        title: 'Révision algorithmique — structures de données',
-        category: 'Cours',
-        status: 'completed',
-        startedAt: session2Start.toISOString(),
-        endedAt: session2End.toISOString(),
-        result: '3 exercices résolus sur les tables de hachage et complexité O(1).',
-        taskId: null,
-        projectId: null,
-        moduleId: null,
-        lessonId: null,
-        skillId: null,
-        createdAt: session2End.toISOString(),
-        updatedAt: session2End.toISOString(),
-      },
-    ],
-    scheduleEvents: [
-      {
-        id: generateId(),
-        userId: LOCAL_USER_ID,
-        title: 'Cours d’algorithmique',
-        type: 'course',
-        startsAt: localDateAndTimeToIso(toLocalDateKey(now), '09:00'),
-        endsAt: localDateAndTimeToIso(toLocalDateKey(now), '11:00'),
-        notes: 'Complexité et arbres binaires.',
-        createdAt: nowIso,
-        updatedAt: nowIso,
-      },
-      {
-        id: generateId(),
-        userId: LOCAL_USER_ID,
-        title: 'Atelier React & TypeScript',
-        type: 'learning',
-        startsAt: localDateAndTimeToIso(toLocalDateKey(now), '15:00'),
-        endsAt: localDateAndTimeToIso(toLocalDateKey(now), '16:30'),
-        notes: 'Pratique hooks et typage strict.',
-        createdAt: nowIso,
-        updatedAt: nowIso,
-      },
-      {
-        id: generateId(),
-        userId: LOCAL_USER_ID,
-        title: 'Travail sur Amireflow Study OS',
-        type: 'project',
-        startsAt: localDateAndTimeToIso(toLocalDateKey(addDays(now, 1)), '10:00'),
-        endsAt: localDateAndTimeToIso(toLocalDateKey(addDays(now, 1)), '12:00'),
-        notes: 'Préparation du backend Python (Lot 4).',
-        createdAt: nowIso,
-        updatedAt: nowIso,
-      },
-    ],
-  };
-}
-
 export interface StudyStoreContextValue extends StudyState {
-  dataMode: 'api' | 'local_demo';
   isLoading: boolean;
   error: string | null;
   mutationError: string | null;
   clearMutationError: () => void;
   retry: () => void;
-  updateProfile: (patch: Partial<LocalProfile>) => Promise<boolean>;
+  updateProfile: (patch: Partial<StudyProfile>) => Promise<boolean>;
   setActivePriority: (
     title: string | null,
     taskId?: string | null,
     projectId?: string | null,
   ) => Promise<boolean>;
-  createTask: (
-    input: TaskFormValues,
-    meta?: { source?: 'manual' | 'ai_proposal'; proposalId?: string | null },
-  ) => Promise<boolean>;
+  createTask: (input: TaskFormValues) => Promise<boolean>;
   updateTask: (id: string, input: TaskFormValues) => Promise<boolean>;
   setTaskStatus: (id: string, status: TaskStatus) => Promise<boolean>;
   deleteTask: (id: string) => Promise<boolean>;
@@ -379,8 +121,6 @@ export interface StudyStoreContextValue extends StudyState {
   ) => Promise<TimetableImportConfirmResult | null>;
   cancelTimetableImport: (importId: string) => Promise<boolean>;
   deleteTimetableImportSource: (importId: string) => Promise<boolean>;
-  loadDemoData: () => void;
-  clearAllData: () => void;
 }
 
 const StudyStoreContext = createContext<StudyStoreContextValue | null>(null);
@@ -394,23 +134,12 @@ export function StudyStoreProvider({ children }: { children: ReactNode }) {
   const accessToken = session?.mode === 'api' ? session.accessToken : '';
   const userIdKey = session?.userId ?? 'anonymous';
 
-  const [localState, setLocalState] = useState<StudyState>(() =>
-    sanitizeStoredState(readFromStorage<unknown>(STORAGE_KEYS.studyState, DEFAULT_STUDY_STATE)),
-  );
   const [mutationError, setMutationError] = useState<string | null>(null);
-  const scheduleEventsRef = useRef(localState.scheduleEvents);
-  scheduleEventsRef.current = localState.scheduleEvents;
   const themeSyncRef = useRef<{
     userId: string;
     pendingTarget: ThemePreference | null;
     syncedTheme: ThemePreference;
   } | null>(null);
-
-  useEffect(() => {
-    if (!isApiMode) {
-      writeToStorage(STORAGE_KEYS.studyState, localState);
-    }
-  }, [isApiMode, localState]);
 
   const profileQuery = useQuery({
     queryKey: ['profile', userIdKey],
@@ -513,6 +242,10 @@ export function StudyStoreProvider({ children }: { children: ReactNode }) {
       action: () => Promise<T>,
       invalidateKeys: readonly string[],
     ): Promise<{ ok: true; data: T } | { ok: false }> => {
+      if (!isApiMode) {
+        setMutationError('Connexion requise.');
+        return { ok: false };
+      }
       setMutationError(null);
       try {
         const data = await action();
@@ -532,34 +265,19 @@ export function StudyStoreProvider({ children }: { children: ReactNode }) {
         return { ok: false };
       }
     },
-    [queryClient, userIdKey, logout],
+    [isApiMode, queryClient, userIdKey, logout],
   );
 
   const actions = useMemo(() => {
-    const updateProfile = async (patch: Partial<LocalProfile>): Promise<boolean> => {
-      if (isApiMode) {
-        const result = await runApiMutation(
-          () => updateProfileApi(accessToken, patch),
-          ['profile'],
-        );
-        if (result.ok && patch.displayName) {
-          updateSessionDisplayName(result.data.displayName);
-        }
-        return result.ok;
+    const updateProfile = async (patch: Partial<StudyProfile>): Promise<boolean> => {
+      const result = await runApiMutation(
+        () => updateProfileApi(accessToken, patch),
+        ['profile'],
+      );
+      if (result.ok && patch.displayName) {
+        updateSessionDisplayName(result.data.displayName);
       }
-
-      setLocalState((prev) => ({
-        ...prev,
-        profile: {
-          ...prev.profile,
-          ...patch,
-          displayName: patch.displayName?.trim() || prev.profile.displayName,
-        },
-      }));
-      if (patch.displayName) {
-        updateSessionDisplayName(patch.displayName);
-      }
-      return true;
+      return result.ok;
     };
 
     const setActivePriority = async (
@@ -568,248 +286,50 @@ export function StudyStoreProvider({ children }: { children: ReactNode }) {
       projectId: string | null = null,
     ): Promise<boolean> => {
       const normalized = title?.trim() || null;
-      if (isApiMode) {
-        const result = await runApiMutation(
-          () =>
-            updateProfileApi(accessToken, {
-              activePriorityTitle: normalized,
-              activePriorityTaskId: normalized ? taskId : null,
-              activePriorityProjectId: normalized ? projectId : null,
-            }),
-          ['profile'],
-        );
-        return result.ok;
-      }
-
-      setLocalState((prev) => ({
-        ...prev,
-        activePriorityTitle: normalized,
-        activePriorityTaskId: normalized ? taskId : null,
-        activePriorityProjectId: normalized ? projectId : null,
-      }));
-      return true;
+      const result = await runApiMutation(
+        () =>
+          updateProfileApi(accessToken, {
+            activePriorityTitle: normalized,
+            activePriorityTaskId: normalized ? taskId : null,
+            activePriorityProjectId: normalized ? projectId : null,
+          }),
+        ['profile'],
+      );
+      return result.ok;
     };
 
-    const MAX_ACTIVE_CRITICAL_TASKS = 3;
-    const isTaskActive = (s: TaskStatus) => s === 'todo' || s === 'in_progress';
-
-    const createTask = async (
-      input: TaskFormValues,
-      meta?: { source?: 'manual' | 'ai_proposal'; proposalId?: string | null },
-    ): Promise<boolean> => {
-      if (isApiMode) {
-        const result = await runApiMutation(() => createTaskApi(accessToken, input), ['tasks']);
-        return result.ok;
-      }
-
-      setMutationError(null);
-
-      if (isTaskActive(input.status) && input.priority === 'critical') {
-        const criticalCount = localState.tasks.filter(
-          (t) => isTaskActive(t.status) && t.priority === 'critical',
-        ).length;
-        if (criticalCount >= MAX_ACTIVE_CRITICAL_TASKS) {
-          setMutationError(
-            'Limite de 3 tâches critiques actives atteinte : terminez, mettez au parking ou rétrogradez une tâche critique avant d’en ajouter une autre.',
-          );
-          return false;
-        }
-      }
-
-      const nowIso = new Date().toISOString();
-      const newTask: Task = {
-        id: generateId(),
-        userId: LOCAL_USER_ID,
-        title: input.title.trim(),
-        description: input.description?.trim() || null,
-        status: input.status,
-        priority: input.priority,
-        dueAt: dateInputToDueIso(input.dueDate ?? ''),
-        completedAt: input.status === 'done' ? nowIso : null,
-        source: meta?.source ?? 'manual',
-        proposalId: meta?.proposalId ?? null,
-        projectId: input.projectId?.trim() || null,
-        moduleId: input.moduleId?.trim() || null,
-        createdAt: nowIso,
-        updatedAt: nowIso,
-      };
-      setLocalState((prev) => ({ ...prev, tasks: [newTask, ...prev.tasks] }));
-      return true;
+    const createTask = async (input: TaskFormValues): Promise<boolean> => {
+      const result = await runApiMutation(() => createTaskApi(accessToken, input), ['tasks']);
+      return result.ok;
     };
 
     const updateTask = async (id: string, input: TaskFormValues): Promise<boolean> => {
-      if (isApiMode) {
-        const result = await runApiMutation(
-          () => updateTaskApi(accessToken, id, input),
-          ['tasks', 'profile'],
-        );
-        return result.ok;
-      }
-
-      setMutationError(null);
-
-      const existing = localState.tasks.find((t) => t.id === id);
-      if (
-        existing &&
-        isTaskActive(input.status) &&
-        input.priority === 'critical' &&
-        !(isTaskActive(existing.status) && existing.priority === 'critical')
-      ) {
-        const criticalCount = localState.tasks.filter(
-          (t) => t.id !== id && isTaskActive(t.status) && t.priority === 'critical',
-        ).length;
-        if (criticalCount >= MAX_ACTIVE_CRITICAL_TASKS) {
-          setMutationError(
-            'Limite de 3 tâches critiques actives atteinte : terminez, mettez au parking ou rétrogradez une tâche critique avant d’en ajouter une autre.',
-          );
-          return false;
-        }
-      }
-
-      const nowIso = new Date().toISOString();
-      const nextTitle = input.title.trim();
-      setLocalState((prev) => {
-        const isPriorityTask = prev.activePriorityTaskId === id;
-        const becomingInactive = !isTaskActive(input.status);
-        return {
-          ...prev,
-          activePriorityTaskId:
-            isPriorityTask && becomingInactive ? null : prev.activePriorityTaskId,
-          activePriorityTitle: isPriorityTask
-            ? becomingInactive
-              ? prev.activePriorityProjectId === null
-                ? null
-                : prev.activePriorityTitle
-              : nextTitle
-            : prev.activePriorityTitle,
-          tasks: prev.tasks.map((task) =>
-            task.id !== id
-              ? task
-              : {
-                  ...task,
-                  title: nextTitle,
-                  description: input.description?.trim() || null,
-                  priority: input.priority,
-                  status: input.status,
-                  dueAt: dateInputToDueIso(input.dueDate ?? ''),
-                  completedAt: input.status === 'done' ? (task.completedAt ?? nowIso) : null,
-                  projectId:
-                    input.projectId !== undefined
-                      ? input.projectId.trim() || null
-                      : task.projectId,
-                  moduleId:
-                    input.moduleId !== undefined
-                      ? input.moduleId.trim() || null
-                      : task.moduleId,
-                  updatedAt: nowIso,
-                },
-          ),
-        };
-      });
-      return true;
+      const result = await runApiMutation(
+        () => updateTaskApi(accessToken, id, input),
+        ['tasks', 'profile'],
+      );
+      return result.ok;
     };
 
     const setTaskStatus = async (id: string, status: TaskStatus): Promise<boolean> => {
-      if (isApiMode) {
-        const result = await runApiMutation(
-          () => updateTaskApi(accessToken, id, { status }),
-          ['tasks', 'profile'],
-        );
-        return result.ok;
-      }
-
-      setMutationError(null);
-
-      const existing = localState.tasks.find((t) => t.id === id);
-      if (
-        existing &&
-        isTaskActive(status) &&
-        existing.priority === 'critical' &&
-        !isTaskActive(existing.status)
-      ) {
-        const criticalCount = localState.tasks.filter(
-          (t) => t.id !== id && isTaskActive(t.status) && t.priority === 'critical',
-        ).length;
-        if (criticalCount >= MAX_ACTIVE_CRITICAL_TASKS) {
-          setMutationError(
-            'Limite de 3 tâches critiques actives atteinte : terminez, mettez au parking ou rétrogradez une tâche critique avant d’en réactiver une autre.',
-          );
-          return false;
-        }
-      }
-
-      const nowIso = new Date().toISOString();
-      setLocalState((prev) => {
-        const isPriorityTask = prev.activePriorityTaskId === id;
-        const becomingInactive = !isTaskActive(status);
-        return {
-          ...prev,
-          activePriorityTaskId:
-            isPriorityTask && becomingInactive ? null : prev.activePriorityTaskId,
-          activePriorityTitle:
-            isPriorityTask && becomingInactive && prev.activePriorityProjectId === null
-              ? null
-              : prev.activePriorityTitle,
-          tasks: prev.tasks.map((task) =>
-            task.id !== id
-              ? task
-              : {
-                  ...task,
-                  status,
-                  completedAt: status === 'done' ? (task.completedAt ?? nowIso) : null,
-                  updatedAt: nowIso,
-                },
-          ),
-        };
-      });
-      return true;
+      const result = await runApiMutation(
+        () => updateTaskApi(accessToken, id, { status }),
+        ['tasks', 'profile'],
+      );
+      return result.ok;
     };
 
     const deleteTask = async (id: string): Promise<boolean> => {
-      if (isApiMode) {
-        const result = await runApiMutation(
-          () => deleteTaskApi(accessToken, id),
-          ['tasks', 'profile', 'sessions'],
-        );
-        return result.ok;
-      }
-
-      setLocalState((prev) => ({
-        ...prev,
-        activePriorityTitle: prev.activePriorityTaskId === id ? null : prev.activePriorityTitle,
-        activePriorityTaskId: prev.activePriorityTaskId === id ? null : prev.activePriorityTaskId,
-        tasks: prev.tasks.filter((task) => task.id !== id),
-        sessions: prev.sessions.map((s) => (s.taskId === id ? { ...s, taskId: null } : s)),
-      }));
-      return true;
+      const result = await runApiMutation(
+        () => deleteTaskApi(accessToken, id),
+        ['tasks', 'profile', 'sessions'],
+      );
+      return result.ok;
     };
 
     const startSession = async (input: StartSessionValues): Promise<boolean> => {
-      if (isApiMode) {
-        const result = await runApiMutation(() => startSessionApi(accessToken, input), ['sessions']);
-        return result.ok;
-      }
-
-      const nowIso = new Date().toISOString();
-      const created: StudySession = {
-        id: generateId(),
-        userId: LOCAL_USER_ID,
-        title: input.title.trim(),
-        category: input.category.trim(),
-        status: 'in_progress',
-        startedAt: nowIso,
-        endedAt: null,
-        result: null,
-        taskId: input.taskId?.trim() || null,
-        projectId: input.projectId?.trim() || null,
-        moduleId: input.moduleId?.trim() || null,
-        lessonId: input.lessonId?.trim() || null,
-        skillId: input.skillId?.trim() || null,
-        createdAt: nowIso,
-        updatedAt: nowIso,
-      };
-      setLocalState((prev) => ({ ...prev, sessions: [created, ...prev.sessions] }));
-      return true;
+      const result = await runApiMutation(() => startSessionApi(accessToken, input), ['sessions']);
+      return result.ok;
     };
 
     const finishSession = async (
@@ -817,222 +337,74 @@ export function StudyStoreProvider({ children }: { children: ReactNode }) {
       resultText: string,
       extra?: SessionFinishExtra,
     ): Promise<boolean> => {
-      if (isApiMode) {
-        const result = await runApiMutation(
-          () => finishSessionApi(accessToken, id, resultText, extra),
-          ['sessions'],
-        );
-        return result.ok;
-      }
-
-      const nowIso = new Date().toISOString();
-      setLocalState((prev) => ({
-        ...prev,
-        sessions: prev.sessions.map((s) =>
-          s.id === id
-            ? {
-                ...s,
-                status: 'completed',
-                endedAt: nowIso,
-                result: resultText.trim(),
-                plannedActivity: extra?.plannedActivity?.trim() || s.plannedActivity || null,
-                actualActivity: extra?.actualActivity?.trim() || s.actualActivity || null,
-                outcomeStatus: extra?.outcomeStatus || s.outcomeStatus || 'completed',
-                deliverableSummary: extra?.deliverableSummary?.trim() || s.deliverableSummary || null,
-                blockers: extra?.blockers?.trim() || s.blockers || null,
-                nextStep: extra?.nextStep?.trim() || s.nextStep || null,
-                updatedAt: nowIso,
-              }
-            : s,
-        ),
-      }));
-      return true;
+      const result = await runApiMutation(
+        () => finishSessionApi(accessToken, id, resultText, extra),
+        ['sessions'],
+      );
+      return result.ok;
     };
 
     const cancelSession = async (id: string): Promise<boolean> => {
-      if (isApiMode) {
-        const result = await runApiMutation(() => cancelSessionApi(accessToken, id), ['sessions']);
-        return result.ok;
-      }
-
-      const nowIso = new Date().toISOString();
-      setLocalState((prev) => ({
-        ...prev,
-        sessions: prev.sessions.map((s) =>
-          s.id === id
-            ? { ...s, status: 'cancelled', endedAt: null, updatedAt: nowIso }
-            : s,
-        ),
-      }));
-      return true;
+      const result = await runApiMutation(() => cancelSessionApi(accessToken, id), ['sessions']);
+      return result.ok;
     };
 
     const recordManualSession = async (input: ManualSessionValues): Promise<boolean> => {
-      if (isApiMode) {
-        const result = await runApiMutation(
-          () => recordManualSessionApi(accessToken, input),
-          ['sessions'],
-        );
-        return result.ok;
-      }
-
-      const nowIso = new Date().toISOString();
-      const created: StudySession = {
-        id: generateId(),
-        userId: LOCAL_USER_ID,
-        title: input.title.trim(),
-        category: input.category.trim(),
-        status: 'completed',
-        startedAt: new Date(input.startedAt).toISOString(),
-        endedAt: new Date(input.endedAt).toISOString(),
-        result: input.result.trim(),
-        taskId: input.taskId?.trim() || null,
-        projectId: input.projectId?.trim() || null,
-        moduleId: input.moduleId?.trim() || null,
-        lessonId: input.lessonId?.trim() || null,
-        skillId: input.skillId?.trim() || null,
-        createdAt: nowIso,
-        updatedAt: nowIso,
-      };
-      setLocalState((prev) => ({ ...prev, sessions: [created, ...prev.sessions] }));
-      return true;
+      const result = await runApiMutation(
+        () => recordManualSessionApi(accessToken, input),
+        ['sessions'],
+      );
+      return result.ok;
     };
 
     const deleteSession = async (id: string): Promise<boolean> => {
-      if (isApiMode) {
-        const result = await runApiMutation(() => deleteSessionApi(accessToken, id), ['sessions']);
-        return result.ok;
-      }
-
-      setLocalState((prev) => ({
-        ...prev,
-        sessions: prev.sessions.filter((s) => s.id !== id),
-      }));
-      return true;
+      const result = await runApiMutation(() => deleteSessionApi(accessToken, id), ['sessions']);
+      return result.ok;
     };
 
     const createScheduleEvent = async (values: ScheduleEventFormValues): Promise<boolean> => {
-      if (isApiMode) {
-        const result = await runApiMutation(
-          () => createScheduleEventApi(accessToken, values),
-          ['schedule'],
-        );
-        return result.ok;
-      }
-
-      const nowIso = new Date().toISOString();
-      const event: ScheduleEvent = {
-        id: generateId(),
-        userId: LOCAL_USER_ID,
-        title: values.title.trim(),
-        type: values.type,
-        startsAt: localDateAndTimeToIso(values.date, values.startTime),
-        endsAt: localDateAndTimeToIso(values.date, values.endTime),
-        notes: values.notes?.trim() || null,
-        createdAt: nowIso,
-        updatedAt: nowIso,
-      };
-      setLocalState((prev) => ({ ...prev, scheduleEvents: [...prev.scheduleEvents, event] }));
-      return true;
+      const result = await runApiMutation(
+        () => createScheduleEventApi(accessToken, values),
+        ['schedule'],
+      );
+      return result.ok;
     };
 
     const updateScheduleEvent = async (
       id: string,
       values: ScheduleEventFormValues,
     ): Promise<boolean> => {
-      if (isApiMode) {
-        const result = await runApiMutation(
-          () => updateScheduleEventApi(accessToken, id, values),
-          ['schedule'],
-        );
-        return result.ok;
-      }
-
-      const nowIso = new Date().toISOString();
-      const startsAt = localDateAndTimeToIso(values.date, values.startTime);
-      const endsAt = localDateAndTimeToIso(values.date, values.endTime);
-      setLocalState((prev) => ({
-        ...prev,
-        scheduleEvents: prev.scheduleEvents.map((ev) =>
-          ev.id === id
-            ? {
-                ...ev,
-                title: values.title.trim(),
-                type: values.type,
-                startsAt,
-                endsAt,
-                notes: values.notes?.trim() || null,
-                updatedAt: nowIso,
-              }
-            : ev,
-        ),
-      }));
-      return true;
+      const result = await runApiMutation(
+        () => updateScheduleEventApi(accessToken, id, values),
+        ['schedule'],
+      );
+      return result.ok;
     };
 
     const deleteScheduleEvent = async (id: string): Promise<boolean> => {
-      if (isApiMode) {
-        const result = await runApiMutation(
-          () => deleteScheduleEventApi(accessToken, id),
-          ['schedule'],
-        );
-        return result.ok;
-      }
-
-      setLocalState((prev) => ({
-        ...prev,
-        scheduleEvents: prev.scheduleEvents.filter((ev) => ev.id !== id),
-      }));
-      return true;
+      const result = await runApiMutation(
+        () => deleteScheduleEventApi(accessToken, id),
+        ['schedule'],
+      );
+      return result.ok;
     };
 
     const duplicateWeekEvents = async (
       weekStart: Date,
     ): Promise<{ createdCount: number; skippedCount: number } | null> => {
-      if (isApiMode) {
-        const result = await runApiMutation(
-          () => duplicateWeekApi(accessToken, toLocalDateKey(weekStart)),
-          ['schedule'],
-        );
-        return result.ok ? result.data : null;
-      }
-
-      const currentEvents = scheduleEventsRef.current;
-      const sourceWeekEvents = getEventsForWeek(currentEvents, weekStart);
-      const nowIso = new Date().toISOString();
-      const { created, skippedCount } = buildDuplicatedWeekEvents(
-        sourceWeekEvents,
-        currentEvents,
-        nowIso,
-        generateId,
+      const result = await runApiMutation(
+        () => duplicateWeekApi(accessToken, toLocalDateKey(weekStart)),
+        ['schedule'],
       );
-      if (created.length > 0) {
-        setLocalState((prev) => ({
-          ...prev,
-          scheduleEvents: [...prev.scheduleEvents, ...created],
-        }));
-      }
-      return { createdCount: created.length, skippedCount };
+      return result.ok ? result.data : null;
     };
 
     const analyzeTimetableFile = async (file: File): Promise<TimetableImport | null> => {
-      if (isApiMode) {
-        const result = await runApiMutation(
-          () => analyzeTimetableFileApi(accessToken, file),
-          [],
-        );
-        return result.ok ? result.data : null;
-      }
-
-      setMutationError(null);
-      try {
-        return await parseLocalTimetableFile(file, scheduleEventsRef.current, LOCAL_USER_ID);
-      } catch (err) {
-        setMutationError(
-          err instanceof Error ? err.message : 'Impossible d’analyser ce document.',
-        );
-        return null;
-      }
+      const result = await runApiMutation(
+        () => analyzeTimetableFileApi(accessToken, file),
+        [],
+      );
+      return result.ok ? result.data : null;
     };
 
     const updateTimetableImportDraft = async (
@@ -1043,38 +415,16 @@ export function StudyStoreProvider({ children }: { children: ReactNode }) {
         validUntil?: string | null;
       },
     ): Promise<TimetableImport | null> => {
-      if (isApiMode) {
-        const result = await runApiMutation(
-          () =>
-            updateTimetableImportDraftApi(accessToken, importRecord.id, {
-              courses: options.courses,
-              validFrom: options.validFrom ?? importRecord.validFrom,
-              validUntil: options.validUntil ?? importRecord.validUntil,
-            }),
-          [],
-        );
-        return result.ok ? result.data : null;
-      }
-
-      setMutationError(null);
-      const nowIso = new Date().toISOString();
-      const updatedCourses = options.courses.map((c) => ({
-        ...c,
-        dayLabel: c.dayOfWeek !== null ? (DAY_LABELS_FR[c.dayOfWeek] ?? null) : null,
-      }));
-      const anomalies = detectClientTimetableAnomalies(
-        updatedCourses,
-        scheduleEventsRef.current,
+      const result = await runApiMutation(
+        () =>
+          updateTimetableImportDraftApi(accessToken, importRecord.id, {
+            courses: options.courses,
+            validFrom: options.validFrom ?? importRecord.validFrom,
+            validUntil: options.validUntil ?? importRecord.validUntil,
+          }),
+        [],
       );
-      return {
-        ...importRecord,
-        validFrom: options.validFrom !== undefined ? options.validFrom : importRecord.validFrom,
-        validUntil: options.validUntil !== undefined ? options.validUntil : importRecord.validUntil,
-        extractedCourses: updatedCourses,
-        anomalies,
-        blockingAnomaliesCount: anomalies.filter((a) => a.severity === 'error').length,
-        updatedAt: nowIso,
-      };
+      return result.ok ? result.data : null;
     };
 
     const confirmTimetableImport = async (
@@ -1088,175 +438,35 @@ export function StudyStoreProvider({ children }: { children: ReactNode }) {
         replaceExistingImported?: boolean;
       },
     ): Promise<TimetableImportConfirmResult | null> => {
-      if (isApiMode) {
-        const result = await runApiMutation(
-          () =>
-            confirmTimetableImportApi(accessToken, importRecord.id, {
-              courses: options.courses,
-              validFrom: options.validFrom ?? importRecord.validFrom,
-              validUntil: options.validUntil ?? importRecord.validUntil,
-              targetWeekStart: options.targetWeekStart ?? null,
-              recurrenceWeeks: options.recurrenceWeeks ?? 1,
-              replaceExistingImported: options.replaceExistingImported ?? false,
-            }),
-          ['schedule'],
-        );
-        return result.ok ? result.data : null;
-      }
-
-      setMutationError(null);
-      const activeCourses = options.courses.filter((c) => !c.ignored);
-      if (activeCourses.length === 0) {
-        setMutationError('Aucun cours actif à enregistrer.');
-        return null;
-      }
-
-      const anomalies = detectClientTimetableAnomalies(
-        options.courses,
-        scheduleEventsRef.current,
-        options.targetWeekStart,
+      const result = await runApiMutation(
+        () =>
+          confirmTimetableImportApi(accessToken, importRecord.id, {
+            courses: options.courses,
+            validFrom: options.validFrom ?? importRecord.validFrom,
+            validUntil: options.validUntil ?? importRecord.validUntil,
+            targetWeekStart: options.targetWeekStart ?? null,
+            recurrenceWeeks: options.recurrenceWeeks ?? 1,
+            replaceExistingImported: options.replaceExistingImported ?? false,
+          }),
+        ['schedule'],
       );
-      const blocking = anomalies.filter((a) => a.severity === 'error');
-      if (blocking.length > 0) {
-        setMutationError(`Impossible de valider : ${blocking[0].message}`);
-        return null;
-      }
-
-      const baseMonday = options.targetWeekStart
-        ? getMondayOfWeek(new Date(`${options.targetWeekStart}T12:00:00`))
-        : getMondayOfWeek(new Date());
-      const recurrenceWeeks = Math.max(1, Math.min(options.recurrenceWeeks ?? 1, 24));
-      const nowIso = new Date().toISOString();
-
-      let baseEvents = [...scheduleEventsRef.current];
-      let replacedCount = 0;
-      if (options.replaceExistingImported) {
-        const kept = baseEvents.filter((ev) => ev.source !== 'timetable_import');
-        replacedCount = baseEvents.length - kept.length;
-        baseEvents = kept;
-      }
-
-      const existingKeys = new Set(
-        baseEvents.map(
-          (ev) =>
-            `${ev.title.replace(/^\[(TD|TP|Examen|Cours)\]\s*/i, '').trim().toLowerCase()}|${ev.startsAt}|${ev.endsAt}`,
-        ),
-      );
-
-      const createdEvents: ScheduleEvent[] = [];
-      let skippedDuplicatesCount = 0;
-
-      for (let w = 0; w < recurrenceWeeks; w += 1) {
-        const weekMonday = addDays(baseMonday, w * 7);
-        for (const row of activeCourses) {
-          if (row.dayOfWeek === null || !row.startTime || !row.endTime) {
-            continue;
-          }
-          const courseDate = toLocalDateKey(addDays(weekMonday, row.dayOfWeek));
-          const startsAt = localDateAndTimeToIso(courseDate, row.startTime);
-          const endsAt = localDateAndTimeToIso(courseDate, row.endTime);
-          const cleanSubject = row.subject.trim();
-          const normKey = `${cleanSubject.toLowerCase()}|${startsAt}|${endsAt}`;
-
-          if (existingKeys.has(normKey)) {
-            skippedDuplicatesCount += 1;
-            continue;
-          }
-          existingKeys.add(normKey);
-
-          const prefix =
-            row.sessionType !== 'cours' && row.sessionType !== 'autre'
-              ? `[${SUBTYPE_LABELS_FR[row.sessionType]}] `
-              : '';
-          const title = `${prefix}${cleanSubject}`.slice(0, 140);
-
-          createdEvents.push({
-            id: generateId(),
-            userId: LOCAL_USER_ID,
-            title,
-            type: 'course',
-            startsAt,
-            endsAt,
-            notes: null,
-            source: 'timetable_import',
-            importId: importRecord.id,
-            sessionSubtype: row.sessionType,
-            teacher: row.teacher,
-            room: row.room,
-            groupName: row.groupName,
-            createdAt: nowIso,
-            updatedAt: nowIso,
-          });
-        }
-      }
-
-      setLocalState((prev) => {
-        const current = options.replaceExistingImported
-          ? prev.scheduleEvents.filter((ev) => ev.source !== 'timetable_import')
-          : prev.scheduleEvents;
-        return {
-          ...prev,
-          scheduleEvents: [...current, ...createdEvents],
-        };
-      });
-
-      const updatedImport: TimetableImport = {
-        ...importRecord,
-        status: 'validated',
-        validFrom: options.validFrom ?? importRecord.validFrom,
-        validUntil: options.validUntil ?? importRecord.validUntil,
-        extractedCourses: options.courses.map((c) => ({
-          ...c,
-          dayLabel: c.dayOfWeek !== null ? DAY_LABELS_FR[c.dayOfWeek] : null,
-        })),
-        anomalies,
-        blockingAnomaliesCount: 0,
-        createdEventsCount: createdEvents.length,
-        skippedDuplicatesCount,
-        replacedEventsCount: replacedCount,
-        updatedAt: nowIso,
-        validatedAt: nowIso,
-      };
-
-      return {
-        importRecord: updatedImport,
-        createdEvents,
-        createdCount: createdEvents.length,
-        skippedDuplicatesCount,
-        replacedCount,
-      };
+      return result.ok ? result.data : null;
     };
 
     const cancelTimetableImport = async (importId: string): Promise<boolean> => {
-      if (isApiMode) {
-        const result = await runApiMutation(
-          () => cancelTimetableImportApi(accessToken, importId),
-          [],
-        );
-        return result.ok;
-      }
-      setMutationError(null);
-      return true;
+      const result = await runApiMutation(
+        () => cancelTimetableImportApi(accessToken, importId),
+        [],
+      );
+      return result.ok;
     };
 
     const deleteTimetableImportSource = async (importId: string): Promise<boolean> => {
-      if (isApiMode) {
-        const result = await runApiMutation(
-          () => deleteTimetableImportSourceApi(accessToken, importId),
-          [],
-        );
-        return result.ok;
-      }
-      setMutationError(null);
-      return true;
-    };
-
-    const loadDemoData = () => {
-      setLocalState(buildDemoState());
-    };
-
-    const clearAllData = () => {
-      setLocalState(DEFAULT_STUDY_STATE);
+      const result = await runApiMutation(
+        () => deleteTimetableImportSourceApi(accessToken, importId),
+        [],
+      );
+      return result.ok;
     };
 
     return {
@@ -1280,16 +490,11 @@ export function StudyStoreProvider({ children }: { children: ReactNode }) {
       confirmTimetableImport,
       cancelTimetableImport,
       deleteTimetableImportSource,
-      loadDemoData,
-      clearAllData,
     };
-  }, [isApiMode, accessToken, runApiMutation, updateSessionDisplayName]);
+  }, [accessToken, runApiMutation, updateSessionDisplayName]);
 
-  const resolvedState: StudyState = useMemo(() => {
-    if (!isApiMode) {
-      return localState;
-    }
-    return {
+  const resolvedState: StudyState = useMemo(
+    () => ({
       profile: profileQuery.data
         ? {
             displayName: profileQuery.data.displayName,
@@ -1297,22 +502,26 @@ export function StudyStoreProvider({ children }: { children: ReactNode }) {
             aiInstructions: profileQuery.data.aiInstructions,
             preferences: profileQuery.data.preferences,
           }
-        : DEFAULT_LOCAL_PROFILE,
+        : {
+            displayName: session?.displayName || 'Utilisateur',
+            timezone: 'Africa/Dakar',
+            aiInstructions: null,
+          },
       activePriorityTitle: profileQuery.data?.activePriorityTitle ?? null,
       activePriorityTaskId: profileQuery.data?.activePriorityTaskId ?? null,
       activePriorityProjectId: profileQuery.data?.activePriorityProjectId ?? null,
       tasks: tasksQuery.data ?? [],
       sessions: sessionsQuery.data ?? [],
       scheduleEvents: scheduleQuery.data ?? [],
-    };
-  }, [
-    isApiMode,
-    localState,
-    profileQuery.data,
-    tasksQuery.data,
-    sessionsQuery.data,
-    scheduleQuery.data,
-  ]);
+    }),
+    [
+      session?.displayName,
+      profileQuery.data,
+      tasksQuery.data,
+      sessionsQuery.data,
+      scheduleQuery.data,
+    ],
+  );
 
   const isLoading =
     isApiMode &&
@@ -1335,7 +544,6 @@ export function StudyStoreProvider({ children }: { children: ReactNode }) {
   const value = useMemo<StudyStoreContextValue>(
     () => ({
       ...resolvedState,
-      dataMode: isApiMode ? 'api' : 'local_demo',
       isLoading,
       error,
       mutationError,
@@ -1345,7 +553,6 @@ export function StudyStoreProvider({ children }: { children: ReactNode }) {
     }),
     [
       resolvedState,
-      isApiMode,
       isLoading,
       error,
       mutationError,

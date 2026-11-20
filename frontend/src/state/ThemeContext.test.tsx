@@ -6,16 +6,8 @@ import { AppProviders } from '../app/providers';
 import { appRoutes } from '../app/router';
 import { ThemeToggleButton } from '../components/ui/ThemeToggle';
 import { STORAGE_KEYS } from '../lib/storage';
-import type { AuthSession } from './AuthContext';
+import { installMockStudyApi, TEST_API_SESSION } from '../test/mockStudyApi';
 import { ThemeProvider, useTheme } from './ThemeContext';
-
-const DEMO_SESSION: AuthSession = {
-  mode: 'local_demo',
-  accessToken: null,
-  userId: 'local-user',
-  email: 'local@amireflow.local',
-  displayName: 'Mode local',
-};
 
 const originalMatchMedia = window.matchMedia;
 
@@ -83,13 +75,14 @@ function ThemeProbe() {
   );
 }
 
-afterEach(() => {
-  Object.defineProperty(window, 'matchMedia', {
-    configurable: true,
-    writable: true,
-    value: originalMatchMedia,
+  afterEach(() => {
+    vi.restoreAllMocks();
+    Object.defineProperty(window, 'matchMedia', {
+      configurable: true,
+      writable: true,
+      value: originalMatchMedia,
+    });
   });
-});
 
 describe('ThemeContext et contrôles de thème', () => {
   it('utilise le mode système par défaut et suit prefers-color-scheme sans matchMedia ou avec matchMedia', () => {
@@ -177,6 +170,7 @@ describe('ThemeContext et contrôles de thème', () => {
   });
 
   it('permet de piloter Clair / Sombre / Système depuis la page Paramètres et la barre latérale', async () => {
+    installMockStudyApi();
     const user = userEvent.setup();
     installMatchMediaMock(false);
 
@@ -185,12 +179,12 @@ describe('ThemeContext et contrôles de thème', () => {
     });
 
     render(
-      <AppProviders initialSession={DEMO_SESSION}>
+      <AppProviders initialSession={TEST_API_SESSION}>
         <RouterProvider router={router} />
       </AppProviders>,
     );
 
-    const group = screen.getByRole('group', { name: 'Choix du thème d’affichage' });
+    const group = await screen.findByRole('group', { name: 'Choix du thème d’affichage' });
     const lightBtn = within(group).getByRole('button', { name: 'Clair' });
     const darkBtn = within(group).getByRole('button', { name: 'Sombre' });
     const systemBtn = within(group).getByRole('button', { name: 'Système' });
