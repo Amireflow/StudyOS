@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import json
+import pytest
 from fastapi.testclient import TestClient
 
 from app.core.config import Settings
+from app.core.errors import AppError
 from app.schemas.common import CourseLanguage, CourseSubmissionKind
 from app.services import course_curricula, course_generator
 from app.services.github_inspector import GitHubInspectionResult
@@ -325,15 +328,52 @@ def test_user_ai_config_preferred_for_enrichment_without_leaking_server_key(monk
             return None
 
         def json(self) -> dict:
-            return {
-                "choices": [
+            level = {
+                "title": "Niveau 1 enrichi",
+                "summary": "Plan ciblé enrichi par IA utilisateur avec une progression adaptée.",
+                "objectives": [
+                    "Écrire des scripts Python exécutables",
+                    "Manipuler des données structurées",
+                    "Tester les erreurs et les cas limites",
+                ],
+                "lessons": [
                     {
-                        "message": {
-                            "content": '{"title": "Niveau 1 enrichi", "summary": "Plan ciblé enrichi par IA utilisateur", "objectives": ["Obj 1", "Obj 2"], "project_title": "Projet IA", "project_brief": "Brief détaillé validé pour vérifier la génération IA utilisateur."}'
-                        }
+                        "position": index,
+                        "title": f"Chapitre pratique {index}",
+                        "summary": "Explication ciblée d'une notion utile et de son application.",
+                        "estimated_minutes": 30,
+                        "content_markdown": (
+                            "Cette leçon explique la notion pas à pas, son utilité, les prérequis, "
+                            "un cas réel, les erreurs fréquentes et une méthode de vérification reproductible. "
+                            "L'apprenant applique ensuite la notion à un petit problème concret."
+                        ),
+                        "code_examples": [
+                            {"title": "Exemple simple", "language": "python", "code": "value = 1", "explanation": "Initialiser une valeur."},
+                            {"title": "Exemple vérifié", "language": "python", "code": "assert value == 1", "explanation": "Vérifier le résultat attendu."},
+                        ],
+                        "exercises": [
+                            {
+                                "id": f"ch{index}-ex1",
+                                "title": "Exercice guidé",
+                                "difficulty": "guide",
+                                "exercise_type": "code",
+                                "instructions_markdown": "Écrire une fonction, traiter une entrée invalide et vérifier le résultat.",
+                                "starter_code": "",
+                                "hints": ["Commencer par définir les entrées.", "Vérifier les cas limites."],
+                                "expected_concepts": ["fonction", "validation"],
+                            }
+                        ],
                     }
-                ]
+                    for index in range(1, 4)
+                ],
+                "project_title": "Projet IA vérifiable",
+                "project_brief": (
+                    "Construire un outil Python simple qui transforme un fichier de données, "
+                    "valide les entrées, signale les erreurs et produit un résultat reproductible."
+                ),
+                "project_deliverables": ["Code source organisé", "Tests reproductibles"],
             }
+            return {"choices": [{"message": {"content": json.dumps(level)}}]}
 
     def _fake_request(method, url, *, settings=None, headers=None, json_body=None, **kw):
         seen_headers.append(dict(headers or {}))
@@ -357,14 +397,15 @@ def test_user_ai_config_preferred_for_enrichment_without_leaking_server_key(monk
         "model": "custom-tutor-7b",
         "api_key": "",
     }
-    patch, source, model = course_generator._try_enrich_level_with_llm(
-        subject="Python",
-        level_number=1,
-        language=CourseLanguage.fr,
-        settings=server_settings,
-        user_ai_config=user_cfg,
-    )
-    assert patch is None
+    with pytest.raises(AppError) as missing_key_error:
+        course_generator._try_enrich_level_with_llm(
+            subject="Python",
+            level_number=1,
+            language=CourseLanguage.fr,
+            settings=server_settings,
+            user_ai_config=user_cfg,
+        )
+    assert missing_key_error.value.code == "AI_COURSE_PROVIDER_NOT_CONFIGURED"
     assert len(seen_headers) == 0
 
     user_cfg_with_key = {**user_cfg, "api_key": "user-own-key-123"}
