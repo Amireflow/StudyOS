@@ -56,7 +56,8 @@ const DEFAULT_PROVIDER_CATALOG: AiProviderCatalogItem[] = [
 function defaultModelForProvider(provider: AiProviderKind): string {
   if (provider === 'local') return 'local-coach-v1';
   if (provider === 'gemini') return 'gemini-2.5-flash';
-  return 'gpt-4o-mini';
+  if (provider === 'river') return 'gpt-4o-mini';
+  return 'gpt-6.2-sol';
 }
 
 function normalizeClientBaseUrl(provider: AiProviderKind, rawUrl: string): string {
