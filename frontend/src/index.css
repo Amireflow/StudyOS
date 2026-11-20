@@ -24,6 +24,13 @@
     -webkit-tap-highlight-color: transparent;
   }
 
+  input,
+  textarea,
+  select,
+  button {
+    touch-action: manipulation;
+  }
+
   body {
     margin: 0;
     min-height: 100dvh;
@@ -130,5 +137,14 @@
     display: none;
     width: 0;
     height: 0;
+  }
+}
+
+/* Empêche le zoom automatique iOS / mobile lors du focus sur les champs < 16px */
+@media (max-width: 639px), (hover: none) and (pointer: coarse) {
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]),
+  textarea,
+  select {
+    font-size: 16px !important;
   }
 }

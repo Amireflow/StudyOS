@@ -45,7 +45,7 @@ export function FormField({ id, label, required, hint, error, children }: FormFi
 }
 
 const baseControlClasses =
-  'block w-full min-h-10 rounded-lg bg-zinc-100/80 px-3 py-2 text-sm text-zinc-900 transition-colors placeholder:text-zinc-400 focus:bg-zinc-100 focus:outline-none disabled:bg-zinc-50 disabled:text-zinc-500 dark:bg-zinc-800/80 dark:text-zinc-100 dark:placeholder:text-zinc-500 dark:focus:bg-zinc-800 dark:disabled:bg-zinc-900 dark:disabled:text-zinc-500';
+  'block w-full min-h-10 rounded-lg bg-zinc-100/80 px-3 py-2 text-base sm:text-sm text-zinc-900 transition-colors placeholder:text-zinc-400 focus:bg-zinc-100 focus:outline-none disabled:bg-zinc-50 disabled:text-zinc-500 dark:bg-zinc-800/80 dark:text-zinc-100 dark:placeholder:text-zinc-500 dark:focus:bg-zinc-800 dark:disabled:bg-zinc-900 dark:disabled:text-zinc-500';
 
 function controlClasses(hasError?: boolean, className?: string): string {
   return cn(
