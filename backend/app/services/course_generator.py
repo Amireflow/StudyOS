@@ -1780,7 +1780,7 @@ def _call_course_ai_json(
     provider = runtime["provider"]
     model = validate_model_identifier(runtime["model"])
     api_key = runtime["api_key"]
-    timeout_seconds = max(35.0, min(60.0, float(settings.ai_timeout_seconds))) if settings else 45.0
+    timeout_seconds = max(60.0, min(120.0, float(settings.ai_timeout_seconds))) if settings else 90.0
 
     try:
         if provider == "gemini":
@@ -1817,10 +1817,7 @@ def _call_course_ai_json(
                 allow_http_local=True,
                 verify_dns=False,
             )
-            use_responses_api = (
-                base_url.rstrip("/") == OPENAI_DEFAULT_BASE_URL.rstrip("/")
-                and model.startswith("gpt-6")
-            )
+            use_responses_api = tutor_uses_responses_api
             if use_responses_api:
                 request_url = f"{base_url}/responses"
                 request_body = {
@@ -2262,7 +2259,20 @@ def answer_course_lesson_tutor_question(
     if history_block:
         system_prompt += f"\nÉchanges récents :\n{history_block}\n"
 
-    timeout_seconds = min(14.0, settings.ai_timeout_seconds) if settings is not None else 14.0
+    tutor_uses_responses_api = (
+        provider == "openai_compatible"
+        and resolved_tutor_base_url.rstrip("/") == OPENAI_DEFAULT_BASE_URL.rstrip("/")
+        and model_name.startswith("gpt-6")
+    )
+    timeout_seconds = (
+        max(35.0, min(60.0, float(settings.ai_timeout_seconds)))
+        if tutor_uses_responses_api and settings is not None
+        else 45.0
+        if tutor_uses_responses_api
+        else min(14.0, settings.ai_timeout_seconds)
+        if settings is not None
+        else 14.0
+    )
     try:
         if provider == "gemini":
             model = validate_model_identifier(model_name)
