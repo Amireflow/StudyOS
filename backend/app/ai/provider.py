@@ -2829,6 +2829,22 @@ def _extract_openai_message_text(raw_content: Any) -> str:
     return str(raw_content or "")
 
 
+def _extract_responses_output_text(payload: dict[str, Any]) -> str:
+    """Extrait uniquement les segments texte finaux d'une réponse Responses API."""
+    chunks: list[str] = []
+    for item in payload.get("output") or []:
+        if not isinstance(item, dict) or item.get("type") != "message":
+            continue
+        if item.get("role") != "assistant":
+            continue
+        for part in item.get("content") or []:
+            if isinstance(part, dict) and part.get("type") == "output_text":
+                value = part.get("text")
+                if isinstance(value, str) and value.strip():
+                    chunks.append(value)
+    return "\n".join(chunks).strip()
+
+
 def _parse_int_or_none(value: Any) -> int | None:
     if isinstance(value, bool):
         return None
@@ -2912,10 +2928,15 @@ class OpenAICompatibleAIProvider:
     ) -> None:
         self._api_key = api_key.strip()
         self._provider_name = canonicalize_provider_name(provider_name)
-        self._model_name = validate_model_identifier(
-            (model_name or "gpt-4o-mini").strip() or "gpt-4o-mini"
-        )
         normalized_url = normalize_provider_base_url(self._provider_name, base_url)
+        default_model = (
+            "gpt-6.2-sol"
+            if normalized_url.rstrip("/") == OPENAI_DEFAULT_BASE_URL.rstrip("/")
+            else "gpt-4o-mini"
+        )
+        self._model_name = validate_model_identifier(
+            (model_name or default_model).strip() or default_model
+        )
         self._settings = settings
         self._base_url = _validate_outbound_base_url(
             normalized_url, settings=settings, verify_dns=False
@@ -2937,32 +2958,53 @@ class OpenAICompatibleAIProvider:
             {"role": "user", "content": user_message},
         ]
         try:
+            use_responses_api = (
+                self._base_url.rstrip("/") == OPENAI_DEFAULT_BASE_URL.rstrip("/")
+                and self._model_name.startswith("gpt-6")
+            )
+            if use_responses_api:
+                request_url = f"{self._base_url}/responses"
+                request_body = {
+                    "model": self._model_name,
+                    "input": messages,
+                    "reasoning": {"effort": "medium"},
+                    "store": False,
+                    "max_output_tokens": 8000,
+                }
+            else:
+                request_url = f"{self._base_url}/chat/completions"
+                request_body = {
+                    "model": self._model_name,
+                    "messages": messages,
+                    "temperature": 0.2,
+                }
             response = _request_with_transient_retry(
                 "POST",
-                f"{self._base_url}/chat/completions",
+                request_url,
                 settings=self._settings,
                 headers={
                     "Authorization": f"Bearer {self._api_key}",
                     "Content-Type": "application/json",
                 },
-                json_body={
-                    "model": self._model_name,
-                    "messages": messages,
-                    "temperature": 0.2,
-                },
+                json_body=request_body,
                 timeout_seconds=self._timeout,
                 max_bytes=MAX_AI_RESPONSE_BYTES,
             )
             data = response.json()
-            choices = data.get("choices") if isinstance(data, dict) else None
-            if not isinstance(choices, list) or not choices:
-                raise AppError(
-                    502,
-                    "AI_PROVIDER_EMPTY_RESPONSE",
-                    "Le fournisseur IA a retourné une réponse vide.",
-                )
-            raw_content = (choices[0].get("message") or {}).get("content")
-            content = _extract_openai_message_text(raw_content).strip()
+            if not isinstance(data, dict):
+                raise AppError(502, "AI_PROVIDER_EMPTY_RESPONSE", "Le fournisseur IA a retourné une réponse invalide.")
+            if use_responses_api:
+                content = _extract_responses_output_text(data)
+            else:
+                choices = data.get("choices")
+                if not isinstance(choices, list) or not choices:
+                    raise AppError(
+                        502,
+                        "AI_PROVIDER_EMPTY_RESPONSE",
+                        "Le fournisseur IA a retourné une réponse vide.",
+                    )
+                raw_content = (choices[0].get("message") or {}).get("content")
+                content = _extract_openai_message_text(raw_content).strip()
             if not content:
                 raise AppError(
                     502,
