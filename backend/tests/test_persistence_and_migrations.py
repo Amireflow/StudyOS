@@ -395,3 +395,57 @@ def test_alembic_reversible_downgrade_and_orm_schema_parity(tmp_path: Path) -> N
     finally:
         orm_engine.dispose()
         alembic_engine.dispose()
+
+
+def test_alembic_revision_ids_fit_widened_postgres_column_and_helper_widens_on_pg() -> None:
+    """Vérifie que chaque identifiant de révision tient dans VARCHAR(128) et que env.py l'élargit sous PostgreSQL."""
+    import ast
+    import re
+    from types import SimpleNamespace
+    from sqlalchemy import text
+
+    backend_root = Path(__file__).resolve().parents[1]
+    versions_dir = backend_root / "alembic" / "versions"
+    revision_files = sorted(versions_dir.glob("*.py"))
+    assert len(revision_files) == 13
+
+    for rev_file in revision_files:
+        match = re.search(r'^revision(?:\s*:\s*str)?\s*=\s*"([^"]+)"', rev_file.read_text(encoding="utf-8"), re.M)
+        assert match is not None, f"Révision absente dans {rev_file.name}"
+        assert len(match.group(1)) <= 128
+
+    env_path = backend_root / "alembic" / "env.py"
+    tree = ast.parse(env_path.read_text(encoding="utf-8"), filename=str(env_path))
+    fn_node = next(
+        node
+        for node in tree.body
+        if isinstance(node, ast.FunctionDef) and node.name == "_ensure_postgres_version_column_width"
+    )
+    namespace = {"text": text}
+    exec(compile(ast.Module(body=[fn_node], type_ignores=[]), str(env_path), "exec"), namespace)
+    widen_fn = namespace["_ensure_postgres_version_column_width"]
+
+    class _FakeConn:
+        def __init__(self, dialect_name: str) -> None:
+            self.dialect = SimpleNamespace(name=dialect_name)
+            self.statements: list[str] = []
+            self.committed = False
+
+        def execute(self, stmt) -> None:  # type: ignore[no-untyped-def]
+            self.statements.append(str(stmt))
+
+        def commit(self) -> None:
+            self.committed = True
+
+    sqlite_conn = _FakeConn("sqlite")
+    widen_fn(sqlite_conn)
+    assert sqlite_conn.statements == []
+    assert sqlite_conn.committed is False
+
+    pg_conn = _FakeConn("postgresql")
+    widen_fn(pg_conn)
+    assert pg_conn.committed is True
+    assert len(pg_conn.statements) == 2
+    assert "CREATE TABLE IF NOT EXISTS alembic_version" in pg_conn.statements[0]
+    assert "VARCHAR(128)" in pg_conn.statements[0]
+    assert "ALTER TABLE alembic_version ALTER COLUMN version_num TYPE VARCHAR(128)" in pg_conn.statements[1]

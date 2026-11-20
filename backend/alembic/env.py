@@ -1,6 +1,6 @@
 from logging.config import fileConfig
 from alembic import context
-from sqlalchemy import pool
+from sqlalchemy import text
 from app.core.config import get_settings
 from app.core.database import Base, create_db_engine, normalize_database_url
 import app.models  # noqa: F401 - enregistre les modèles dans Base.metadata
@@ -11,6 +11,24 @@ if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
 target_metadata = Base.metadata
+
+
+def _ensure_postgres_version_column_width(connection) -> None:
+    """Élargit alembic_version.version_num (> 32 caractères) avant les migrations PostgreSQL."""
+    if connection.dialect.name != "postgresql":
+        return
+    connection.execute(
+        text(
+            "CREATE TABLE IF NOT EXISTS alembic_version ("
+            "version_num VARCHAR(128) NOT NULL, "
+            "CONSTRAINT alembic_version_pkc PRIMARY KEY (version_num)"
+            ")"
+        )
+    )
+    connection.execute(
+        text("ALTER TABLE alembic_version ALTER COLUMN version_num TYPE VARCHAR(128)")
+    )
+    connection.commit()
 
 
 def _get_database_url() -> str:
@@ -40,6 +58,7 @@ def run_migrations_online() -> None:
     is_sqlite = connectable.dialect.name == "sqlite"
 
     with connectable.connect() as connection:
+        _ensure_postgres_version_column_width(connection)
         context.configure(
             connection=connection,
             target_metadata=target_metadata,
