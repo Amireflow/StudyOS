@@ -2149,8 +2149,11 @@ def answer_course_lesson_tutor_question(
     step_content: str | None = None,
     settings: Settings | None = None,
     user_ai_config: dict[str, Any] | None = None,
+    learner_context: dict[str, Any] | None = None,
+    course_goal: str | None = None,
+    level_blueprint: dict[str, Any] | None = None,
 ) -> tuple[str, list[str]]:
-    """Répond comme un tuteur interactif progressif (type ChatGPT) sur l'étape active du chapitre."""
+    """Répond comme un tuteur interactif progressif sur l'étape active et le parcours de l'apprenant."""
     from app.ai.provider import canonicalize_provider_name, normalize_provider_base_url
 
     fallback_reply, fallback_follow_ups = _build_local_tutor_response(
@@ -2188,8 +2191,14 @@ def answer_course_lesson_tutor_question(
         raw_base_url = settings.ai_base_url
         raw_model = (settings.ai_model or "").strip() or None
 
-    if not api_key or provider == "local":
+    if provider == "local":
         return fallback_reply, fallback_follow_ups
+    if not api_key:
+        raise AppError(
+            503,
+            "AI_TUTOR_PROVIDER_NOT_CONFIGURED",
+            "Le fournisseur IA sélectionné ne dispose pas d'une clé API utilisable. Vérifiez Paramètres.",
+        )
 
     model_name = raw_model or _default_model_for_provider(provider)
     active_context = (step_content or lesson_markdown or "")[:3200]
@@ -2206,6 +2215,11 @@ def answer_course_lesson_tutor_question(
         "- Réponds de manière progressive, concise et très pédagogique en Markdown clair.\n"
         "- Ne génère jamais tout le cours d'un coup : concentre-toi uniquement sur la question de l'étudiant et l'étape en cours.\n"
         "- Termine toujours ta réponse par une question courte ou une invitation à passer à l'étape suivante.\n"
+        "- Analyse la réponse et le niveau réel de l'apprenant, détecte les incompréhensions et adapte la profondeur. "
+        "Ne valide jamais une compétence ou un niveau sans preuve.\n"
+        f"Objectif du parcours : {course_goal or subject}\n"
+        f"Plan du niveau : {json.dumps(level_blueprint or {}, ensure_ascii=False, default=str)}\n"
+        f"Contexte apprenant : {json.dumps(learner_context or {}, ensure_ascii=False, default=str)}\n"
         f"\nExtrait de l'étape en cours :\n{active_context}\n"
     )
     if history_block:
@@ -2272,10 +2286,25 @@ def answer_course_lesson_tutor_question(
 
         if raw_text and len(raw_text) >= 15:
             return raw_text[:4500], fallback_follow_ups
-    except Exception:
-        pass
+    except AppError:
+        raise
+    except httpx.TimeoutException as exc:
+        raise AppError(
+            504,
+            "AI_TUTOR_TIMEOUT",
+            "Le tuteur IA met trop de temps à répondre. Réessayez.",
+        ) from exc
+    except httpx.HTTPStatusError as exc:
+        status_code = exc.response.status_code if exc.response is not None else 502
+        if status_code in (401, 403):
+            raise AppError(401, "AI_INVALID_API_KEY", "La clé API du tuteur IA a été refusée.") from exc
+        if status_code == 429:
+            raise AppError(429, "AI_PROVIDER_RATE_LIMITED", "Le fournisseur IA limite temporairement les requêtes.") from exc
+        raise AppError(502, "AI_TUTOR_PROVIDER_ERROR", "Le tuteur IA n'a pas pu répondre.") from exc
+    except Exception as exc:
+        raise AppError(502, "AI_TUTOR_PROVIDER_ERROR", "Une erreur est survenue pendant la réponse du tuteur IA.") from exc
 
-    return fallback_reply, fallback_follow_ups
+    raise AppError(502, "AI_TUTOR_EMPTY_RESPONSE", "Le tuteur IA a retourné une réponse vide.")
 
 
 def build_course_blueprint(
