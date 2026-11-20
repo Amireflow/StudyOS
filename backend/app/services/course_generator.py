@@ -2481,7 +2481,7 @@ def generate_level_content(
                 if len(merged_lessons) >= 3:
                     spec["lessons"] = merged_lessons
 
-    normalized_lessons =
+    normalized_lessons = [
         normalize_lesson_to_eight_parts(
             lesson,
             subject=subject,
