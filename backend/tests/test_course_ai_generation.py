@@ -3,6 +3,7 @@ import pytest
 from app.core.errors import AppError
 from app.schemas.common import CourseLanguage
 from app.services import course_generator
+from app.ai.provider import OPENAI_DEFAULT_BASE_URL
 
 
 def test_ai_blueprint_uses_personalized_learner_context(monkeypatch):
@@ -126,3 +127,77 @@ def test_generated_level_requires_substantial_teaching_content():
     assert valid is False
     assert any("3 objectifs" in issue for issue in issues)
     assert any("3 et 6 chapitres" in issue for issue in issues)
+
+
+def test_official_openai_course_roadmap_uses_gpt62_responses_with_high_reasoning(
+    monkeypatch,
+):
+    captured = {}
+
+    class FakeResponse:
+        status_code = 200
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {
+                "output": [
+                    {
+                        "type": "message",
+                        "role": "assistant",
+                        "content": [
+                            {
+                                "type": "output_text",
+                                "text": (
+                                    '{"title":"Python pour automatiser",'
+                                    '"domain":"Automatisation",'
+                                    '"description":"Construire des automatisations utiles.",'
+                                    '"levels_roadmap":['
+                                    '{"level_number":1,"title":"Bases Python appliquées",'
+                                    '"summary":"Maîtriser les bases nécessaires à des scripts utiles et fiables.",'
+                                    '"objectives":["Écrire des scripts Python","Manipuler des fichiers","Tester les erreurs"],'
+                                    '"project_title":"Générateur de rapports"},'
+                                    '{"level_number":2,"title":"Automatiser des flux de données",'
+                                    '"summary":"Construire des traitements réutilisables et robustes.",'
+                                    '"objectives":["Créer des fonctions réutilisables","Appeler une API HTTP","Tester un flux"],'
+                                    '"project_title":"Synchroniseur de données"}]}'
+                                ),
+                            }
+                        ],
+                    }
+                ]
+            }
+
+    def fake_request(method, url, **kwargs):
+        captured["method"] = method
+        captured["url"] = url
+        captured["body"] = kwargs.get("json_body") or {}
+        return FakeResponse()
+
+    monkeypatch.setattr(course_generator, "safe_http_request", fake_request)
+    monkeypatch.setattr(
+        course_generator,
+        "validate_outbound_url",
+        lambda url, **kwargs: url.rstrip("/"),
+    )
+
+    blueprint = course_generator.build_course_blueprint(
+        subject="Python",
+        language=CourseLanguage.fr,
+        total_levels=2,
+        goal="Automatiser mes rapports hebdomadaires",
+        user_ai_config={
+            "provider": "openai_compatible",
+            "base_url": OPENAI_DEFAULT_BASE_URL,
+            "api_key": "sk-test-openai-key",
+            "model": "",
+        },
+    )
+
+    assert blueprint["generation_source"] == "user_ai"
+    assert blueprint["generation_model"] == "gpt-6.2-sol"
+    assert captured["url"] == f"{OPENAI_DEFAULT_BASE_URL}/responses"
+    assert captured["body"]["reasoning"] == {"effort": "high"}
+    assert captured["body"]["store"] is False
+    assert "temperature" not in captured["body"]
