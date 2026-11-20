@@ -3391,10 +3391,16 @@ def build_ai_provider_from_config(
             settings=settings,
         )
     if provider_key == "openai_compatible" and cleaned_key:
+        resolved_base_url = normalize_provider_base_url("openai_compatible", base_url)
+        default_model = (
+            "gpt-6.2-sol"
+            if resolved_base_url.rstrip("/") == OPENAI_DEFAULT_BASE_URL.rstrip("/")
+            else "gpt-4o-mini"
+        )
         return OpenAICompatibleAIProvider(
             api_key=cleaned_key,
-            model_name=(model_name or "").strip() or "gpt-4o-mini",
-            base_url=normalize_provider_base_url("openai_compatible", base_url),
+            model_name=(model_name or "").strip() or default_model,
+            base_url=resolved_base_url,
             timeout_seconds=timeout_seconds,
             provider_name="openai_compatible",
             settings=settings,
