@@ -2185,7 +2185,7 @@ def answer_course_lesson_tutor_question(
     level_blueprint: dict[str, Any] | None = None,
 ) -> tuple[str, list[str]]:
     """Répond comme un tuteur interactif progressif sur l'étape active et le parcours de l'apprenant."""
-    from app.ai.provider import canonicalize_provider_name, normalize_provider_base_url
+    from app.ai.provider import OPENAI_DEFAULT_BASE_URL, canonicalize_provider_name, normalize_provider_base_url
 
     fallback_reply, fallback_follow_ups = _build_local_tutor_response(
         subject=subject,
@@ -2231,7 +2231,13 @@ def answer_course_lesson_tutor_question(
             "Le fournisseur IA sélectionné ne dispose pas d'une clé API utilisable. Vérifiez Paramètres.",
         )
 
-    model_name = raw_model or _default_model_for_provider(provider)
+    resolved_tutor_base_url = normalize_provider_base_url(provider, raw_base_url)
+    if raw_model:
+        model_name = raw_model
+    elif provider == "openai_compatible" and resolved_tutor_base_url.rstrip("/") == OPENAI_DEFAULT_BASE_URL.rstrip("/"):
+        model_name = "gpt-6.2-sol"
+    else:
+        model_name = _default_model_for_provider(provider)
     active_context = (step_content or lesson_markdown or "")[:3200]
     history_lines = []
     for item in (prior_messages or [])[-6:]:
@@ -2294,26 +2300,54 @@ def answer_course_lesson_tutor_question(
                 allow_http_local=True,
                 verify_dns=False,
             )
-            res = safe_http_request(
-                "POST",
-                f"{base_url}/chat/completions",
-                settings=settings,
-                headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-                json_body={
+            use_responses_api = (
+                base_url.rstrip("/") == OPENAI_DEFAULT_BASE_URL.rstrip("/")
+                and model.startswith("gpt-6")
+            )
+            if use_responses_api:
+                request_url = f"{base_url}/responses"
+                request_body = {
+                    "model": model,
+                    "input": [
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_message},
+                    ],
+                    "reasoning": {"effort": "medium"},
+                    "store": False,
+                    "max_output_tokens": 4000,
+                }
+            else:
+                request_url = f"{base_url}/chat/completions"
+                request_body = {
                     "model": model,
                     "messages": [
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": user_message},
                     ],
                     "temperature": 0.35,
-                },
+                }
+            res = safe_http_request(
+                "POST",
+                request_url,
+                settings=settings,
+                headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+                json_body=request_body,
                 timeout_seconds=timeout_seconds,
                 max_bytes=MAX_AI_RESPONSE_BYTES,
             )
             res.raise_for_status()
             payload_json = res.json()
-            choices = payload_json.get("choices") or []
-            raw_text = str((choices[0].get("message") or {}).get("content") or "").strip() if choices else ""
+            if use_responses_api:
+                raw_text = "\n".join(
+                    str(part.get("text") or "")
+                    for item in (payload_json.get("output") or [])
+                    if isinstance(item, dict) and item.get("type") == "message" and item.get("role") == "assistant"
+                    for part in (item.get("content") or [])
+                    if isinstance(part, dict) and part.get("type") == "output_text"
+                ).strip()
+            else:
+                choices = payload_json.get("choices") or []
+                raw_text = str((choices[0].get("message") or {}).get("content") or "").strip() if choices else ""
 
         if raw_text and len(raw_text) >= 15:
             return raw_text[:4500], fallback_follow_ups
