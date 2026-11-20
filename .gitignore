@@ -1,0 +1,29 @@
+# Node / Frontend
+node_modules/
+dist/
+.vite/
+coverage/
+
+# Python / Backend
+__pycache__/
+.venv/
+venv/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Bases locales SQLite
+*.db
+*.sqlite
+*.sqlite3
+*.db-journal
+
+# Environnements & secrets
+.env
+.env.local
+.env.*.local
+
+# Éditeurs & OS
+.DS_Store
+Thumbs.db

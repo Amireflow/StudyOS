@@ -1,0 +1,32 @@
+# Render Blueprint — Déploiement cloud 1-clic du Backend FastAPI Amireflow Study OS
+services:
+  - type: web
+    name: amireflow-study-os-api
+    runtime: docker
+    rootDir: backend
+    dockerfilePath: ./Dockerfile
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: ALLOW_LOCAL_DEV_AUTH
+        value: "false"
+      - key: APP_SECRET_KEY
+        generateValue: true
+      - key: DATABASE_URL
+        sync: false
+      - key: AUTH_JWKS_URL
+        value: https://rzjjcqmsepxtpmqwzwmf.supabase.co/auth/v1/.well-known/jwks.json
+      - key: AUTH_ISSUER
+        value: https://rzjjcqmsepxtpmqwzwmf.supabase.co/auth/v1
+      - key: AUTH_AUDIENCE
+        value: authenticated
+      - key: FRONTEND_ORIGIN
+        sync: false
+      - key: AI_PROVIDER
+        value: local
+      - key: AI_MODEL
+        value: local-coach-v1
+      - key: AI_API_KEY
+        sync: false
