@@ -1866,7 +1866,7 @@ def _call_course_ai_json(
             "Une erreur est survenue pendant la génération IA. Vérifiez la configuration du fournisseur.",
         ) from exc
 
-    cleaned = re.sub(r"^\`\`\`(?:json)?\s*|\s*\`\`\`$", "", raw_text.strip(), flags=re.DOTALL | re.IGNORECASE).strip()
+    cleaned = re.sub(r"^```(?:json)?\s*|\s*```$", "", raw_text.strip(), flags=re.DOTALL | re.IGNORECASE).strip()
     if not cleaned:
         raise AppError(502, "AI_COURSE_EMPTY_RESPONSE", "Le fournisseur IA a retourné une réponse vide.")
     try:
