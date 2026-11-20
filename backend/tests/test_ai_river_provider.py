@@ -17,8 +17,11 @@ def _mock_river_dns(monkeypatch: pytest.MonkeyPatch) -> None:
 from app.ai.context_builder import BoundedUserContext
 from app.ai.prompt_manager import PromptManager
 from app.ai.provider import (
+    OPENAI_DEFAULT_BASE_URL,
     RIVER_DEFAULT_BASE_URL,
+    OpenAICompatibleAIProvider,
     RiverAIProvider,
+    build_ai_provider_from_config,
     _parse_llm_json_output,
     _sanitize_ai_reply_dashes,
     build_ai_provider,
@@ -424,3 +427,67 @@ def test_timetable_import_uses_configured_river_ai_for_image_analysis(
     assert body["blocking_anomalies_count"] == 0
 
 
+
+
+def test_official_openai_defaults_to_gpt62_sol_and_uses_responses_api(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, Any] = {}
+
+    class _FakeResponse:
+        status_code = 200
+
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, Any]:
+            return {
+                "output": [
+                    {
+                        "type": "message",
+                        "role": "assistant",
+                        "content": [
+                            {
+                                "type": "output_text",
+                                "text": '{"reply":"Réponse avec raisonnement GPT-6.","proposals":[],"is_estimate":false,"missing_data":[]}',
+                            }
+                        ],
+                    }
+                ]
+            }
+
+    def fake_request(method: str, url: str, **kwargs: Any) -> _FakeResponse:
+        captured["method"] = method
+        captured["url"] = url
+        captured["body"] = kwargs.get("json_body") or {}
+        captured["headers"] = kwargs.get("headers") or {}
+        return _FakeResponse()
+
+    monkeypatch.setattr("app.ai.provider.safe_http_request", fake_request)
+    provider = build_ai_provider_from_config(
+        provider="openai_compatible",
+        api_key="sk-test-openai-key",
+        model_name=None,
+        base_url=OPENAI_DEFAULT_BASE_URL,
+    )
+    assert isinstance(provider, OpenAICompatibleAIProvider)
+    assert provider._model_name == "gpt-6.2-sol"  # noqa: SLF001
+
+    context = BoundedUserContext(
+        included_scopes=["profile"],
+        profile={"display_name": "Apprenant", "timezone": "Africa/Dakar"},
+    )
+    result = provider.generate_response(
+        user_message="Aide-moi à choisir la meilleure méthode.",
+        history=[],
+        context=context,
+        prompt_manager=PromptManager(ToolRegistry()),
+    )
+
+    assert result.reply == "Réponse avec raisonnement GPT-6."
+    assert captured["method"] == "POST"
+    assert captured["url"] == f"{OPENAI_DEFAULT_BASE_URL}/responses"
+    assert captured["body"]["model"] == "gpt-6.2-sol"
+    assert captured["body"]["reasoning"] == {"effort": "medium"}
+    assert captured["body"]["store"] is False
+    assert "temperature" not in captured["body"]
