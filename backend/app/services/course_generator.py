@@ -1717,7 +1717,7 @@ def _resolve_course_ai_runtime(
     user_ai_config: dict[str, Any] | None,
 ) -> dict[str, str] | None:
     """Résout la configuration IA sans transformer une panne de configuration en faux mode local."""
-    from app.ai.provider import canonicalize_provider_name, normalize_provider_base_url
+    from app.ai.provider import OPENAI_DEFAULT_BASE_URL, canonicalize_provider_name, normalize_provider_base_url
 
     source_tag = "user_ai" if user_ai_config is not None else "server_ai"
     if user_ai_config is not None:
@@ -1747,7 +1747,13 @@ def _resolve_course_ai_runtime(
             "AI_COURSE_PROVIDER_NOT_CONFIGURED",
             "Le fournisseur IA est sélectionné, mais aucune clé API utilisable n'est disponible. Vérifiez la configuration dans Paramètres.",
         )
-    model = model_name or _default_model_for_provider(provider)
+    normalized_base_url = normalize_provider_base_url(provider, raw_base_url)
+    if model_name:
+        model = model_name
+    elif provider == "openai_compatible" and normalized_base_url.rstrip("/") == OPENAI_DEFAULT_BASE_URL.rstrip("/"):
+        model = "gpt-6.2-sol"
+    else:
+        model = _default_model_for_provider(provider)
     return {
         "provider": provider,
         "api_key": api_key,
@@ -1765,7 +1771,7 @@ def _call_course_ai_json(
     temperature: float = 0.35,
 ) -> tuple[dict[str, Any] | None, str | None, str | None]:
     """Appelle le fournisseur configuré pour une sortie JSON; une panne distante est toujours visible."""
-    from app.ai.provider import normalize_provider_base_url
+    from app.ai.provider import OPENAI_DEFAULT_BASE_URL, normalize_provider_base_url
 
     runtime = _resolve_course_ai_runtime(settings=settings, user_ai_config=user_ai_config)
     if runtime is None:
@@ -1811,26 +1817,51 @@ def _call_course_ai_json(
                 allow_http_local=True,
                 verify_dns=False,
             )
+            use_responses_api = (
+                base_url.rstrip("/") == OPENAI_DEFAULT_BASE_URL.rstrip("/")
+                and model.startswith("gpt-6")
+            )
+            if use_responses_api:
+                request_url = f"{base_url}/responses"
+                request_body = {
+                    "model": model,
+                    "input": [{"role": "user", "content": prompt}],
+                    "reasoning": {"effort": "high"},
+                    "store": False,
+                    "max_output_tokens": 12000,
+                }
+            else:
+                request_url = f"{base_url}/chat/completions"
+                request_body = {
+                    "model": model,
+                    "messages": [{"role": "user", "content": prompt}],
+                    "temperature": temperature,
+                }
             response = safe_http_request(
                 "POST",
-                f"{base_url}/chat/completions",
+                request_url,
                 settings=settings,
                 headers={
                     "Authorization": f"Bearer {api_key}",
                     "Content-Type": "application/json",
                 },
-                json_body={
-                    "model": model,
-                    "messages": [{"role": "user", "content": prompt}],
-                    "temperature": temperature,
-                },
+                json_body=request_body,
                 timeout_seconds=timeout_seconds,
                 max_bytes=MAX_AI_RESPONSE_BYTES,
             )
             response.raise_for_status()
             payload = response.json()
-            choices = payload.get("choices") or []
-            raw_text = str((choices[0].get("message") or {}).get("content") or "") if choices else ""
+            if use_responses_api:
+                raw_text = "\\n".join(
+                    str(part.get("text") or "")
+                    for item in (payload.get("output") or [])
+                    if isinstance(item, dict) and item.get("type") == "message" and item.get("role") == "assistant"
+                    for part in (item.get("content") or [])
+                    if isinstance(part, dict) and part.get("type") == "output_text"
+                )
+            else:
+                choices = payload.get("choices") or []
+                raw_text = str((choices[0].get("message") or {}).get("content") or "") if choices else ""
 
     except httpx.TimeoutException as exc:
         raise AppError(
