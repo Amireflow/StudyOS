@@ -56,7 +56,8 @@ const DEFAULT_PROVIDER_CATALOG: AiProviderCatalogItem[] = [
 function defaultModelForProvider(provider: AiProviderKind): string {
   if (provider === 'local') return 'local-coach-v1';
   if (provider === 'gemini') return 'gemini-2.5-flash';
-  return 'gpt-4o-mini';
+  if (provider === 'river') return 'gpt-4o-mini';
+  return 'gpt-6.2-sol';
 }
 
 function normalizeClientBaseUrl(provider: AiProviderKind, rawUrl: string): string {
@@ -494,6 +495,12 @@ export function AiProviderSettingsCard() {
                 </option>
               ))}
             </Select>
+            {provider === 'openai_compatible' &&
+              normalizeClientBaseUrl(provider, baseUrl) === 'https://api.openai.com/v1' && (
+                <p className="pt-1 text-xs text-zinc-500 dark:text-zinc-400">
+                  Recommandé : GPT-6.2 Sol pour le meilleur équilibre. GPT-6.2 Astra convient aux analyses les plus exigeantes, avec un coût supérieur.
+                </p>
+              )}
           </FormField>
         </div>
       )}

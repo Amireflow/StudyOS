@@ -5,6 +5,7 @@ from typing import Any
 from uuid import UUID, uuid4
 from app.core.config import Settings
 from app.core.errors import AppError
+from app.repositories.ai_sql import SqlAiMemoryRepository
 from app.repositories.courses_sql import (
     CourseLessonRecord,
     CourseLevelRecord,
@@ -133,20 +134,85 @@ class CourseService:
         repo: SqlCourseRepository,
         skill_repo: SqlSkillRepository | None = None,
         profile_service: ProfileService | None = None,
+        ai_memory_repo: SqlAiMemoryRepository | None = None,
         settings: Settings | None = None,
     ) -> None:
         self._repo = repo
         self._skill_repo = skill_repo
         self._profile_service = profile_service
+        self._ai_memory_repo = ai_memory_repo
         self._settings = settings
 
     def _safe_user_ai_config(self, user_id: UUID | None) -> dict[str, Any] | None:
         if user_id is None or self._profile_service is None:
             return None
-        try:
-            return self._profile_service.get_ai_provider_config(user_id)
-        except Exception:
-            return None
+        # Une configuration utilisateur invalide ou illisible ne doit jamais activer
+        # silencieusement le moteur local à la place du fournisseur sélectionné.
+        return self._profile_service.get_ai_provider_config(user_id)
+
+    def _build_learner_context(self, user_id: UUID) -> dict[str, Any]:
+        context: dict[str, Any] = {}
+        if self._profile_service is not None:
+            profile = self._profile_service.get_or_create_record(user_id)
+            preferences = dict(profile.preferences or {})
+            context["learner_profile"] = {
+                "display_name": profile.display_name,
+                "timezone": profile.timezone,
+                "active_priority": profile.active_priority_title,
+                "personal_instructions": profile.ai_instructions,
+                "learning_preferences": preferences.get("learning_preferences") or {},
+                "academic_context": preferences.get("academic_context") or {},
+                "goals": preferences.get("long_term_goals") or preferences.get("goals") or [],
+                "availability_preferences": preferences.get("availability") or {},
+            }
+        if self._skill_repo is not None:
+            skills = self._skill_repo.list_skills(user_id)
+            context["demonstrated_skills"] = [
+                {
+                    "name": item.name,
+                    "domain": item.domain,
+                    "description": item.description,
+                    "current_level": item.current_level,
+                    "target_level": item.target_level,
+                }
+                for item in skills[:30]
+            ]
+        if self._ai_memory_repo is not None:
+            memory = self._ai_memory_repo.get(user_id)
+            if memory is not None:
+                context["learning_memory"] = {
+                    "academic_context": dict(memory.academic_context or {}),
+                    "learning_preferences": dict(memory.learning_preferences or {}),
+                    "constraints": list(memory.constraints or [])[:20],
+                    "long_term_goals": list(memory.long_term_goals or [])[:20],
+                    "recent_decisions": list(memory.recent_decisions or [])[:6],
+                    "execution_history": list(memory.execution_history or [])[:6],
+                    "weekly_study_hours": memory.weekly_study_hours,
+                    "default_session_minutes": memory.default_session_minutes,
+                }
+        existing_courses = self._repo.list_courses(user_id)
+        context["existing_learning"] = [
+            {
+                "subject": item.subject,
+                "title": item.title,
+                "description": item.description,
+                "current_level": item.current_level,
+                "total_levels": item.total_levels,
+                "status": item.status.value,
+            }
+            for item in existing_courses[:20]
+        ]
+        return context
+
+    @staticmethod
+    def _level_blueprint(level: CourseLevelRecord) -> dict[str, Any]:
+        return {
+            "level_number": level.level_number,
+            "title": level.title,
+            "summary": level.summary,
+            "objectives": list(level.objectives or []),
+            "project_title": level.project_title,
+        }
 
     def preview_course(
         self,
@@ -154,6 +220,8 @@ class CourseService:
         *,
         user_id: UUID | None = None,
     ) -> CoursePreviewResponse:
+        ai_config = self._safe_user_ai_config(user_id)
+        learner_context = self._build_learner_context(user_id) if user_id is not None else {}
         blueprint = build_course_blueprint(
             subject=payload.subject,
             title=payload.title,
@@ -161,14 +229,21 @@ class CourseService:
             language=payload.language,
             total_levels=payload.total_levels,
             goal=payload.goal,
+            settings=self._settings,
+            user_ai_config=ai_config,
+            learner_context=learner_context,
         )
+        level1_spec = blueprint["levels_roadmap"][0]
         level1 = generate_level_content(
             subject=blueprint["subject"],
             language=payload.language,
             level_number=1,
             total_levels=payload.total_levels,
             settings=self._settings,
-            user_ai_config=self._safe_user_ai_config(user_id),
+            user_ai_config=ai_config,
+            course_goal=payload.goal or blueprint["description"],
+            level_blueprint=level1_spec,
+            learner_context=learner_context,
         )
         sanitized_lessons = [
             {**item, "exercises": _sanitize_exercises_for_client(item.get("exercises"))}
@@ -203,8 +278,9 @@ class CourseService:
         level: CourseLevelRecord,
         now: datetime,
         focus_hint: str | None = None,
+        generated_content: dict[str, Any] | None = None,
     ) -> CourseLevelRecord:
-        generated = generate_level_content(
+        generated = generated_content or generate_level_content(
             subject=course.subject,
             language=course.language,
             level_number=level.level_number,
@@ -212,6 +288,9 @@ class CourseService:
             settings=self._settings,
             user_ai_config=self._safe_user_ai_config(user_id),
             focus_hint=focus_hint,
+            course_goal=course.description,
+            level_blueprint=self._level_blueprint(level),
+            learner_context=self._build_learner_context(user_id),
         )
         updated_level = self._repo.save_level(
             level.model_copy(
@@ -296,6 +375,8 @@ class CourseService:
         return updated_level
 
     def create_course(self, user_id: UUID, payload: CourseCreate) -> CourseDetailResponse:
+        ai_config = self._safe_user_ai_config(user_id)
+        learner_context = self._build_learner_context(user_id)
         blueprint = build_course_blueprint(
             subject=payload.subject,
             title=payload.title,
@@ -304,6 +385,23 @@ class CourseService:
             language=payload.language,
             total_levels=payload.total_levels,
             goal=payload.goal,
+            settings=self._settings,
+            user_ai_config=ai_config,
+            learner_context=learner_context,
+        )
+        # Générer et valider le premier niveau avant toute écriture afin qu'une panne IA
+        # ne laisse pas un cours incomplet ou une compétence orpheline en base.
+        first_level_blueprint = blueprint["levels_roadmap"][0]
+        first_level_content = generate_level_content(
+            subject=blueprint["subject"],
+            language=payload.language,
+            level_number=1,
+            total_levels=payload.total_levels,
+            settings=self._settings,
+            user_ai_config=ai_config,
+            course_goal=payload.goal or blueprint["description"],
+            level_blueprint=first_level_blueprint,
+            learner_context=learner_context,
         )
         now = datetime.now(timezone.utc)
 
@@ -351,6 +449,8 @@ class CourseService:
                 status=CourseStatus.active,
                 skill_id=linked_skill_id,
                 learning_path_id=None,
+                generation_source=blueprint.get("generation_source"),
+                generation_model=blueprint.get("generation_model"),
                 created_at=now,
                 updated_at=now,
             )
@@ -382,6 +482,7 @@ class CourseService:
                     course=course,
                     level=level_record,
                     now=now,
+                    generated_content=first_level_content,
                 )
 
         return self.get_course_detail(user_id, course.id)
@@ -687,6 +788,9 @@ class CourseService:
             step_content=payload.step_content,
             settings=self._settings,
             user_ai_config=self._safe_user_ai_config(user_id),
+            learner_context=self._build_learner_context(user_id),
+            course_goal=course.description,
+            level_blueprint=self._level_blueprint(level),
         )
 
         user_msg_dict = {

@@ -315,16 +315,26 @@ def get_objectives_service(
     )
 
 
+def get_ai_memory_repository(
+    db: Session | None = Depends(get_db_session),
+) -> SqlAiMemoryRepository:
+    if db is None:
+        raise RuntimeError("Une base SQLAlchemy est requise pour la mémoire IA.")
+    return SqlAiMemoryRepository(db)
+
+
 def get_course_service(
     course_repo: SqlCourseRepository = Depends(get_course_repository),
     skill_repo: SqlSkillRepository = Depends(get_skill_repository),
     profile_service: ProfileService = Depends(get_profile_service),
+    ai_memory_repo: SqlAiMemoryRepository = Depends(get_ai_memory_repository),
     settings: Settings = Depends(get_app_settings),
 ) -> CourseService:
     return CourseService(
         repo=course_repo,
         skill_repo=skill_repo,
         profile_service=profile_service,
+        ai_memory_repo=ai_memory_repo,
         settings=settings,
     )
 
@@ -335,14 +345,6 @@ def get_ai_repository(
     if db is None:
         raise RuntimeError("Une base SQLAlchemy est requise pour le Copilote IA.")
     return SqlAiRepository(db)
-
-
-def get_ai_memory_repository(
-    db: Session | None = Depends(get_db_session),
-) -> SqlAiMemoryRepository:
-    if db is None:
-        raise RuntimeError("Une base SQLAlchemy est requise pour la mémoire IA.")
-    return SqlAiMemoryRepository(db)
 
 
 def get_planning_repository(
