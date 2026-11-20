@@ -1852,7 +1852,7 @@ def _call_course_ai_json(
             response.raise_for_status()
             payload = response.json()
             if use_responses_api:
-                raw_text = "\\n".join(
+                raw_text = "\n".join(
                     str(part.get("text") or "")
                     for item in (payload.get("output") or [])
                     if isinstance(item, dict) and item.get("type") == "message" and item.get("role") == "assistant"
