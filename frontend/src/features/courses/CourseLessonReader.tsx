@@ -41,10 +41,10 @@ export function CourseLessonReader({
   const isCompleted = lesson.status === 'completed';
 
   return (
-    <article className="space-y-6 rounded-2xl bg-white p-5 sm:p-6 dark:bg-zinc-900">
-      <header className="space-y-3">
+    <article className="space-y-5 rounded-2xl bg-white p-5 sm:p-6 dark:bg-zinc-900">
+      <header className="space-y-2.5">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-1.5">
             <Badge variant="primary">
               Chapitre {lesson.position}/{ordered.length}
             </Badge>
@@ -64,22 +64,18 @@ export function CourseLessonReader({
         </div>
 
         <div>
-          <h2 className="text-lg font-bold tracking-tight text-zinc-950 dark:text-zinc-50">
+          <h2 className="text-lg font-bold tracking-tight text-zinc-950 sm:text-xl dark:text-zinc-50">
             {lesson.title}
           </h2>
           {lesson.summary && (
-            <p className="mt-1 text-xs leading-relaxed text-zinc-600 dark:text-zinc-400">
+            <p className="mt-1 text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">
               {lesson.summary}
             </p>
           )}
         </div>
-
-        <p className="rounded-xl bg-zinc-50 px-3.5 py-2 text-[11px] text-zinc-600 dark:bg-zinc-800/70 dark:text-zinc-400">
-          La lecture d’un chapitre enregistre votre avancement sans débloquer le niveau suivant : réussissez le projet de fin de niveau pour progresser.
-        </p>
       </header>
 
-      <div className="rounded-2xl bg-zinc-50/70 p-4 sm:p-5 dark:bg-zinc-800/40">
+      <div className="text-sm leading-relaxed text-zinc-800 dark:text-zinc-200">
         <MarkdownContent content={lesson.contentMarkdown} />
       </div>
 
@@ -117,7 +113,7 @@ export function CourseLessonReader({
         onSubmitExercise={onSubmitExercise}
       />
 
-      <footer className="flex flex-wrap items-center justify-between gap-2 pt-2">
+      <footer className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-zinc-50 p-3 dark:bg-zinc-800/60">
         <div>
           {prevLesson && (
             <Button

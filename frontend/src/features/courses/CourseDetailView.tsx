@@ -227,70 +227,134 @@ export function CourseDetailView({ courseId }: CourseDetailViewProps) {
     ? [...activeLevel.resources, ...detail.resources.filter((r) => r.levelId === null)]
     : detail.resources;
 
-  return (
-    <div className="space-y-3.5 sm:space-y-5">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <Link
-          to="/courses"
-          className="inline-flex items-center gap-1.5 rounded-lg bg-zinc-100 px-3 py-1.5 text-xs font-medium text-zinc-700 transition-colors hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700"
-        >
-          <Icon icon={ArrowLeft01Icon} size={14} />
-          Retour aux cours
-        </Link>
+  const lessonsDoneCount = orderedLessons.filter((l) => l.status === 'completed').length;
+  const lessonsAllDone =
+    activeLevel?.lessonsCompleted ??
+    (orderedLessons.length > 0 && lessonsDoneCount === orderedLessons.length);
+  const exerciseDone =
+    activeLevel?.exercisePassed ??
+    Boolean(activeLevel?.submissions.some((s) => s.submissionKind === 'exercise' && s.passed));
+  const projectDone = Boolean(activeLevel?.projectPassed);
 
-        <div className="flex flex-wrap items-center gap-2">
-          {activeLevel &&
-            (activeLevel.status === 'unlocked' || activeLevel.status === 'in_progress') && (
+  return (
+    <div className="space-y-3.5 sm:space-y-4">
+      {/* Studio d'en-tête unifié du cours */}
+      <header className="space-y-3.5 rounded-2xl bg-white p-4 sm:p-5 dark:bg-zinc-900">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <Link
+            to="/courses"
+            className="inline-flex items-center gap-1.5 rounded-xl bg-zinc-100 px-3 py-1.5 text-xs font-medium text-zinc-700 transition-colors hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700"
+          >
+            <Icon icon={ArrowLeft01Icon} size={14} />
+            Retour aux cours
+          </Link>
+
+          <div className="flex flex-wrap items-center gap-1.5">
+            {activeLevel &&
+              (activeLevel.status === 'unlocked' || activeLevel.status === 'in_progress') && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => void handleRegenerateLevel()}
+                >
+                  Régénérer le niveau
+                </Button>
+              )}
+            {detail.status !== 'completed' && (
               <Button
                 type="button"
-                variant="secondary"
+                variant="ghost"
                 size="sm"
-                onClick={() => void handleRegenerateLevel()}
+                onClick={() => void handleTogglePause()}
               >
-                Régénérer le niveau
+                {detail.status === 'paused' ? 'Reprendre le cours' : 'Mettre en pause'}
               </Button>
             )}
-          {detail.status !== 'completed' && (
-            <Button
-              type="button"
-              variant="secondary"
-              size="sm"
-              onClick={() => void handleTogglePause()}
-            >
-              {detail.status === 'paused' ? 'Reprendre le cours' : 'Mettre en pause'}
-            </Button>
-          )}
-          <InlineConfirm
-            triggerLabel="Supprimer le cours"
-            confirmLabel="Confirmer la suppression"
-            onConfirm={() => void handleDeleteCourse()}
-          />
-        </div>
-      </div>
-
-      <header className="rounded-2xl bg-white p-4 sm:p-6 dark:bg-zinc-900">
-        <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
-          <Badge variant="primary">{detail.subject}</Badge>
-          <Badge variant="neutral">{detail.domain}</Badge>
-          <Badge variant={detail.status === 'completed' ? 'success' : 'neutral'}>
-            Niveau {detail.currentLevel}/{detail.totalLevels}
-          </Badge>
-          {activeLevel?.generationSource && (
-            <Badge variant="neutral">
-              {activeLevel.generationSource} · Rev. {activeLevel.revision ?? 1}
-            </Badge>
-          )}
-          {detail.status === 'paused' && <Badge variant="warning">En pause</Badge>}
+            <InlineConfirm
+              triggerLabel="Supprimer le cours"
+              confirmLabel="Confirmer la suppression"
+              onConfirm={() => void handleDeleteCourse()}
+            />
+          </div>
         </div>
 
-        <h1 className="mt-2 line-clamp-1 text-lg font-bold tracking-tight text-zinc-950 sm:mt-2.5 sm:text-2xl dark:text-zinc-50">
-          {detail.title}
-        </h1>
-        {detail.description && (
-          <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-zinc-600 dark:text-zinc-400">
-            {detail.description}
-          </p>
-        )}
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-1.5">
+              <Badge variant="primary">{detail.subject}</Badge>
+              <Badge variant="neutral">{detail.domain}</Badge>
+              <Badge variant={detail.status === 'completed' ? 'success' : 'neutral'}>
+                Niveau {detail.currentLevel}/{detail.totalLevels}
+              </Badge>
+              {detail.status === 'paused' && <Badge variant="warning">En pause</Badge>}
+            </div>
+
+            <h1 className="mt-2 line-clamp-1 text-lg font-bold tracking-tight text-zinc-950 sm:text-xl dark:text-zinc-50">
+              {detail.title}
+            </h1>
+            {detail.description && (
+              <p className="mt-0.5 line-clamp-1 text-xs text-zinc-500 dark:text-zinc-400">
+                {detail.description}
+              </p>
+            )}
+          </div>
+        </div>
+
+        {/* Sélecteur de niveaux intégré dans l'en-tête */}
+        <nav
+          aria-label="Niveaux du cours"
+          className="no-scrollbar flex gap-2 overflow-x-auto pt-1 sm:grid sm:grid-cols-3 sm:overflow-visible lg:grid-cols-5"
+        >
+          {orderedLevels.map((lv) => {
+            const isSelected = activeLevel?.id === lv.id;
+            const isLocked = lv.status === 'locked';
+            const isValidated = lv.status === 'validated';
+            const statusIcon = isValidated
+              ? CheckmarkCircle02Icon
+              : isLocked
+                ? LockIcon
+                : SquareUnlock02Icon;
+
+            return (
+              <button
+                key={lv.id}
+                type="button"
+                aria-pressed={isSelected}
+                aria-label={`Niveau ${lv.levelNumber} : ${lv.title}`}
+                onClick={() => setSelectedLevelNumber(lv.levelNumber)}
+                className={cn(
+                  'flex min-w-[140px] shrink-0 cursor-pointer flex-col items-start gap-1 rounded-xl p-2.5 text-left transition-colors sm:min-w-0 sm:p-3',
+                  isSelected
+                    ? 'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-950'
+                    : isLocked
+                      ? 'bg-zinc-100/70 text-zinc-500 hover:bg-zinc-100 dark:bg-zinc-800/40 dark:text-zinc-400 dark:hover:bg-zinc-800/70'
+                      : 'bg-zinc-50 text-zinc-800 hover:bg-zinc-100 dark:bg-zinc-800/80 dark:text-zinc-100 dark:hover:bg-zinc-800',
+                )}
+              >
+                <div className="flex w-full items-center justify-between gap-2 text-xs font-semibold">
+                  <span>Niveau {lv.levelNumber}</span>
+                  <Icon
+                    icon={statusIcon}
+                    size={14}
+                    className={
+                      isValidated
+                        ? isSelected
+                          ? 'text-emerald-300 dark:text-emerald-700'
+                          : 'text-emerald-600 dark:text-emerald-400'
+                        : isLocked
+                          ? 'opacity-65'
+                          : isSelected
+                            ? 'text-teal-300 dark:text-teal-700'
+                            : 'text-teal-600 dark:text-teal-400'
+                    }
+                  />
+                </div>
+                <p className="line-clamp-1 text-[11px] font-medium opacity-85">{lv.title}</p>
+              </button>
+            );
+          })}
+        </nav>
       </header>
 
       {feedback && (
@@ -299,61 +363,6 @@ export function CourseDetailView({ courseId }: CourseDetailViewProps) {
       {mutationError && (
         <ErrorState message={mutationError} onRetry={clearMutationError} retryLabel="Fermer" />
       )}
-
-      {/* Progression par niveaux */}
-      <nav
-        aria-label="Niveaux du cours"
-        className="no-scrollbar flex gap-2 overflow-x-auto pb-0.5 sm:grid sm:grid-cols-3 sm:gap-2.5 sm:overflow-visible sm:pb-0 lg:grid-cols-5"
-      >
-        {orderedLevels.map((lv) => {
-          const isSelected = activeLevel?.id === lv.id;
-          const isLocked = lv.status === 'locked';
-          const isValidated = lv.status === 'validated';
-          const statusIcon = isValidated
-            ? CheckmarkCircle02Icon
-            : isLocked
-              ? LockIcon
-              : SquareUnlock02Icon;
-
-          return (
-            <button
-              key={lv.id}
-              type="button"
-              aria-pressed={isSelected}
-              aria-label={`Niveau ${lv.levelNumber} : ${lv.title}`}
-              onClick={() => setSelectedLevelNumber(lv.levelNumber)}
-              className={cn(
-                'flex min-w-[148px] shrink-0 flex-col items-start gap-1 rounded-2xl p-3 text-left transition-colors sm:min-w-0 sm:gap-1.5 sm:p-3.5 cursor-pointer',
-                isSelected
-                  ? 'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-950'
-                  : isLocked
-                    ? 'bg-zinc-100/70 text-zinc-500 hover:bg-zinc-100 dark:bg-zinc-900/60 dark:text-zinc-400 dark:hover:bg-zinc-800/80'
-                    : 'bg-white text-zinc-800 hover:bg-zinc-50 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:bg-zinc-800',
-              )}
-            >
-              <div className="flex w-full items-center justify-between gap-2 text-xs font-semibold">
-                <span>Niveau {lv.levelNumber}</span>
-                <Icon
-                  icon={statusIcon}
-                  size={15}
-                  className={
-                    isValidated
-                      ? isSelected
-                        ? 'text-emerald-300 dark:text-emerald-700'
-                        : 'text-emerald-600 dark:text-emerald-400'
-                      : isLocked
-                        ? 'opacity-70'
-                        : isSelected
-                          ? 'text-teal-300 dark:text-teal-700'
-                          : 'text-teal-600 dark:text-teal-400'
-                  }
-                />
-              </div>
-              <p className="line-clamp-1 text-[11px] font-medium opacity-90 sm:line-clamp-2">{lv.title}</p>
-            </button>
-          );
-        })}
-      </nav>
 
       {activeLevel && activeLevel.status === 'locked' && (
         <section className="rounded-2xl bg-white p-6 text-center dark:bg-zinc-900">
@@ -365,7 +374,7 @@ export function CourseDetailView({ courseId }: CourseDetailViewProps) {
               Niveau {activeLevel.levelNumber} verrouillé : {activeLevel.title}
             </h2>
             <p className="text-xs leading-relaxed text-zinc-600 dark:text-zinc-400">
-              {activeLevel.summary} Validez d’abord le projet du Niveau {detail.currentLevel} (seuil {activeLevel.levelNumber - 1 >= 4 ? 75 : 70}/100) pour débloquer et générer ce niveau.
+              Validez d’abord le projet du Niveau {detail.currentLevel} (seuil {activeLevel.levelNumber - 1 >= 4 ? 75 : 70}/100) pour débloquer ce niveau.
             </p>
             <Button
               type="button"
@@ -384,56 +393,74 @@ export function CourseDetailView({ courseId }: CourseDetailViewProps) {
       )}
 
       {activeLevel && activeLevel.status !== 'locked' && (
-        <div className="space-y-3.5 sm:space-y-4">
-          <div
-            role="tablist"
-            aria-label="Sections du niveau"
-            className="grid grid-cols-3 gap-1 rounded-2xl bg-white p-1.5 sm:flex sm:flex-wrap sm:items-center sm:gap-2 sm:p-2 dark:bg-zinc-900"
-          >
-            <button
-              type="button"
-              role="tab"
-              aria-selected={activeTab === 'chapters'}
-              onClick={() => setActiveTab('chapters')}
-              className={cn(
-                'min-w-0 truncate rounded-xl px-2 py-1.5 text-xs font-semibold transition-colors sm:px-4 sm:py-2 cursor-pointer',
-                activeTab === 'chapters'
-                  ? 'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-950'
-                  : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800',
-              )}
+        <div className="space-y-3.5">
+          {/* Barre d'onglets & indicateurs de validation du niveau */}
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl bg-white p-2 dark:bg-zinc-900">
+            <div
+              role="tablist"
+              aria-label="Sections du niveau"
+              className="grid flex-1 grid-cols-3 gap-1 sm:flex sm:flex-initial sm:items-center"
             >
-              Chapitres ({orderedLessons.length})
-            </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={activeTab === 'chapters'}
+                onClick={() => setActiveTab('chapters')}
+                className={cn(
+                  'min-w-0 cursor-pointer truncate rounded-xl px-2.5 py-1.5 text-xs font-semibold transition-colors sm:px-3.5',
+                  activeTab === 'chapters'
+                    ? 'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-950'
+                    : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800',
+                )}
+              >
+                Chapitres ({orderedLessons.length})
+              </button>
 
-            <button
-              type="button"
-              role="tab"
-              aria-selected={activeTab === 'project'}
-              onClick={() => setActiveTab('project')}
-              className={cn(
-                'min-w-0 truncate rounded-xl px-2 py-1.5 text-xs font-semibold transition-colors sm:px-4 sm:py-2 cursor-pointer',
-                activeTab === 'project'
-                  ? 'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-950'
-                  : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800',
-              )}
-            >
-              Projet & validation
-            </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={activeTab === 'project'}
+                onClick={() => setActiveTab('project')}
+                className={cn(
+                  'min-w-0 cursor-pointer truncate rounded-xl px-2.5 py-1.5 text-xs font-semibold transition-colors sm:px-3.5',
+                  activeTab === 'project'
+                    ? 'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-950'
+                    : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800',
+                )}
+              >
+                Projet & validation
+              </button>
 
-            <button
-              type="button"
-              role="tab"
-              aria-selected={activeTab === 'resources'}
-              onClick={() => setActiveTab('resources')}
-              className={cn(
-                'min-w-0 truncate rounded-xl px-2 py-1.5 text-xs font-semibold transition-colors sm:px-4 sm:py-2 cursor-pointer',
-                activeTab === 'resources'
-                  ? 'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-950'
-                  : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800',
-              )}
-            >
-              Docs & vidéos
-            </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={activeTab === 'resources'}
+                onClick={() => setActiveTab('resources')}
+                className={cn(
+                  'min-w-0 cursor-pointer truncate rounded-xl px-2.5 py-1.5 text-xs font-semibold transition-colors sm:px-3.5',
+                  activeTab === 'resources'
+                    ? 'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-950'
+                    : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800',
+                )}
+              >
+                Docs & vidéos
+              </button>
+            </div>
+
+            {/* Puce de progression des 3 jalons du niveau */}
+            <div className="hidden items-center gap-2 px-2 text-[11px] font-medium text-zinc-500 md:flex dark:text-zinc-400">
+              <span className={lessonsAllDone ? 'text-emerald-600 dark:text-emerald-400' : ''}>
+                {lessonsAllDone ? '✓' : '○'} {lessonsDoneCount}/{orderedLessons.length} ch.
+              </span>
+              <span>·</span>
+              <span className={exerciseDone ? 'text-emerald-600 dark:text-emerald-400' : ''}>
+                {exerciseDone ? '✓' : '○'} Exercice
+              </span>
+              <span>·</span>
+              <span className={projectDone ? 'text-emerald-600 dark:text-emerald-400' : ''}>
+                {projectDone ? '✓' : '○'} Projet
+              </span>
+            </div>
           </div>
 
           {activeTab === 'chapters' && (

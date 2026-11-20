@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta, timezone
 import logging
+import re
 from typing import Any, Callable, Literal
 from uuid import UUID, uuid4
 from zoneinfo import ZoneInfo
@@ -592,6 +593,94 @@ class AIOrchestrator:
             return self._ai_repo.save_proposal(expired)
         return record
 
+    def _synthesize_missing_plan_proposals(
+        self,
+        user_id: UUID,
+        conversation_id: UUID,
+        assistant_reply: str,
+        created_at: datetime,
+    ) -> list[AiActionProposalRecord]:
+        text = (assistant_reply or "").strip()
+        if not text:
+            return []
+        lowered = text.lower()
+        announces_validation = any(
+            phrase in lowered
+            for phrase in (
+                "soumise à ta validation",
+                "soumises à ta validation",
+                "soumis à ta validation",
+                "soumise à votre validation",
+                "soumises à votre validation",
+                "veux-tu que je crée ce programme",
+                "emploi du temps d'apprentissage",
+                "emploi du temps d’apprentissage",
+            )
+        ) or ("planification des" in lowered and "créneau" in lowered)
+        if not announces_validation:
+            return []
+
+        synthesized: list[AiActionProposalRecord] = []
+        from app.schemas.ai import RawProposalCandidate
+
+        candidates: list[RawProposalCandidate] = [
+            RawProposalCandidate(
+                action_type=AiActionType.generate_learning_plan.value,
+                title="Générer et appliquer le programme sur vos créneaux libres",
+                explanation="Planifie automatiquement vos séances d’étude sans chevaucher vos cours universitaires.",
+                payload={
+                    "horizon_days": 7,
+                    "include_potential_slots": True,
+                    "create_missing_courses": False,
+                    "apply_immediately": True,
+                    "replace_future_planned": True,
+                },
+            )
+        ]
+
+        task_m = re.search(
+            r"Cr[ée]ation de la t[âa]che\s+(?:de\s+|:\s*|[«\"']\s*)?([^\n\.»\"']{4,120})",
+            text,
+            re.IGNORECASE,
+        )
+        if task_m:
+            raw_task_title = task_m.group(1).strip(" :.-»\"'")
+            if len(raw_task_title) >= 3:
+                task_title = raw_task_title[0].upper() + raw_task_title[1:]
+                candidates.append(
+                    RawProposalCandidate(
+                        action_type=AiActionType.create_task.value,
+                        title=f"Créer la tâche : {task_title[:120]}",
+                        explanation="Tâche de préparation proposée dans votre plan d’étude.",
+                        payload={
+                            "title": task_title[:140],
+                            "priority": "high",
+                        },
+                    )
+                )
+
+        for cand in candidates:
+            try:
+                validated = self._action_validator.validate_candidate(user_id, cand)
+                rec = self._ai_repo.save_proposal(
+                    AiActionProposalRecord(
+                        id=uuid4(),
+                        user_id=user_id,
+                        conversation_id=conversation_id,
+                        action_type=validated.action_type.value,
+                        title=validated.title,
+                        explanation=validated.explanation,
+                        payload=validated.payload,
+                        status=ProposalStatus.pending,
+                        expires_at=created_at + timedelta(days=PROPOSAL_TTL_DAYS),
+                        created_at=created_at,
+                    )
+                )
+                synthesized.append(rec)
+            except AppError:
+                continue
+        return synthesized
+
     def list_conversations(self, user_id: UUID) -> list[AiConversationResponse]:
         records = self._ai_repo.list_conversations(user_id)
         records.sort(key=lambda item: item.updated_at, reverse=True)
@@ -683,6 +772,29 @@ class AIOrchestrator:
             self._refresh_proposal_expiration(item, now)
             for item in self._ai_repo.list_proposals(user_id, conversation_id=conversation_id)
         ]
+
+        # Auto-récupération si le dernier message assistant annonce des propositions à valider mais qu'aucune n'a été enregistrée
+        last_asst_idx = next(
+            (i for i in range(len(messages) - 1, -1, -1) if messages[i].role == AiMessageRole.assistant),
+            None,
+        )
+        if last_asst_idx is not None:
+            last_asst = messages[last_asst_idx]
+            last_meta = dict(last_asst.metadata or {})
+            if not last_meta.get("proposal_ids") and not proposals:
+                recovered = self._synthesize_missing_plan_proposals(
+                    user_id,
+                    conversation_id,
+                    last_asst.content,
+                    now,
+                )
+                if recovered:
+                    last_meta["proposal_ids"] = [str(p.id) for p in recovered]
+                    messages[last_asst_idx] = self._ai_repo.save_message(
+                        last_asst.model_copy(update={"metadata": last_meta})
+                    )
+                    proposals.extend(recovered)
+
         proposals.sort(key=lambda item: item.created_at, reverse=True)
 
         return AiConversationDetailResponse(
@@ -829,6 +941,16 @@ class AIOrchestrator:
                 saved_proposals.append(proposal_record)
             except AppError:
                 rejected_candidates_count += 1
+
+        if not saved_proposals:
+            saved_proposals.extend(
+                self._synthesize_missing_plan_proposals(
+                    user_id,
+                    conversation_id,
+                    provider_result.reply,
+                    reply_Now,
+                )
+            )
 
         # Confirmation intelligente : exécution directe uniquement pour une action simple explicitement autorisée
         memory_allow_simple = (
@@ -2234,7 +2356,7 @@ class AIOrchestrator:
                 )
 
             applied = version
-            if payload.get("apply_immediately", True) and version.planned_sessions:
+            if version.planned_sessions:
                 applied = self._planning_service.apply_plan(
                     user_id,
                     version.id,

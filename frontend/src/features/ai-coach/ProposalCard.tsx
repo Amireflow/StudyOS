@@ -254,15 +254,15 @@ export function ProposalCard({ proposal, onAccept, onReject, onUpdate }: Proposa
   return (
     <article
       className={cn(
-        'rounded-2xl border p-4 transition-colors',
+        'rounded-2xl p-4 transition-colors',
         isPending
-          ? 'border-amber-200/70 bg-amber-50/50 dark:border-amber-900/40 dark:bg-amber-950/20'
-          : 'border-zinc-200/60 bg-zinc-50/70 dark:border-zinc-800/80 dark:bg-zinc-800/50',
+          ? 'bg-amber-50/75 dark:bg-amber-950/30'
+          : 'bg-zinc-50 dark:bg-zinc-800/70',
       )}
     >
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div className="flex min-w-0 items-center gap-2 text-xs font-medium text-zinc-600 dark:text-zinc-300">
-          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-xl bg-white text-teal-700 shadow-2xs dark:bg-zinc-900 dark:text-teal-400">
+          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-xl bg-white text-teal-700 dark:bg-zinc-900 dark:text-teal-400">
             <Icon icon={actionMeta.icon} size={15} />
           </span>
           <span className="truncate">{actionMeta.label}</span>

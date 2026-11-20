@@ -188,7 +188,7 @@ export function CourseCreatorPanel({
           />
         </FormField>
 
-        <label className="inline-flex items-center gap-2.5 rounded-xl bg-zinc-50 px-3.5 py-2.5 text-xs font-medium text-zinc-700 dark:bg-zinc-800/70 dark:text-zinc-300 cursor-pointer">
+        <label className="inline-flex cursor-pointer items-center gap-2.5 rounded-xl bg-zinc-50 px-3.5 py-2.5 text-xs font-medium text-zinc-700 dark:bg-zinc-800/70 dark:text-zinc-300">
           <input
             id="course-link-skill"
             type="checkbox"
@@ -196,7 +196,7 @@ export function CourseCreatorPanel({
             onChange={(e) => setLinkSkill(e.target.checked)}
             className="h-4 w-4 rounded accent-teal-600"
           />
-          <span>Associer une compétence liée (initialisée à 0/5, progressant uniquement sur projets validés)</span>
+          <span>Associer une compétence liée (0/5 au départ, évolue sur projets validés)</span>
         </label>
 
         <div className="flex flex-wrap items-center gap-2.5 pt-1">

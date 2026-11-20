@@ -841,7 +841,7 @@ class BatchActionStep(BaseModel):
 
 class BatchActionsProposalPayload(BaseModel):
     summary: str | None = None
-    steps: list[BatchActionStep] = Field(min_length=1, max_length=12)
+    steps: list[BatchActionStep] = Field(min_length=1, max_length=30)
     compensate_on_failure: bool = True
 
     @field_validator("summary")

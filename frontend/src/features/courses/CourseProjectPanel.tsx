@@ -80,7 +80,73 @@ export function CourseProjectPanel({
   };
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-4">
+      {/* Bandeau de déblocage du niveau en haut pour une visibilité immédiate */}
+      <section className="rounded-2xl bg-white p-4 sm:p-5 dark:bg-zinc-900">
+        {isValidated ? (
+          <div className="flex items-start gap-3 rounded-xl bg-emerald-50 p-3.5 text-xs text-emerald-950 dark:bg-emerald-950/40 dark:text-emerald-100">
+            <Icon icon={Award02Icon} size={18} className="mt-0.5 shrink-0 text-emerald-700 dark:text-emerald-300" />
+            <div>
+              <p className="font-semibold">Niveau {level.levelNumber} validé</p>
+              <p className="mt-0.5">
+                {isFinalLevel
+                  ? 'Félicitations ! Tous les niveaux de ce cours ont été validés avec succès.'
+                  : `Le niveau ${level.levelNumber + 1} a été débloqué avec ses chapitres, exercices et ressources.`}
+              </p>
+            </div>
+          </div>
+        ) : !canValidate ? (
+          <div className="flex flex-col gap-3 rounded-xl bg-zinc-50 p-3.5 sm:flex-row sm:items-center sm:justify-between dark:bg-zinc-800/70">
+            <div className="flex items-start gap-2.5 text-xs text-zinc-700 dark:text-zinc-300">
+              <Icon icon={LockIcon} size={16} className="mt-0.5 shrink-0 text-zinc-500" />
+              <div className="space-y-1">
+                <p className="font-semibold text-zinc-900 dark:text-zinc-100">
+                  Verrou pédagogique du Niveau {level.levelNumber}
+                </p>
+                <ul className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-zinc-600 dark:text-zinc-400">
+                  <li>
+                    {lessonsDone ? '✓' : '○'} Tous les chapitres du niveau marqués lus
+                  </li>
+                  <li>
+                    {exerciseDone ? '✓' : '○'} Au moins un exercice du niveau réussi
+                  </li>
+                  <li>
+                    {level.projectPassed ? '✓' : '○'} Projet vérifiable réussi (score &gt;= {level.passThreshold}/100)
+                  </li>
+                </ul>
+              </div>
+            </div>
+            <Button type="button" variant="secondary" size="sm" disabled className="shrink-0">
+              {isFinalLevel
+                ? 'Valider le niveau final et terminer le cours'
+                : `Valider le niveau ${level.levelNumber} et débloquer le niveau ${level.levelNumber + 1}`}
+            </Button>
+          </div>
+        ) : (
+          <div className="flex flex-col gap-3 rounded-xl bg-teal-50/75 p-3.5 sm:flex-row sm:items-center sm:justify-between dark:bg-teal-950/40">
+            <div className="flex items-start gap-2.5 text-xs text-teal-950 dark:text-teal-100">
+              <Icon icon={SquareUnlock02Icon} size={17} className="mt-0.5 shrink-0 text-teal-700 dark:text-teal-300" />
+              <p>
+                Chapitres lus, exercice validé et projet au-dessus du seuil ({level.passThreshold}/100). Vous pouvez débloquer la suite.
+              </p>
+            </div>
+            <Button
+              type="button"
+              variant="primary"
+              size="sm"
+              className="shrink-0"
+              isLoading={isValidating}
+              onClick={() => void handleValidate()}
+            >
+              <Icon icon={Award02Icon} size={15} />
+              {isFinalLevel
+                ? 'Valider le niveau final et terminer le cours'
+                : `Valider le niveau ${level.levelNumber} et débloquer le niveau ${level.levelNumber + 1}`}
+            </Button>
+          </div>
+        )}
+      </section>
+
       <section className="space-y-4 rounded-2xl bg-white p-5 sm:p-6 dark:bg-zinc-900">
         <div className="flex flex-wrap items-start justify-between gap-2">
           <div>
@@ -113,51 +179,53 @@ export function CourseProjectPanel({
           </div>
         )}
 
-        {level.projectDeliverables.length > 0 && (
-          <div className="space-y-2">
-            <h3 className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
-              Livrables attendus
-            </h3>
-            <ul className="space-y-1.5 text-xs text-zinc-700 dark:text-zinc-300">
-              {level.projectDeliverables.map((item, idx) => (
-                <li key={idx} className="flex items-start gap-2">
-                  <Icon
-                    icon={CheckmarkCircle02Icon}
-                    size={14}
-                    className="mt-0.5 shrink-0 text-teal-600 dark:text-teal-400"
-                  />
-                  <span>{item}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-
-        {level.projectRubric.length > 0 && (
-          <div className="space-y-2">
-            <h3 className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
-              Grille d’évaluation (100 points)
-            </h3>
-            <div className="grid gap-2.5 sm:grid-cols-2">
-              {level.projectRubric.map((crit) => (
-                <div
-                  key={crit.key}
-                  className="rounded-xl bg-zinc-50 p-3 text-xs dark:bg-zinc-800/60"
-                >
-                  <div className="flex items-center justify-between gap-2 font-semibold text-zinc-900 dark:text-zinc-100">
-                    <span>{crit.label}</span>
-                    <span className="tabular-nums text-teal-700 dark:text-teal-400">
-                      /{crit.maxScore}
-                    </span>
-                  </div>
-                  <p className="mt-1 text-[11px] leading-relaxed text-zinc-600 dark:text-zinc-400">
-                    {crit.description}
-                  </p>
-                </div>
-              ))}
+        <div className="grid gap-4 lg:grid-cols-2">
+          {level.projectDeliverables.length > 0 && (
+            <div className="space-y-2 rounded-xl bg-zinc-50 p-3.5 dark:bg-zinc-800/50">
+              <h3 className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+                Livrables attendus
+              </h3>
+              <ul className="space-y-1.5 text-xs text-zinc-700 dark:text-zinc-300">
+                {level.projectDeliverables.map((item, idx) => (
+                  <li key={idx} className="flex items-start gap-2">
+                    <Icon
+                      icon={CheckmarkCircle02Icon}
+                      size={14}
+                      className="mt-0.5 shrink-0 text-teal-600 dark:text-teal-400"
+                    />
+                    <span>{item}</span>
+                  </li>
+                ))}
+              </ul>
             </div>
-          </div>
-        )}
+          )}
+
+          {level.projectRubric.length > 0 && (
+            <div className="space-y-2 rounded-xl bg-zinc-50 p-3.5 dark:bg-zinc-800/50">
+              <h3 className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+                Grille d’évaluation (100 points)
+              </h3>
+              <div className="grid gap-2 sm:grid-cols-2">
+                {level.projectRubric.map((crit) => (
+                  <div
+                    key={crit.key}
+                    className="rounded-lg bg-white p-2.5 text-xs dark:bg-zinc-900"
+                  >
+                    <div className="flex items-center justify-between gap-2 font-semibold text-zinc-900 dark:text-zinc-100">
+                      <span>{crit.label}</span>
+                      <span className="tabular-nums text-teal-700 dark:text-teal-400">
+                        /{crit.maxScore}
+                      </span>
+                    </div>
+                    <p className="mt-0.5 line-clamp-2 text-[11px] leading-relaxed text-zinc-500 dark:text-zinc-400">
+                      {crit.description}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
       </section>
 
       <section className="space-y-4 rounded-2xl bg-white p-5 sm:p-6 dark:bg-zinc-900">
@@ -285,70 +353,6 @@ export function CourseProjectPanel({
           ))}
         </section>
       )}
-
-      <section className="rounded-2xl bg-white p-5 sm:p-6 dark:bg-zinc-900">
-        {isValidated ? (
-          <div className="flex items-start gap-3 rounded-xl bg-emerald-50 p-4 text-xs text-emerald-950 dark:bg-emerald-950/40 dark:text-emerald-100">
-            <Icon icon={Award02Icon} size={18} className="mt-0.5 shrink-0 text-emerald-700 dark:text-emerald-300" />
-            <div>
-              <p className="font-semibold">Niveau {level.levelNumber} validé</p>
-              <p className="mt-0.5">
-                {isFinalLevel
-                  ? 'Félicitations ! Tous les niveaux de ce cours ont été validés avec succès.'
-                  : `Le niveau ${level.levelNumber + 1} a été débloqué avec ses chapitres, exercices et ressources.`}
-              </p>
-            </div>
-          </div>
-        ) : !canValidate ? (
-          <div className="space-y-3 rounded-xl bg-zinc-50 p-4 dark:bg-zinc-800/70">
-            <div className="flex items-start gap-2.5 text-xs text-zinc-700 dark:text-zinc-300">
-              <Icon icon={LockIcon} size={16} className="mt-0.5 shrink-0 text-zinc-500" />
-              <div className="space-y-1.5">
-                <p>
-                  Complétez les trois conditions ci-dessous avant de débloquer le niveau suivant :
-                </p>
-                <ul className="space-y-1 text-[11px]">
-                  <li>
-                    {lessonsDone ? '✓' : '○'} Tous les chapitres du niveau marqués lus
-                  </li>
-                  <li>
-                    {exerciseDone ? '✓' : '○'} Au moins un exercice du niveau réussi
-                  </li>
-                  <li>
-                    {level.projectPassed ? '✓' : '○'} Projet vérifiable réussi (score &gt;= {level.passThreshold}/100)
-                  </li>
-                </ul>
-              </div>
-            </div>
-            <Button type="button" variant="secondary" size="md" disabled>
-              {isFinalLevel
-                ? 'Valider le niveau final et terminer le cours'
-                : `Valider le niveau ${level.levelNumber} et débloquer le niveau ${level.levelNumber + 1}`}
-            </Button>
-          </div>
-        ) : (
-          <div className="space-y-3 rounded-xl bg-teal-50/75 p-4 dark:bg-teal-950/40">
-            <div className="flex items-start gap-2.5 text-xs text-teal-950 dark:text-teal-100">
-              <Icon icon={SquareUnlock02Icon} size={17} className="mt-0.5 shrink-0 text-teal-700 dark:text-teal-300" />
-              <p>
-                Chapitres lus, exercice validé et projet au-dessus du seuil ({level.passThreshold}/100). Validez ce niveau pour débloquer la suite.
-              </p>
-            </div>
-            <Button
-              type="button"
-              variant="primary"
-              size="md"
-              isLoading={isValidating}
-              onClick={() => void handleValidate()}
-            >
-              <Icon icon={Award02Icon} size={16} />
-              {isFinalLevel
-                ? 'Valider le niveau final et terminer le cours'
-                : `Valider le niveau ${level.levelNumber} et débloquer le niveau ${level.levelNumber + 1}`}
-            </Button>
-          </div>
-        )}
-      </section>
     </div>
   );
 }

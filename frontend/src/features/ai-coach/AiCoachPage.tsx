@@ -366,16 +366,45 @@ export function AiCoachPage() {
   const isDesktopRailVisible = useMemo(() => {
     if (isDesktopRailForcedOpen) return true;
     if (isDesktopRailDismissed) return false;
-    return proposals.length > 0 || railTab === 'reports';
-  }, [isDesktopRailDismissed, isDesktopRailForcedOpen, proposals.length, railTab]);
+    return railTab === 'reports';
+  }, [isDesktopRailDismissed, isDesktopRailForcedOpen, railTab]);
 
-  const prevProposalsLenRef = useRef(proposals.length);
-  useEffect(() => {
-    if (proposals.length > prevProposalsLenRef.current) {
-      setIsDesktopRailDismissed(false);
+  const proposalsByMessageId = useMemo(() => {
+    const map = new Map<string, typeof proposals>();
+    const assistantMessages = messages.filter((m) => m.role === 'assistant');
+    if (assistantMessages.length === 0 || proposals.length === 0) {
+      return map;
     }
-    prevProposalsLenRef.current = proposals.length;
-  }, [proposals.length]);
+
+    const activeProposals = activeConversationId
+      ? proposals.filter((p) => !p.conversationId || p.conversationId === activeConversationId)
+      : proposals;
+    const pool = activeProposals.length > 0 ? activeProposals : proposals;
+    const byId = new Map(pool.map((p) => [p.id, p]));
+    const assigned = new Set<string>();
+
+    for (const msg of assistantMessages) {
+      const ids = msg.metadata.proposalIds ?? [];
+      const linked = ids
+        .map((id) => byId.get(id))
+        .filter((item): item is (typeof proposals)[number] => Boolean(item));
+      if (linked.length > 0) {
+        map.set(msg.id, linked);
+        for (const item of linked) {
+          assigned.add(item.id);
+        }
+      }
+    }
+
+    const unassigned = pool.filter((p) => !assigned.has(p.id));
+    if (unassigned.length > 0) {
+      const lastAssistant = assistantMessages[assistantMessages.length - 1];
+      const existing = map.get(lastAssistant.id) ?? [];
+      map.set(lastAssistant.id, [...existing, ...unassigned]);
+    }
+
+    return map;
+  }, [activeConversationId, messages, proposals]);
 
   useEffect(() => {
     if (!isSending) {
@@ -421,7 +450,14 @@ export function AiCoachPage() {
 
   useEffect(() => {
     if (messages.length > 0 || isSending) {
-      messagesEndRef.current?.scrollIntoView?.({ behavior: 'smooth' });
+      const endEl = messagesEndRef.current;
+      const scrollViewport = endEl?.closest('.overflow-y-auto') as HTMLElement | null;
+      if (scrollViewport && typeof scrollViewport.scrollTo === 'function') {
+        scrollViewport.scrollTo({
+          top: scrollViewport.scrollHeight,
+          behavior: 'smooth',
+        });
+      }
     }
   }, [activeConversationId, isSending, messages.length, thinkingStepIndex]);
 
@@ -436,10 +472,7 @@ export function AiCoachPage() {
     setIsSending(true);
     try {
       const ok = await sendMessage(trimmed, [selectedScope]);
-      if (ok) {
-        setRailTab('proposals');
-        setIsDesktopRailDismissed(false);
-      } else {
+      if (!ok) {
         awaitingStreamAfterSendRef.current = false;
         setPromptText(trimmed);
       }
@@ -519,7 +552,7 @@ export function AiCoachPage() {
   return (
     <div className="space-y-3">
       {/* Barre supérieure compacte & sans distraction */}
-      <header className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-zinc-200/70 bg-white px-3.5 py-2.5 shadow-2xs sm:px-4 dark:border-zinc-800/80 dark:bg-zinc-900">
+      <header className="flex flex-wrap items-center justify-between gap-2 rounded-2xl bg-white px-3.5 py-2.5 sm:px-4 dark:bg-zinc-900">
         <div className="flex min-w-0 items-center gap-2.5">
           <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-teal-700 text-white dark:bg-teal-600">
             <Icon icon={AiChat02Icon} size={16} />
@@ -954,17 +987,18 @@ export function AiCoachPage() {
         <section
           aria-label="Fil de discussion du copilote"
           className={cn(
-            'min-w-0 flex-col overflow-hidden rounded-2xl border border-zinc-200/70 bg-white shadow-2xs lg:min-h-[640px] dark:border-zinc-800/80 dark:bg-zinc-900',
+            'min-w-0 flex-col overflow-hidden rounded-2xl bg-white dark:bg-zinc-900',
             isDesktopRailVisible ? 'lg:col-span-7' : 'lg:col-span-12',
             mobileView === 'chat' ? 'flex' : 'hidden lg:flex',
           )}
         >
           <ScrollArea
-            className={cn(
-              'flex-1',
-              (messages.length > 0 || isSending) && 'max-h-[54dvh] sm:max-h-[64dvh]',
+            className="flex-1"
+            viewportClassName={cn(
+              'p-4 sm:p-6',
+              (messages.length > 0 || isSending) &&
+                'max-h-[58dvh] sm:max-h-[65dvh] overscroll-y-contain',
             )}
-            viewportClassName="p-4 sm:p-6"
           >
             {messages.length === 0 && !isSending ? (
               <div className="mx-auto flex max-w-2xl flex-col justify-center py-6 sm:py-12">
@@ -986,9 +1020,9 @@ export function AiCoachPage() {
                       key={item.title}
                       type="button"
                       onClick={() => handleUseStarterPrompt(item.prompt)}
-                      className="flex items-center gap-3 rounded-xl border border-zinc-200/70 bg-zinc-50/60 p-3 text-left transition-all hover:border-teal-600/40 hover:bg-white hover:shadow-2xs dark:border-zinc-800 dark:bg-zinc-800/50 dark:hover:border-teal-500/40 dark:hover:bg-zinc-800"
+                      className="flex items-center gap-3 rounded-xl bg-zinc-50 p-3 text-left transition-colors hover:bg-zinc-100 dark:bg-zinc-800/70 dark:hover:bg-zinc-800"
                     >
-                      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-white text-teal-700 shadow-2xs dark:bg-zinc-900 dark:text-teal-400">
+                      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-white text-teal-700 dark:bg-zinc-900 dark:text-teal-400">
                         <Icon icon={item.icon} size={16} />
                       </span>
                       <div className="min-w-0 flex-1">
@@ -1015,19 +1049,21 @@ export function AiCoachPage() {
                   if (isUser) {
                     return (
                       <div key={message.id} className="flex justify-end">
-                        <div className="max-w-[82%] rounded-2xl rounded-tr-sm bg-zinc-900 px-4 py-2.5 text-sm leading-relaxed text-white shadow-2xs dark:bg-zinc-100 dark:text-zinc-900">
+                        <div className="max-w-[82%] rounded-2xl rounded-tr-sm bg-zinc-900 px-4 py-2.5 text-sm leading-relaxed text-white dark:bg-zinc-100 dark:text-zinc-900">
                           <p className="whitespace-pre-wrap">{message.content}</p>
                         </div>
                       </div>
                     );
                   }
 
+                  const messageProposals = proposalsByMessageId.get(message.id) ?? [];
+
                   return (
                     <div key={message.id} className="flex items-start gap-3">
                       <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-xl bg-teal-50 text-teal-700 dark:bg-teal-950/60 dark:text-teal-400">
                         <Icon icon={AiChat02Icon} size={15} />
                       </div>
-                      <div className="min-w-0 flex-1 space-y-2">
+                      <div className="min-w-0 flex-1 space-y-2.5">
                         <div className="text-sm leading-relaxed text-zinc-800 dark:text-zinc-200">
                           <StreamingAssistantContent
                             content={message.content}
@@ -1038,23 +1074,41 @@ export function AiCoachPage() {
                           />
                         </div>
 
+                        {messageProposals.length > 0 && (
+                          <div className="space-y-2.5 pt-1">
+                            {messageProposals.map((proposal) => (
+                              <ProposalCard
+                                key={proposal.id}
+                                proposal={proposal}
+                                onAccept={acceptProposal}
+                                onReject={rejectProposal}
+                                onUpdate={updateProposal}
+                              />
+                            ))}
+                          </div>
+                        )}
+
                         <div className="flex flex-wrap items-center gap-2 pt-0.5">
                           <span className="text-[11px] text-zinc-400 dark:text-zinc-500">
                             {formatDateTimeFr(message.createdAt)}
                           </span>
 
                           {hasMissingData && (
-                            <details className="group inline-block">
-                              <summary className="inline-flex cursor-pointer list-none items-center gap-1 rounded-full bg-zinc-100 px-2 py-0.5 text-[11px] font-medium text-zinc-500 transition-colors hover:bg-zinc-200/70 dark:bg-zinc-800 dark:text-zinc-400">
-                                <Icon icon={Alert02Icon} size={12} className="shrink-0 text-amber-600 dark:text-amber-400" />
-                                <span>Indication AI-06 · Contexte partiel</span>
-                              </summary>
-                              <p className="mt-1.5 rounded-xl bg-zinc-50 px-3 py-2 text-[11px] leading-relaxed text-zinc-600 dark:bg-zinc-800/80 dark:text-zinc-300">
-                                {(message.metadata.missingData?.length ?? 0) > 0
+                            <span
+                              title={
+                                (message.metadata.missingData?.length ?? 0) > 0
                                   ? message.metadata.missingData?.join(' • ')
-                                  : 'Réponse calculée à titre estimatif à partir des données disponibles.'}
-                              </p>
-                            </details>
+                                  : 'Réponse calculée à titre estimatif à partir des données disponibles.'
+                              }
+                              className="inline-flex items-center gap-1 rounded-full bg-zinc-100 px-2 py-0.5 text-[11px] font-medium text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400"
+                            >
+                              <Icon
+                                icon={Alert02Icon}
+                                size={12}
+                                className="shrink-0 text-amber-600 dark:text-amber-400"
+                              />
+                              <span>Indication AI-06 · Contexte partiel</span>
+                            </span>
                           )}
                         </div>
                       </div>
@@ -1066,7 +1120,7 @@ export function AiCoachPage() {
                   pendingUserPrompt &&
                   !messages.some((m) => m.role === 'user' && m.content === pendingUserPrompt) && (
                     <div className="flex justify-end">
-                      <div className="max-w-[82%] rounded-2xl rounded-tr-sm bg-zinc-900 px-4 py-2.5 text-sm leading-relaxed text-white shadow-2xs dark:bg-zinc-100 dark:text-zinc-900">
+                      <div className="max-w-[82%] rounded-2xl rounded-tr-sm bg-zinc-900 px-4 py-2.5 text-sm leading-relaxed text-white dark:bg-zinc-100 dark:text-zinc-900">
                         <p className="whitespace-pre-wrap">{pendingUserPrompt}</p>
                       </div>
                     </div>
@@ -1084,7 +1138,7 @@ export function AiCoachPage() {
                       <Icon icon={SparklesIcon} size={14} className="relative" />
                     </div>
 
-                    <div className="min-w-0 flex-1 space-y-2.5 rounded-2xl border border-zinc-200/60 bg-zinc-50/70 p-3.5 dark:border-zinc-800 dark:bg-zinc-800/50">
+                    <div className="min-w-0 flex-1 space-y-2.5 rounded-2xl bg-zinc-50 p-3.5 dark:bg-zinc-800/70">
                       <div className="flex flex-wrap items-center justify-between gap-2">
                         <div className="flex items-center gap-2">
                           <span className="inline-flex items-center gap-1">
@@ -1166,9 +1220,9 @@ export function AiCoachPage() {
             </div>
           )}
 
-          {/* Compositeur flottant centré */}
-          <form onSubmit={handleFormSubmit} className="border-t border-zinc-100 p-3 sm:px-6 sm:py-4 dark:border-zinc-800/70">
-            <div className="mx-auto w-full max-w-3xl rounded-2xl border border-zinc-200/80 bg-zinc-50/70 p-2.5 transition-all focus-within:border-teal-600/50 focus-within:bg-white focus-within:shadow-xs sm:p-3 dark:border-zinc-800 dark:bg-zinc-800/60 dark:focus-within:border-teal-500/50 dark:focus-within:bg-zinc-900">
+          {/* Compositeur flottant centré (zéro bordure) */}
+          <form onSubmit={handleFormSubmit} className="p-3 pt-1.5 sm:px-6 sm:pb-5">
+            <div className="mx-auto w-full max-w-3xl rounded-2xl bg-zinc-50 p-2.5 transition-colors focus-within:bg-zinc-100/90 sm:p-3 dark:bg-zinc-800/70 dark:focus-within:bg-zinc-800">
               <label htmlFor="copilot-prompt" className="sr-only">
                 Votre message au Copilote
               </label>
@@ -1189,7 +1243,7 @@ export function AiCoachPage() {
                     aria-label="Périmètre du contexte transmis"
                     value={selectedScope}
                     onChange={(e) => setSelectedScope(e.target.value as AiContextScope)}
-                    className="min-h-7 max-w-[150px] shrink-0 truncate rounded-xl border border-zinc-200/70 bg-white px-2.5 py-1 text-xs font-medium text-zinc-700 focus-visible:outline-2 focus-visible:outline-teal-600 sm:max-w-none dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200"
+                    className="min-h-7 max-w-[150px] shrink-0 truncate rounded-xl bg-white px-2.5 py-1 text-xs font-medium text-zinc-700 focus-visible:outline-2 focus-visible:outline-teal-600 sm:max-w-none dark:bg-zinc-900 dark:text-zinc-200"
                   >
                     {SCOPE_OPTIONS.map((scope) => (
                       <option key={scope.value} value={scope.value}>
@@ -1202,10 +1256,10 @@ export function AiCoachPage() {
                     type="button"
                     onClick={() => setIsTimetableImportOpen((prev) => !prev)}
                     className={cn(
-                      'inline-flex h-7 shrink-0 items-center gap-1.5 rounded-xl border px-2.5 text-xs font-medium transition-colors',
+                      'inline-flex h-7 shrink-0 items-center gap-1.5 rounded-xl px-2.5 text-xs font-medium transition-colors',
                       isTimetableImportOpen
-                        ? 'border-teal-700 bg-teal-700 text-white dark:border-teal-500 dark:bg-teal-500 dark:text-zinc-950'
-                        : 'border-zinc-200/70 bg-white text-zinc-600 hover:text-zinc-900 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100',
+                        ? 'bg-teal-700 text-white dark:bg-teal-500 dark:text-zinc-950'
+                        : 'bg-white text-zinc-600 hover:text-zinc-900 dark:bg-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100',
                     )}
                   >
                     <Icon icon={Calendar03Icon} size={13} />
@@ -1214,7 +1268,7 @@ export function AiCoachPage() {
 
                   <Link
                     to="/settings"
-                    className="inline-flex h-7 shrink-0 items-center gap-1.5 rounded-xl border border-zinc-200/70 bg-white px-2.5 text-xs font-medium text-zinc-600 transition-colors hover:text-zinc-900 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
+                    className="inline-flex h-7 shrink-0 items-center gap-1.5 rounded-xl bg-white px-2.5 text-xs font-medium text-zinc-600 transition-colors hover:text-zinc-900 dark:bg-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
                   >
                     <Icon icon={Settings02Icon} size={13} />
                     Consignes
@@ -1241,7 +1295,7 @@ export function AiCoachPage() {
         <aside
           aria-label="Panneau d’actions et de synthèses"
           className={cn(
-            'min-w-0 flex-col gap-3.5 rounded-2xl border border-zinc-200/70 bg-white p-4 shadow-2xs sm:p-5 lg:col-span-5 dark:border-zinc-800/80 dark:bg-zinc-900',
+            'min-w-0 flex-col gap-3.5 rounded-2xl bg-white p-4 sm:p-5 lg:col-span-5 dark:bg-zinc-900',
             mobileView === 'rail'
               ? 'flex'
               : isDesktopRailVisible
@@ -1264,7 +1318,7 @@ export function AiCoachPage() {
                 className={cn(
                   'flex items-center justify-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors',
                   railTab === 'proposals'
-                    ? 'bg-white text-zinc-900 shadow-2xs dark:bg-zinc-900 dark:text-zinc-100'
+                    ? 'bg-white text-zinc-900 dark:bg-zinc-900 dark:text-zinc-100'
                     : 'text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-200',
                 )}
               >
@@ -1283,7 +1337,7 @@ export function AiCoachPage() {
                 className={cn(
                   'flex items-center justify-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors',
                   railTab === 'reports'
-                    ? 'bg-white text-zinc-900 shadow-2xs dark:bg-zinc-900 dark:text-zinc-100'
+                    ? 'bg-white text-zinc-900 dark:bg-zinc-900 dark:text-zinc-100'
                     : 'text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-200',
                 )}
               >
@@ -1330,10 +1384,14 @@ export function AiCoachPage() {
                 })}
               </div>
 
-              {filteredProposals.length === 0 ? (
+              {filteredProposals.length === 0 || proposalsByMessageId.size > 0 ? (
                 <EmptyState
                   icon={<Icon icon={CheckmarkSquare02Icon} size={18} className="text-zinc-500 dark:text-zinc-400" />}
-                  title="Aucune action dans cette vue"
+                  title={
+                    proposalsByMessageId.size > 0
+                      ? 'Les actions proposées sont affichées directement dans la discussion'
+                      : 'Aucune action dans cette vue'
+                  }
                 />
               ) : (
                 <div className="space-y-3">

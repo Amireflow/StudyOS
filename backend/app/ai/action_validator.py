@@ -1,3 +1,5 @@
+from datetime import datetime, timezone
+import re
 from typing import Any
 from uuid import UUID
 from pydantic import ValidationError
@@ -50,6 +52,173 @@ from app.services.assessment_evaluator import (
     validate_evidence_quality,
 )
 from app.services.schedule_service import do_events_overlap
+
+
+_FR_WEEKDAYS = ("Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi", "Dimanche")
+
+
+def _normalize_iso_utc_str(val: Any, default_time: str = "18:00:00") -> Any:
+    if not isinstance(val, str):
+        return val
+    s = val.strip()
+    if not s:
+        return val
+    if re.match(r"^\d{4}-\d{2}-\d{2}$", s):
+        return f"{s}T{default_time}Z"
+    if re.match(r"^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}$", s):
+        return s.replace(" ", "T") + ":00Z"
+    if re.match(r"^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:\.\d+)?$", s):
+        return s.replace(" ", "T") + "Z"
+    return s
+
+
+def _normalize_priority_str(val: Any) -> Any:
+    if not isinstance(val, str):
+        return val
+    low = val.strip().lower()
+    if low in ("low", "basse", "faible", "minor", "mineure"):
+        return "low"
+    if low in ("normal", "normale", "medium", "moyenne", "standard", "moderate"):
+        return "normal"
+    if low in ("high", "haute", "élevée", "elevee", "important", "importante"):
+        return "high"
+    if low in ("critical", "critique", "urgent", "urgente", "highest"):
+        return "critical"
+    return val
+
+
+def _normalize_schedule_type_str(val: Any) -> str:
+    if not isinstance(val, str):
+        return "learning"
+    low = val.strip().lower()
+    if low in ("course", "learning", "project", "personal", "other"):
+        return low
+    if any(w in low for w in ("proj", "tp_projet", "livrable")):
+        return "project"
+    if any(w in low for w in ("perso", "pause", "repos", "sport")):
+        return "personal"
+    return "learning"
+
+
+def _normalize_llm_raw_payload(action_type: AiActionType, payload: dict[str, Any]) -> dict[str, Any]:
+    out = dict(payload)
+
+    for dt_key in ("starts_at", "ends_at", "due_at", "started_at", "exam_at"):
+        if dt_key in out and out[dt_key] is not None:
+            out[dt_key] = _normalize_iso_utc_str(out[dt_key])
+
+    if "priority" in out and out["priority"] is not None:
+        out["priority"] = _normalize_priority_str(out["priority"])
+
+    if action_type in (AiActionType.create_schedule_event, AiActionType.update_schedule_event):
+        date_str = str(out.get("date") or out.get("local_date") or "").strip()
+        start_t = str(out.get("start_time") or out.get("local_start_time") or out.get("start") or "").strip()
+        end_t = str(out.get("end_time") or out.get("local_end_time") or out.get("end") or "").strip()
+        if "starts_at" not in out and date_str and re.match(r"^\d{4}-\d{2}-\d{2}$", date_str) and re.match(r"^\d{2}:\d{2}", start_t):
+            out["starts_at"] = f"{date_str}T{start_t[:5]}:00Z"
+        if "ends_at" not in out and date_str and re.match(r"^\d{4}-\d{2}-\d{2}$", date_str) and re.match(r"^\d{2}:\d{2}", end_t):
+            out["ends_at"] = f"{date_str}T{end_t[:5]}:00Z"
+        if action_type == AiActionType.create_schedule_event:
+            if "title" not in out and isinstance(out.get("subject") or out.get("name"), str):
+                out["title"] = str(out.get("subject") or out.get("name")).strip()
+            out["type"] = _normalize_schedule_type_str(out.get("type", "learning"))
+
+    if action_type == AiActionType.create_task:
+        if "title" not in out and isinstance(out.get("name") or out.get("task"), str):
+            out["title"] = str(out.get("name") or out.get("task")).strip()
+
+    if action_type == AiActionType.plan_strategic_activity:
+        if "activity_title" not in out:
+            for alt in ("title", "name", "subject", "topic"):
+                if isinstance(out.get(alt), str) and out[alt].strip():
+                    out["activity_title"] = out[alt].strip()
+                    break
+        if not isinstance(out.get("goal"), str) or len(str(out.get("goal")).strip()) < 2:
+            act = str(out.get("activity_title") or "cet objectif").strip()
+            out["goal"] = f"Progresser régulièrement sur {act} sans surcharge."
+        raw_dec = str(out.get("decision") or "ACCEPTABLE").strip().upper()
+        if "NON" in raw_dec or "NOT_RECOMMENDED" in raw_dec or "PARKING" in raw_dec or raw_dec.startswith("C"):
+            out["decision"] = "NOT_RECOMMENDED"
+        elif "CONDITION" in raw_dec or raw_dec.startswith("B"):
+            out["decision"] = "ACCEPTABLE_WITH_CONDITIONS"
+        else:
+            out["decision"] = "ACCEPTABLE"
+        raw_cat = str(out.get("category") or "learning").strip().lower()
+        if raw_cat not in ("learning", "project", "exam_prep", "personal", "university_deepening"):
+            out["category"] = "learning"
+
+        raw_slots = out.get("proposed_slots")
+        if isinstance(raw_slots, list):
+            norm_slots: list[dict[str, Any]] = []
+            for s in raw_slots:
+                if not isinstance(s, dict):
+                    continue
+                sc = dict(s)
+                loc_d = str(sc.get("local_date") or sc.get("date") or "").strip()
+                loc_st = str(sc.get("local_start_time") or sc.get("start_time") or sc.get("start") or "").strip()
+                loc_et = str(sc.get("local_end_time") or sc.get("end_time") or sc.get("end") or "").strip()
+                if "starts_at" in sc:
+                    sc["starts_at"] = _normalize_iso_utc_str(sc["starts_at"])
+                elif loc_d and re.match(r"^\d{2}:\d{2}", loc_st):
+                    sc["starts_at"] = f"{loc_d}T{loc_st[:5]}:00Z"
+                if "ends_at" in sc:
+                    sc["ends_at"] = _normalize_iso_utc_str(sc["ends_at"])
+                elif loc_d and re.match(r"^\d{2}:\d{2}", loc_et):
+                    sc["ends_at"] = f"{loc_d}T{loc_et[:5]}:00Z"
+                try:
+                    dt_s = datetime.fromisoformat(str(sc["starts_at"]).replace("Z", "+00:00"))
+                    dt_e = datetime.fromisoformat(str(sc["ends_at"]).replace("Z", "+00:00"))
+                    if not loc_d:
+                        loc_d = dt_s.date().isoformat()
+                    sc["local_date"] = loc_d[:10]
+                    sc["local_start_time"] = loc_st[:5] if len(loc_st) >= 5 else dt_s.strftime("%H:%M")
+                    sc["local_end_time"] = loc_et[:5] if len(loc_et) >= 5 else dt_e.strftime("%H:%M")
+                    if not sc.get("day_label"):
+                        sc["day_label"] = _FR_WEEKDAYS[dt_s.weekday()]
+                    if not sc.get("duration_minutes"):
+                        dur = max(15, min(240, int((dt_e - dt_s).total_seconds() // 60)))
+                        sc["duration_minutes"] = dur
+                    norm_slots.append(sc)
+                except Exception:
+                    continue
+            out["proposed_slots"] = norm_slots
+
+    if action_type == AiActionType.batch_actions:
+        raw_steps = out.get("steps")
+        if not isinstance(raw_steps, list) and isinstance(out.get("actions"), list):
+            raw_steps = out.get("actions")
+        if isinstance(raw_steps, list):
+            norm_steps: list[dict[str, Any]] = []
+            for st in raw_steps:
+                if not isinstance(st, dict):
+                    continue
+                st_type = str(
+                    st.get("action_type") or st.get("action") or st.get("tool") or st.get("type") or ""
+                ).strip()
+                if not st_type:
+                    continue
+                if isinstance(st.get("payload"), dict):
+                    st_payload = dict(st["payload"])
+                elif isinstance(st.get("parameters"), dict):
+                    st_payload = dict(st["parameters"])
+                elif isinstance(st.get("arguments"), dict):
+                    st_payload = dict(st["arguments"])
+                else:
+                    st_payload = {
+                        k: v
+                        for k, v in st.items()
+                        if k not in ("action_type", "action", "tool", "type", "link_to_step", "payload", "parameters", "arguments")
+                    }
+                norm_steps.append(
+                    {
+                        "action_type": st_type,
+                        "payload": st_payload,
+                        "link_to_step": st.get("link_to_step") if isinstance(st.get("link_to_step"), dict) else None,
+                    }
+                )
+            out["steps"] = norm_steps
+
+    return out
 
 
 class ValidatedProposal:
@@ -129,9 +298,10 @@ class ActionValidator:
         _skip_fks: set[str] | None = None,
     ) -> dict[str, Any]:
         skip_fks = _skip_fks or set()
-        raw_payload = {
-            k: v for k, v in (raw_payload or {}).items() if v is not None
-        }
+        raw_payload = _normalize_llm_raw_payload(
+            action_type,
+            {k: v for k, v in (raw_payload or {}).items() if v is not None},
+        )
         try:
             if action_type == AiActionType.create_task:
                 model = CreateTaskProposalPayload.model_validate(raw_payload)
