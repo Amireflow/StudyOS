@@ -5,7 +5,7 @@ type WorkspaceSection = 'learning' | 'organization';
 
 const SECTION_LINKS: Record<WorkspaceSection, Array<{ label: string; path: string }>> = {
   learning: [
-    { label: 'Mes cours', path: '/courses' },
+    { label: 'Cours', path: '/courses' },
     { label: 'Parcours', path: '/learning' },
     { label: 'Compétences', path: '/skills' },
   ],
@@ -37,7 +37,7 @@ export function WorkspaceSectionNavigation() {
   if (!section) return null;
 
   const isCourseDetail = section === 'learning' && pathname.startsWith('/courses/');
-  const title = section === 'learning' ? 'Apprentissage' : 'Organisation';
+  const title = section === 'learning' ? 'Apprendre' : 'Planning';
 
   return (
     <nav

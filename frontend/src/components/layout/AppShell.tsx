@@ -1,9 +1,10 @@
-import { Fragment, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   Cancel01Icon,
   Download01Icon,
   Logout01Icon,
   Menu01Icon,
+  Settings02Icon,
 } from '@hugeicons/core-free-icons';
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { cn } from '../../lib/cn';
@@ -22,51 +23,56 @@ interface NavigationListProps {
 }
 
 function NavigationList({ items, onItemClick }: NavigationListProps) {
+  const { pathname } = useLocation();
+
   return (
     <ul className="space-y-0.5">
-      {items.map((item) => (
-        <Fragment key={item.id}>
-          {item.sectionLabel && (
-            <li
-              aria-hidden="true"
-              className="px-3 pb-1 pt-4 text-[10px] font-semibold tracking-[0.14em] text-zinc-400 first:pt-1 dark:text-zinc-500"
+      {items.map((item) => {
+        const sectionActive =
+          (item.id === 'courses' &&
+            ['/courses', '/learning', '/skills'].some(
+              (path) => pathname === path || pathname.startsWith(path + '/'),
+            )) ||
+          (item.id === 'planning' && ['/planning', '/tasks', '/sessions'].includes(pathname));
+
+        return (
+          <li key={item.id}>
+            <NavLink
+              to={item.path}
+              end={item.path === '/'}
+              onClick={onItemClick}
+              aria-current={sectionActive && pathname !== item.path ? 'page' : undefined}
+              className={({ isActive }) =>
+                cn(
+                  'group flex min-h-11 items-center rounded-lg px-3 py-2 text-sm transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-700 dark:focus-visible:outline-teal-400',
+                  isActive || sectionActive
+                    ? 'bg-zinc-900 font-semibold text-white dark:bg-zinc-100 dark:text-zinc-950'
+                    : 'font-medium text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100',
+                )
+              }
             >
-              {item.sectionLabel}
-            </li>
-          )}
-        <li>
-          <NavLink
-            to={item.path}
-            end={item.path === '/'}
-            onClick={onItemClick}
-            className={({ isActive }) =>
-              cn(
-                'group flex min-h-11 items-center rounded-lg px-3 py-2 text-sm transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-700 dark:focus-visible:outline-teal-400',
-                isActive
-                  ? 'bg-zinc-900 font-semibold text-white dark:bg-zinc-100 dark:text-zinc-950'
-                  : 'font-medium text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100',
-              )
-            }
-          >
-            {({ isActive }) => (
-              <span className="flex items-center gap-3">
-                <Icon
-                  icon={item.icon}
-                  size={17}
-                  className={cn(
-                    'shrink-0 transition-colors',
-                    isActive
-                      ? 'text-teal-300 dark:text-teal-700'
-                      : 'text-zinc-400 group-hover:text-zinc-700 dark:text-zinc-500 dark:group-hover:text-zinc-200',
-                  )}
-                />
-                <span>{item.label}</span>
-              </span>
-            )}
-          </NavLink>
-        </li>
-        </Fragment>
-      ))}
+              {({ isActive }) => {
+                const active = isActive || sectionActive;
+                return (
+                  <span className="flex items-center gap-3">
+                    <Icon
+                      icon={item.icon}
+                      size={17}
+                      className={cn(
+                        'shrink-0 transition-colors',
+                        active
+                          ? 'text-teal-300 dark:text-teal-700'
+                          : 'text-zinc-400 group-hover:text-zinc-700 dark:text-zinc-500 dark:group-hover:text-zinc-200',
+                      )}
+                    />
+                    <span>{item.label}</span>
+                  </span>
+                );
+              }}
+            </NavLink>
+          </li>
+        );
+      })}
     </ul>
   );
 }
@@ -103,6 +109,13 @@ function SessionFooter() {
           </p>
         )}
       </div>
+      <Link
+        to="/settings"
+        className="flex min-h-10 w-full items-center gap-2 rounded-lg px-2.5 text-xs font-medium text-zinc-600 transition-colors hover:bg-zinc-200/70 hover:text-zinc-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-700 dark:text-zinc-300 dark:hover:bg-zinc-700 dark:hover:text-zinc-50 dark:focus-visible:outline-teal-400"
+      >
+        <Icon icon={Settings02Icon} size={15} />
+        Paramètres
+      </Link>
       <Button
         variant="ghost"
         size="sm"
@@ -130,9 +143,8 @@ export function AppShell() {
   const location = useLocation();
   const { isStandalone, canShowInstallOption, isIos, triggerInstall } = usePwaInstall();
 
-  const principalItems = NAVIGATION_ITEMS.filter((item) => item.group === 'principal');
-  const footerItems = NAVIGATION_ITEMS.filter((item) => item.group === 'pied');
-  const mobileBarItems = NAVIGATION_ITEMS.filter((item) => item.showInMobileBar);
+  const principalItems = NAVIGATION_ITEMS;
+  const mobileBarItems = NAVIGATION_ITEMS;
 
   async function handleInstallClick() {
     const outcome = await triggerInstall();
@@ -214,11 +226,11 @@ export function AppShell() {
           className="flex-1"
           viewportClassName="flex flex-col justify-between px-3 py-3"
         >
-          <NavigationList items={principalItems} />
-
-          <div className="mt-6 pt-3">
-            <NavigationList items={footerItems} />
-            <SessionFooter />
+          <div className="flex h-full flex-col justify-between">
+            <NavigationList items={principalItems} />
+            <div className="mt-6 pt-3">
+              <SessionFooter />
+            </div>
           </div>
         </ScrollArea>
       </aside>
@@ -304,10 +316,6 @@ export function AppShell() {
                     <span>Installer l’app mobile (plein écran)</span>
                   </button>
                 )}
-                <NavigationList
-                  items={footerItems}
-                  onItemClick={() => setIsMobileMenuOpen(false)}
-                />
                 <SessionFooter />
               </div>
             </ScrollArea>
@@ -396,7 +404,7 @@ export function AppShell() {
         aria-label="Accès rapide mobile"
         className="pb-safe fixed inset-x-0 bottom-0 z-30 bg-[#f5f5f3]/95 px-2 pt-1.5 backdrop-blur-md lg:hidden dark:bg-zinc-950/95"
       >
-        <ul className="mx-auto grid max-w-md grid-cols-5 gap-1">
+        <ul className="mx-auto grid max-w-md grid-cols-4 gap-1">
           {mobileBarItems.map((item) => {
             const sectionActive =
               (item.id === 'courses' &&

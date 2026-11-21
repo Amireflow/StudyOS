@@ -42,57 +42,52 @@ describe('Navigation principale et routage', () => {
     expect(screen.getByRole('heading', { level: 1, name: 'Tableau de bord' })).toBeInTheDocument();
 
     const desktopNav = screen.getByRole('navigation', { name: 'Navigation principale' });
-    expect(within(desktopNav).getByRole('link', { name: 'Tableau de bord' })).toHaveAttribute(
+    expect(within(desktopNav).getByRole('link', { name: "Aujourd'hui" })).toHaveAttribute(
       'aria-current',
       'page',
     );
   });
 
-  it('navigue vers Tâches, Séances, Planning et Paramètres via la barre latérale', async () => {
+  it('garde quatre espaces principaux et expose les vues secondaires dans leur espace', async () => {
     const user = userEvent.setup();
     renderAppAt('/');
 
     const desktopNav = screen.getByRole('navigation', { name: 'Navigation principale' });
-
-    await user.click(within(desktopNav).getByRole('link', { name: 'Tâches' }));
-    expect(await screen.findByRole('heading', { level: 1, name: 'Tâches' })).toBeInTheDocument();
-    expect(within(desktopNav).getByRole('link', { name: 'Tâches' })).toHaveAttribute(
-      'aria-current',
-      'page',
-    );
-
-    await user.click(within(desktopNav).getByRole('link', { name: 'Séances' }));
-    expect(await screen.findByRole('heading', { level: 1, name: 'Séances' })).toBeInTheDocument();
-    expect(within(desktopNav).getByRole('link', { name: 'Séances' })).toHaveAttribute(
-      'aria-current',
-      'page',
-    );
+    expect(within(desktopNav).getAllByRole('link')).toHaveLength(4);
 
     await user.click(within(desktopNav).getByRole('link', { name: 'Planning' }));
     expect(await screen.findByRole('heading', { level: 1, name: 'Planning' })).toBeInTheDocument();
 
-    await user.click(within(desktopNav).getByRole('link', { name: 'Paramètres' }));
+    const planningNav = screen.getByRole('navigation', { name: 'Navigation Planning' });
+    await user.click(within(planningNav).getByRole('link', { name: 'Tâches' }));
+    expect(await screen.findByRole('heading', { level: 1, name: 'Tâches' })).toBeInTheDocument();
+    expect(within(desktopNav).getByRole('link', { name: 'Planning' })).toHaveAttribute('aria-current', 'page');
+
+    const planningNavAgain = screen.getByRole('navigation', { name: 'Navigation Planning' });
+    await user.click(within(planningNavAgain).getByRole('link', { name: 'Séances' }));
+    expect(await screen.findByRole('heading', { level: 1, name: 'Séances' })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('link', { name: 'Paramètres' }));
     expect(await screen.findByRole('heading', { level: 1, name: 'Paramètres' })).toBeInTheDocument();
 
     const mobileQuickNav = screen.getByRole('navigation', { name: 'Accès rapide mobile' });
-    await user.click(within(mobileQuickNav).getByRole('link', { name: 'Accueil' }));
+    expect(within(mobileQuickNav).getAllByRole('link')).toHaveLength(4);
+    await user.click(within(mobileQuickNav).getByRole('link', { name: "Aujourd'hui" }));
     expect(await screen.findByRole('heading', { level: 1, name: 'Tableau de bord' })).toBeInTheDocument();
   });
 
-  it('affiche cinq entrées mobiles et les espaces regroupés avec leur sous-navigation', async () => {
+  it('affiche quatre accès mobiles et la navigation secondaire dans Planning', async () => {
     renderAppAt('/tasks');
 
     const desktopNav = screen.getByRole('navigation', { name: 'Navigation principale' });
-    expect(within(desktopNav).getByText('APPRENTISSAGE')).toBeInTheDocument();
-    expect(within(desktopNav).getByText('ORGANISATION')).toBeInTheDocument();
-    expect(within(desktopNav).getByRole('link', { name: 'Cours' })).toHaveAttribute('href', '/courses');
-    expect(within(desktopNav).getByRole('link', { name: 'Parcours' })).toHaveAttribute('href', '/learning');
+    expect(within(desktopNav).getAllByRole('link')).toHaveLength(4);
+    expect(within(desktopNav).getByRole('link', { name: 'Apprendre' })).toHaveAttribute('href', '/courses');
 
     const mobileNav = screen.getByRole('navigation', { name: 'Accès rapide mobile' });
-    expect(within(mobileNav).getAllByRole('link')).toHaveLength(5);
-    expect(within(mobileNav).getByRole('link', { name: 'Organiser' })).toHaveAttribute('aria-current', 'page');
+    expect(within(mobileNav).getAllByRole('link')).toHaveLength(4);
+    expect(within(mobileNav).getByRole('link', { name: 'Planning' })).toHaveAttribute('aria-current', 'page');
 
-    const sectionNav = screen.getByRole('navigation', { name: 'Navigation Organisation' });
+    const sectionNav = screen.getByRole('navigation', { name: 'Navigation Planning' });
     expect(within(sectionNav).getByRole('link', { name: 'Tâches' })).toHaveAttribute('aria-current', 'page');
     expect(within(sectionNav).getByRole('link', { name: 'Planning' })).toHaveAttribute('href', '/planning');
     expect(within(sectionNav).getByRole('link', { name: 'Séances' })).toHaveAttribute('href', '/sessions');
@@ -111,10 +106,10 @@ describe('Navigation principale et routage', () => {
     expect(dialog).toBeInTheDocument();
 
     const mobileNav = within(dialog).getByRole('navigation', { name: 'Navigation mobile' });
-    await user.click(within(mobileNav).getByRole('link', { name: 'Compétences' }));
+    await user.click(within(mobileNav).getByRole('link', { name: 'Planning' }));
 
     expect(screen.queryByRole('dialog', { name: 'Menu de navigation' })).not.toBeInTheDocument();
-    expect(await screen.findByRole('heading', { level: 1, name: 'Compétences' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { level: 1, name: 'Planning' })).toBeInTheDocument();
   });
 
   it('confine le focus dans le tiroir mobile, ferme avec Échap et restaure le déclencheur', async () => {
