@@ -283,13 +283,10 @@ class SessionContentResolver:
                 next_step_summary=f"Parcours « {path_title} » · Module {next_mod.position} ({next_mod.title})"
                 + (f" → {next_les.title}" if next_les else ""),
             )
-        return PedagogicalStepPayload(
-            content_source="learning_path",
-            exercises_focus=[path_title],
-            deliverables=[f"Compléter le parcours {path_title}"],
-            recommended_session_type="deep_work",
-            next_step_summary=f"Continuer le parcours « {path_title} ».",
-        )
+        # Un parcours sans modules n'a pas de prochaine étape exploitable.
+        # Générer un aperçu pédagogique via le fournisseur IA configuré plutôt
+        # que programmer une séance vague du type « Continuer le parcours ».
+        return self._resolve_preview_course_step(priority, user_id=snapshot.user_id)
 
     def _resolve_preview_course_step(
         self,
