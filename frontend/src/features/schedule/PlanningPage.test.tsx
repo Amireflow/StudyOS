@@ -250,13 +250,14 @@ describe('PlanningPage', () => {
       screen.getByRole('region', { name: 'Moteur intelligent de planification' }),
     ).toBeInTheDocument();
 
+    await user.click(screen.getByText('Contraintes et disponibilités'));
     const labelInput = screen.getByLabelText('Libellé de disponibilité');
     await user.clear(labelInput);
     await user.type(labelInput, 'Mercredi bloqué');
     await user.click(screen.getByRole('button', { name: 'Ajouter la règle' }));
     expect(await screen.findByText('Mercredi bloqué')).toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: 'Générer le programme' }));
+    await user.click(screen.getByRole('button', { name: 'Construire mon programme' }));
     expect(await screen.findByText('Version v1')).toBeInTheDocument();
     expect(screen.getByText(/Programme généré/i)).toBeInTheDocument();
 
@@ -268,7 +269,7 @@ describe('PlanningPage', () => {
       screen.queryByRole('heading', { level: 3, name: /Session 1/i }),
     ).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: 'Générer le programme' }));
+    await user.click(screen.getByRole('button', { name: 'Construire mon programme' }));
     expect(await screen.findByText('Version v2')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Appliquer au calendrier' }));
 
