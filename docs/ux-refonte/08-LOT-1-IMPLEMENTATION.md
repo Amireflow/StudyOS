@@ -3,7 +3,7 @@
 > Date : 21 novembre 2026  
 > Branche : `ux/audit-initial-2026-11-21`  
 > Pull request : [#3 — Refonte UX/UI StudyOS](https://github.com/Amireflow/StudyOS/pull/3) (brouillon, non fusionnée)  
-> Commit testé : `0f382792794de60e6d3820b363da8097254eb804`  
+> Commit applicatif testé : `124f2e84e51daab894c65f163ac7edfd227d9ffa`  
 > Statut : contrôles techniques verts ; inspection visuelle après modification encore nécessaire.
 
 ## 1. Périmètre réalisé
@@ -13,7 +13,7 @@ Le Lot 1 a posé une couche de tokens sémantiques et raccordé les composants p
 ### Fichiers applicatifs modifiés
 
 - `frontend/src/index.css` : palette sémantique clair/sombre, typographie, espacement, rayons, élévation, focus visible, composants CSS partagés et prise en compte de `prefers-reduced-motion`.
-- `frontend/src/components/ui/Button.tsx` : variantes sémantiques, tailles standard/compacte, état `aria-busy`, désactivation pendant le chargement.
+- `frontend/src/components/ui/Button.tsx` : six variantes sémantiques (principale, secondaire, contour, fantôme, danger, lien), tailles standard/compacte, état `aria-busy`, désactivation pendant le chargement.
 - `frontend/src/components/ui/FormFields.tsx` : champs à hauteur standard 44 px, labels et aides plus lisibles, état d'erreur sémantique.
 - `frontend/src/components/ui/Card.tsx` : surface et bordure partagées, hiérarchie titre/description, espacements basés sur les tokens.
 - `frontend/src/components/ui/Badge.tsx` : variantes sémantiques clair/sombre et métadonnées à 12 px.
@@ -64,18 +64,18 @@ Ces couples dépassent 4,5:1 pour le texte courant. Une recette navigateur reste
 
 ## 4. Résultats CI
 
-Exécution GitHub Actions liée au commit `0f382792794de60e6d3820b363da8097254eb804` :
+Exécution GitHub Actions liée au commit applicatif `124f2e84e51daab894c65f163ac7edfd227d9ffa` ([run CI final](https://github.com/Amireflow/StudyOS/actions/runs/44890912255)) :
 
 | Contrôle | Résultat |
 |---|---|
 | Installation npm | réussite |
 | TypeScript strict `npm run typecheck` | réussite |
-| Vitest frontend | 20 fichiers, 78 tests réussis |
+| Vitest frontend | 20 fichiers, 79 tests réussis |
 | Build `npm run build` | réussite |
 | Alembic — migrations et réversibilité | réussite |
 | Pytest backend | 133 tests réussis, 5 avertissements |
 
-Le build signale un chunk JavaScript minifié de 1 000,40 kB, supérieur au seuil d'avertissement de 700 kB configuré. Le build réussit ; l'optimisation du découpage du bundle est un sujet séparé et n'a pas été élargie dans ce lot.
+Le build final signale un chunk JavaScript minifié de 1 000,40 kB, supérieur au seuil d'avertissement de 700 kB configuré. Le build réussit ; l'optimisation du découpage du bundle est un sujet séparé et n'a pas été élargie dans ce lot.
 
 Une première exécution CI a échoué au typecheck à cause de caractères d'échappement dans trois expressions TypeScript. Ces erreurs ont été corrigées dans le commit suivant ; la seconde exécution, sur le commit indiqué ci-dessus, est entièrement verte.
 
