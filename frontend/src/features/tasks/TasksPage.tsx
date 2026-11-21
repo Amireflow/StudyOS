@@ -8,13 +8,14 @@ import {
   RotateLeft01Icon,
   Search01Icon,
 } from '@hugeicons/core-free-icons';
-import { Button } from '../../components/ui/Button';
+import { Button, buttonClasses } from '../../components/ui/Button';
 import { Input, Select } from '../../components/ui/FormFields';
 import { Icon } from '../../components/ui/Icon';
 import { EmptyState, ErrorState, LoadingState, SuccessBanner } from '../../components/ui/StateFeedback';
 import { cn } from '../../lib/cn';
 import { useLearningStore } from '../../state/LearningStoreContext';
 import { useStudyStore } from '../../state/StudyStoreContext';
+import { Link } from 'react-router-dom';
 import type { Task, TaskPriority, TaskStatus } from '../../types/domain';
 import { TaskCard } from './TaskCard';
 import { TaskForm } from './TaskForm';
@@ -258,10 +259,24 @@ export function TasksPage() {
             </button>
           </div>
 
-          <Button type="button" variant="primary" size="sm" onClick={handleOpenCreate}>
-            <Icon icon={Add01Icon} size={15} />
-            Nouvelle tâche
-          </Button>
+          <Link
+            to={"/ai-coach?prompt=" + encodeURIComponent("Analyse ma priorité active, mes échéances et ma charge actuelle. Propose les tâches concrètes nécessaires, limite les actions critiques à trois et place les idées secondaires dans le parking. Présente les tâches à valider avant toute création.")}
+            className={buttonClasses('primary', 'sm')}
+          >
+            <Icon icon={CheckmarkSquare02Icon} size={15} />
+            Demander au Copilote
+          </Link>
+          <details className="relative">
+            <summary className="inline-flex min-h-11 cursor-pointer list-none items-center rounded-lg bg-zinc-100 px-3 text-xs font-semibold text-zinc-600 hover:bg-zinc-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-700 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700 dark:focus-visible:outline-teal-400">
+              Plus
+            </summary>
+            <div className="absolute right-0 z-30 mt-2 w-52 rounded-xl border border-zinc-200 bg-white p-2 shadow-lg dark:border-zinc-700 dark:bg-zinc-900">
+              <Button type="button" variant="ghost" size="sm" className="min-h-11 w-full justify-start" onClick={handleOpenCreate}>
+                <Icon icon={Add01Icon} size={14} />
+                Créer manuellement
+              </Button>
+            </div>
+          </details>
         </div>
       </header>
 
@@ -589,11 +604,12 @@ export function TasksPage() {
           icon={<Icon icon={CheckmarkSquare02Icon} size={17} />}
           title="Aucune tâche pour le moment"
           action={
-            <div className="flex flex-wrap items-center justify-center gap-2">
-              <Button type="button" variant="primary" size="sm" onClick={handleOpenCreate}>
-                Créer une tâche
-              </Button>
-            </div>
+            <Link
+              to={"/ai-coach?prompt=" + encodeURIComponent("Aide-moi à identifier la prochaine action concrète liée à ma priorité active. Propose une tâche mesurable et attends ma validation avant de la créer.")}
+              className={buttonClasses('primary', 'md')}
+            >
+              Définir ma prochaine action avec le Copilote
+            </Link>
           }
         />
       ) : visibleTasks.length === 0 ? (
