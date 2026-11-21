@@ -265,6 +265,45 @@ class ActionValidator:
         user_id: UUID,
         candidate: RawProposalCandidate,
     ) -> ValidatedProposal:
+        # Les anciens modèles peuvent encore transformer un programme d'étude en
+        # batch_actions composé uniquement de créneaux. Recalculer ce cas avec le
+        # moteur spécialisé au lieu de sauvegarder les horaires proposés par le LLM.
+        if candidate.action_type == AiActionType.batch_actions.value:
+            normalized_batch = _normalize_llm_raw_payload(
+                AiActionType.batch_actions,
+                candidate.payload,
+            )
+            raw_steps = normalized_batch.get("steps") or normalized_batch.get("actions") or []
+            study_steps = []
+            if isinstance(raw_steps, list):
+                for step in raw_steps:
+                    if not isinstance(step, dict):
+                        continue
+                    step_action = str(step.get("action_type") or step.get("action") or "").strip()
+                    step_payload = step.get("payload")
+                    if (
+                        step_action == AiActionType.create_schedule_event.value
+                        and isinstance(step_payload, dict)
+                        and str(step_payload.get("type") or "").strip().lower() in {"learning", "project"}
+                    ):
+                        study_steps.append(step)
+            if isinstance(raw_steps, list) and len(raw_steps) >= 2 and len(study_steps) == len(raw_steps):
+                candidate = RawProposalCandidate(
+                    action_type=AiActionType.generate_learning_plan.value,
+                    title="Construire un programme d'apprentissage structuré",
+                    explanation=(
+                        "Les créneaux proposés individuellement sont recalculés par le moteur StudyOS "
+                        "à partir des priorités pédagogiques, des cours, des disponibilités et de la charge réelle."
+                    ),
+                    payload={
+                        "horizon_days": 7,
+                        "max_sessions": min(30, len(study_steps)),
+                        "include_potential_slots": True,
+                        "replace_future_planned": True,
+                        "apply_immediately": True,
+                    },
+                )
+
         if not self._tool_registry.is_allowed_proposal_action(candidate.action_type):
             raise AppError(
                 422,
