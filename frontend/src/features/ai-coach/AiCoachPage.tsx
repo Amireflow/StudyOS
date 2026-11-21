@@ -686,7 +686,8 @@ export function AiCoachPage() {
               )}
             </button>
           )}
-        </div>      </header>
+        </div>
+      </header>
 
       {mutationError && (
         <div
