@@ -812,6 +812,7 @@ class ManageAvailabilityRuleProposalPayload(BaseModel):
 
 class GenerateLearningPlanProposalPayload(BaseModel):
     horizon_days: int = Field(default=7, ge=1, le=30)
+    max_sessions: int | None = Field(default=None, ge=1, le=30)
     focus_subject: str | None = Field(default=None, max_length=120)
     exam_title: str | None = Field(default=None, max_length=160)
     exam_at: UtcDatetime | None = None
