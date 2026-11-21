@@ -417,18 +417,27 @@ export function DashboardPage() {
               </div>
 
               <div className="flex items-center gap-1.5">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setIsQuickAddOpen((prev) => !prev)}
+                <Link
+                  to={"/ai-coach?prompt=" + encodeURIComponent("À partir de ma priorité principale et des échéances actuelles, propose les trois actions critiques maximum pour aujourd'hui. Chaque action doit être concrète et mesurable. Attends ma validation avant de créer les tâches.")}
+                  className={buttonClasses('primary', 'sm')}
                 >
-                  <Icon icon={Add01Icon} size={14} />
-                  Rapide
-                </Button>
-                <Link to="/tasks" className={buttonClasses('ghost', 'sm')}>
-                  Tout voir
+                  <Icon icon={CheckmarkSquare02Icon} size={14} />
+                  Organiser avec le Copilote
                 </Link>
+                <details className="relative">
+                  <summary className="inline-flex min-h-11 cursor-pointer list-none items-center rounded-lg bg-zinc-100 px-3 text-xs font-semibold text-zinc-600 hover:bg-zinc-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-700 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700 dark:focus-visible:outline-teal-400">
+                    Plus
+                  </summary>
+                  <div className="absolute right-0 z-20 mt-2 flex w-48 flex-col gap-1 rounded-xl border border-zinc-200 bg-white p-2 shadow-lg dark:border-zinc-700 dark:bg-zinc-900">
+                    <Button type="button" variant="ghost" size="sm" className="min-h-11 w-full justify-start" onClick={() => setIsQuickAddOpen((prev) => !prev)}>
+                      <Icon icon={Add01Icon} size={14} />
+                      Capture manuelle rapide
+                    </Button>
+                    <Link to="/tasks" className={buttonClasses('ghost', 'sm') + ' min-h-11 justify-start'}>
+                      Tout voir
+                    </Link>
+                  </div>
+                </details>
               </div>
             </div>
 
