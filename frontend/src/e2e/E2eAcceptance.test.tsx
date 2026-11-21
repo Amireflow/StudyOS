@@ -44,7 +44,9 @@ describe('Scénarios d’acceptation E2E (CdC §11.3 — Lot 8)', () => {
     expect(await screen.findByRole('heading', { name: 'Tableau de bord' })).toBeInTheDocument();
 
     const sidebar = screen.getByRole('navigation', { name: 'Navigation principale' });
-    await user.click(within(sidebar).getByRole('link', { name: 'Tâches' }));
+    await user.click(within(sidebar).getByRole('link', { name: 'Planning' }));
+    const planningNav = screen.getByRole('navigation', { name: 'Navigation Planning' });
+    await user.click(within(planningNav).getByRole('link', { name: 'Tâches' }));
 
     await user.click(await screen.findByRole('button', { name: 'Nouvelle tâche' }));
     await user.type(screen.getByLabelText(/Titre/), 'Livrer Amireflow Study OS v1.0');
@@ -54,7 +56,7 @@ describe('Scénarios d’acceptation E2E (CdC §11.3 — Lot 8)', () => {
     const taskCard = await screen.findByRole('article', { name: 'Livrer Amireflow Study OS v1.0' });
     await user.click(within(taskCard).getByRole('button', { name: 'Priorité' }));
 
-    await user.click(within(sidebar).getByRole('link', { name: 'Tableau de bord' }));
+    await user.click(within(sidebar).getByRole('link', { name: "Aujourd'hui" }));
     await waitFor(() => {
       expect(
         screen.getAllByText('Livrer Amireflow Study OS v1.0').length,
@@ -63,7 +65,8 @@ describe('Scénarios d’acceptation E2E (CdC §11.3 — Lot 8)', () => {
 
     await user.click(await screen.findByRole('button', { name: 'Terminer cette tâche' }));
 
-    await user.click(within(sidebar).getByRole('link', { name: 'Tâches' }));
+    await user.click(within(sidebar).getByRole('link', { name: 'Planning' }));
+    await user.click(within(screen.getByRole('navigation', { name: 'Navigation Planning' })).getByRole('link', { name: 'Tâches' }));
     await waitFor(() => {
       expect(screen.getByTestId('stat-done')).toHaveTextContent('1');
     });
@@ -102,7 +105,8 @@ describe('Scénarios d’acceptation E2E (CdC §11.3 — Lot 8)', () => {
     await user.click(screen.getByRole('button', { name: 'Marquer terminée' }));
     expect(await screen.findByText(/1\/1 leçon \(100%\)/)).toBeInTheDocument();
 
-    await user.click(within(sidebar).getByRole('link', { name: 'Compétences' }));
+    const learningNav = screen.getByRole('navigation', { name: 'Navigation Apprendre' });
+    await user.click(within(learningNav).getByRole('link', { name: 'Compétences' }));
     await user.click(await screen.findByRole('button', { name: 'Nouvelle compétence' }));
     await user.type(screen.getByLabelText(/Nom de la compétence/), 'FastAPI & Pytest');
     await user.type(screen.getByLabelText(/Domaine/), 'Backend');
@@ -118,7 +122,7 @@ describe('Scénarios d’acceptation E2E (CdC §11.3 — Lot 8)', () => {
       await screen.findByText('Suite E2E complète validée sur les 8 lots'),
     ).toBeInTheDocument();
 
-    await user.click(within(sidebar).getByRole('link', { name: 'Copilote IA' }));
+    await user.click(within(sidebar).getByRole('link', { name: 'Copilote' }));
 
     await user.type(
       await screen.findByLabelText(/Votre message au Copilote/),

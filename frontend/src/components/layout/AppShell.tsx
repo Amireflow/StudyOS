@@ -224,15 +224,13 @@ export function AppShell() {
           as="nav"
           aria-label="Navigation principale"
           className="flex-1"
-          viewportClassName="flex flex-col justify-between px-3 py-3"
+          viewportClassName="px-3 py-3"
         >
-          <div className="flex h-full flex-col justify-between">
-            <NavigationList items={principalItems} />
-            <div className="mt-6 pt-3">
-              <SessionFooter />
-            </div>
-          </div>
+          <NavigationList items={principalItems} />
         </ScrollArea>
+        <div className="px-3 pb-4 pt-2">
+          <SessionFooter />
+        </div>
       </aside>
 
       {/* En-tête mobile sticky */}
@@ -299,26 +297,26 @@ export function AppShell() {
               as="nav"
               aria-label="Navigation mobile"
               className="flex-1"
-              viewportClassName="flex flex-col justify-between px-3 py-3"
+              viewportClassName="px-3 py-3"
             >
               <NavigationList
                 items={principalItems}
                 onItemClick={() => setIsMobileMenuOpen(false)}
               />
-              <div className="mt-6 space-y-2 pt-3">
-                {!isStandalone && (
-                  <button
-                    type="button"
-                    onClick={() => void handleInstallClick()}
-                    className="flex w-full items-center gap-2.5 rounded-xl bg-teal-50 px-3 py-2.5 text-left text-xs font-semibold text-teal-900 transition-colors hover:bg-teal-100/80 dark:bg-teal-950/50 dark:text-teal-200 dark:hover:bg-teal-950/80"
-                  >
-                    <Icon icon={Download01Icon} size={16} className="shrink-0 text-teal-700 dark:text-teal-400" />
-                    <span>Installer l’app mobile (plein écran)</span>
-                  </button>
-                )}
-                <SessionFooter />
-              </div>
+              {!isStandalone && (
+                <button
+                  type="button"
+                  onClick={() => void handleInstallClick()}
+                  className="mt-6 flex w-full items-center gap-2.5 rounded-xl bg-teal-50 px-3 py-2.5 text-left text-xs font-semibold text-teal-900 transition-colors hover:bg-teal-100/80 dark:bg-teal-950/50 dark:text-teal-200 dark:hover:bg-teal-950/80"
+                >
+                  <Icon icon={Download01Icon} size={16} className="shrink-0 text-teal-700 dark:text-teal-400" />
+                  <span>Installer l’app mobile (plein écran)</span>
+                </button>
+              )}
             </ScrollArea>
+            <div className="px-3 pb-4 pt-2">
+              <SessionFooter />
+            </div>
           </div>
         </div>
       )}

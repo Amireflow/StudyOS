@@ -126,7 +126,8 @@ describe('Intégration API FastAPI & Authentification (Lot 5)', () => {
     expect(screen.getByText('khadim@amireflow.local')).toBeInTheDocument();
 
     const desktopNav = screen.getByRole('navigation', { name: 'Navigation principale' });
-    await user.click(within(desktopNav).getByRole('link', { name: 'Tâches' }));
+    await user.click(within(desktopNav).getByRole('link', { name: 'Planning' }));
+    await user.click(within(screen.getByRole('navigation', { name: 'Navigation Planning' })).getByRole('link', { name: 'Tâches' }));
 
     await user.click(await screen.findByRole('button', { name: 'Nouvelle tâche' }));
     await user.type(screen.getByLabelText(/Titre/), 'Connecter PostgreSQL');
@@ -417,7 +418,8 @@ describe('Intégration API FastAPI & Authentification (Lot 5)', () => {
 
     // Alice crée sa tâche privée et passe en thème sombre
     const navAlice = screen.getByRole('navigation', { name: 'Navigation principale' });
-    await user.click(within(navAlice).getByRole('link', { name: 'Tâches' }));
+    await user.click(within(navAlice).getByRole('link', { name: 'Planning' }));
+    await user.click(within(screen.getByRole('navigation', { name: 'Navigation Planning' })).getByRole('link', { name: 'Tâches' }));
     await user.click(screen.getByRole('button', { name: 'Nouvelle tâche' }));
     await user.type(screen.getByLabelText(/Titre/), 'Tâche confidentielle Alice');
     await user.click(screen.getByRole('button', { name: 'Ajouter la tâche' }));
@@ -425,7 +427,7 @@ describe('Intégration API FastAPI & Authentification (Lot 5)', () => {
       await screen.findByRole('article', { name: 'Tâche confidentielle Alice' }),
     ).toBeInTheDocument();
 
-    await user.click(within(navAlice).getByRole('link', { name: 'Paramètres' }));
+    await user.click(screen.getByRole('link', { name: 'Paramètres' }));
     const themeGroup = screen.getByRole('group', { name: 'Choix du thème d’affichage' });
     await user.click(within(themeGroup).getByRole('button', { name: 'Sombre' }));
     expect(document.documentElement).toHaveClass('dark');
@@ -455,10 +457,11 @@ describe('Intégration API FastAPI & Authentification (Lot 5)', () => {
     });
 
     const navBob = screen.getByRole('navigation', { name: 'Navigation principale' });
-    await user.click(within(navBob).getByRole('link', { name: 'Tâches' }));
+    await user.click(within(navBob).getByRole('link', { name: 'Planning' }));
+    await user.click(within(screen.getByRole('navigation', { name: 'Navigation Planning' })).getByRole('link', { name: 'Tâches' }));
     expect(screen.queryByText('Tâche confidentielle Alice')).not.toBeInTheDocument();
 
-    await user.click(within(navBob).getByRole('link', { name: 'Paramètres' }));
+    await user.click(screen.getByRole('link', { name: 'Paramètres' }));
     expect(await screen.findByLabelText(/Nom d’affichage/)).toHaveValue('Bob');
     expect(screen.getByLabelText(/Fuseau horaire/)).toHaveValue('Africa/Dakar');
   });
