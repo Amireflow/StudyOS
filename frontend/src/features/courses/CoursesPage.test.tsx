@@ -58,7 +58,7 @@ describe('CoursesPage & verrou pédagogique multi-niveaux', () => {
 
     await user.click(await screen.findByRole('button', { name: 'Nouveau cours' }));
 
-    const subjectInput = screen.getByLabelText(/Sujet ou langage/);
+    const subjectInput = screen.getByLabelText(/Sujet ou domaine/);
     await user.type(subjectInput, 'Python');
 
     await user.click(screen.getByRole('button', { name: 'Prévisualiser le plan' }));
@@ -211,7 +211,7 @@ describe('CoursesPage & verrou pédagogique multi-niveaux', () => {
     renderCoursesApp();
 
     await user.click(await screen.findByRole('button', { name: 'Nouveau cours' }));
-    await user.type(screen.getByLabelText(/Sujet ou langage/), 'Python');
+    await user.type(screen.getByLabelText(/Sujet ou domaine/), 'Python');
     await user.click(screen.getByRole('button', { name: 'Prévisualiser le plan' }));
     await user.click(await screen.findByRole('button', { name: 'Créer le cours complet' }));
 
