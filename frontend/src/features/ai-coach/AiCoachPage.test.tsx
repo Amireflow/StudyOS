@@ -63,6 +63,7 @@ describe('AiCoachPage', () => {
     expect(await screen.findByText('Rejetée')).toBeInTheDocument();
     expect(api.state.tasks[0].status).toBe('todo');
 
+    await user.click(screen.getByText('Plus'));
     await user.click(screen.getByRole('button', { name: 'Briefing du jour' }));
     expect(await screen.findByText('Briefing quotidien')).toBeInTheDocument();
 
@@ -104,7 +105,7 @@ describe('AiCoachPage', () => {
 
     const promptInput = screen.getByLabelText(/Votre message au Copilote/);
     expect(promptInput).toHaveValue(
-      'Planifie ma journée autour de ma priorité active et de mes créneaux disponibles.',
+      'Analyse ma priorité active, mes cours fixes et mes disponibilités, puis propose un programme réaliste pour ma journée.',
     );
 
     await user.keyboard('{Enter}');
@@ -115,6 +116,7 @@ describe('AiCoachPage', () => {
       ),
     ).toBeInTheDocument();
 
+    await user.click(screen.getByText('Plus'));
     await user.click(screen.getByRole('button', { name: /Outils \(/i }));
     expect(screen.getByText(/Outils autorisés/)).toBeInTheDocument();
     expect(screen.getByText('Lire les tâches')).toBeInTheDocument();
@@ -328,7 +330,8 @@ describe('AiCoachPage', () => {
       screen.queryByRole('status', { name: 'Le Copilote réfléchit' }),
     ).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: 'Emploi du temps' }));
+    await user.click(screen.getByText('Plus'));
+    await user.click(screen.getByRole('button', { name: 'Importer mon emploi du temps' }));
     expect(
       screen.getByRole('region', { name: 'Importer mon emploi du temps' }),
     ).toBeInTheDocument();
@@ -339,7 +342,8 @@ describe('AiCoachPage', () => {
     const user = userEvent.setup();
     renderAiCoachPage();
 
-    await user.click(await screen.findByRole('button', { name: 'Mémoire IA' }));
+    await user.click(await screen.findByText('Plus'));
+    await user.click(screen.getByRole('button', { name: 'Mémoire IA' }));
     expect(
       screen.getByRole('region', { name: 'Mémoire IA persistante' }),
     ).toBeInTheDocument();
