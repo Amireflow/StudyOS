@@ -290,6 +290,39 @@ export function DashboardPage() {
         </div>
       )}
 
+      <PriorityHero
+        activePriorityTitle={activePriorityTitle}
+        activePriorityTaskId={activePriorityTaskId}
+        activePriorityProjectId={activePriorityProjectId}
+        activeTasks={activeTasks}
+        activeProjects={activeProjects}
+        linkedPriorityTask={linkedPriorityTask}
+        linkedPriorityProject={linkedPriorityProject}
+        hasInProgressSession={inProgressSessions.length > 0}
+        onSavePriority={setActivePriority}
+        onCompleteLinkedTask={async (task) => {
+          if (await setTaskStatus(task.id, 'done')) {
+            setFeedback(`« ${task.title} » terminée.`);
+          }
+        }}
+        onStartFocusSession={async () => {
+          if (!activePriorityTitle) return;
+          const ok = await startSession({
+            title: activePriorityTitle,
+            category: linkedPriorityProject ? 'Projet' : 'Apprentissage',
+            taskId: linkedPriorityTask?.id ?? '',
+            projectId: linkedPriorityProject?.id ?? '',
+            moduleId: '',
+            lessonId: '',
+            skillId: '',
+          });
+          if (ok) {
+            setFeedback(`Séance lancée pour « ${activePriorityTitle} ».`);
+          }
+        }}
+        onFeedback={setFeedback}
+      />
+
       {/* Ruban d'indicateurs quotidiens */}
       <section aria-label="Indicateurs du jour" className="grid grid-cols-2 gap-2.5 sm:grid-cols-4 sm:gap-3">
         <div className="rounded-2xl bg-white p-3 sm:p-4 dark:bg-zinc-900">
@@ -358,39 +391,6 @@ export function DashboardPage() {
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-12 lg:items-start">
         {/* Colonne principale */}
         <div className="min-w-0 space-y-5 lg:col-span-7">
-          <PriorityHero
-            activePriorityTitle={activePriorityTitle}
-            activePriorityTaskId={activePriorityTaskId}
-            activePriorityProjectId={activePriorityProjectId}
-            activeTasks={activeTasks}
-            activeProjects={activeProjects}
-            linkedPriorityTask={linkedPriorityTask}
-            linkedPriorityProject={linkedPriorityProject}
-            hasInProgressSession={inProgressSessions.length > 0}
-            onSavePriority={setActivePriority}
-            onCompleteLinkedTask={async (task) => {
-              if (await setTaskStatus(task.id, 'done')) {
-                setFeedback(`« ${task.title} » terminée.`);
-              }
-            }}
-            onStartFocusSession={async () => {
-              if (!activePriorityTitle) return;
-              const ok = await startSession({
-                title: activePriorityTitle,
-                category: linkedPriorityProject ? 'Projet' : 'Apprentissage',
-                taskId: linkedPriorityTask?.id ?? '',
-                projectId: linkedPriorityProject?.id ?? '',
-                moduleId: '',
-                lessonId: '',
-                skillId: '',
-              });
-              if (ok) {
-                setFeedback(`Séance lancée pour « ${activePriorityTitle} ».`);
-              }
-            }}
-            onFeedback={setFeedback}
-          />
-
           {/* Tâches prioritaires + capture rapide */}
           <section
             aria-labelledby="dashboard-tasks-heading"

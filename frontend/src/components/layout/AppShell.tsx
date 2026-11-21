@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { Fragment, useEffect, useRef, useState } from 'react';
 import {
   Cancel01Icon,
   Download01Icon,
@@ -14,6 +14,7 @@ import { Icon } from '../ui/Icon';
 import { ScrollArea } from '../ui/ScrollArea';
 import { ThemeToggleButton } from '../ui/ThemeToggle';
 import { NAVIGATION_ITEMS, type NavigationItem } from './navigation';
+import { WorkspaceSectionNavigation } from './WorkspaceSectionNavigation';
 
 interface NavigationListProps {
   items: readonly NavigationItem[];
@@ -24,14 +25,23 @@ function NavigationList({ items, onItemClick }: NavigationListProps) {
   return (
     <ul className="space-y-0.5">
       {items.map((item) => (
-        <li key={item.id}>
+        <Fragment key={item.id}>
+          {item.sectionLabel && (
+            <li
+              aria-hidden="true"
+              className="px-3 pb-1 pt-4 text-[10px] font-semibold tracking-[0.14em] text-zinc-400 first:pt-1 dark:text-zinc-500"
+            >
+              {item.sectionLabel}
+            </li>
+          )}
+        <li>
           <NavLink
             to={item.path}
             end={item.path === '/'}
             onClick={onItemClick}
             className={({ isActive }) =>
               cn(
-                'group flex min-h-10 items-center rounded-lg px-3 py-2 text-sm transition-colors',
+                'group flex min-h-11 items-center rounded-lg px-3 py-2 text-sm transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-700 dark:focus-visible:outline-teal-400',
                 isActive
                   ? 'bg-zinc-900 font-semibold text-white dark:bg-zinc-100 dark:text-zinc-950'
                   : 'font-medium text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100',
@@ -55,6 +65,7 @@ function NavigationList({ items, onItemClick }: NavigationListProps) {
             )}
           </NavLink>
         </li>
+        </Fragment>
       ))}
     </ul>
   );
@@ -114,6 +125,8 @@ function SessionFooter() {
 export function AppShell() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isInstallGuideOpen, setIsInstallGuideOpen] = useState(false);
+  const mobileMenuTriggerRef = useRef<HTMLButtonElement>(null);
+  const mobileDrawerRef = useRef<HTMLDivElement>(null);
   const location = useLocation();
   const { isStandalone, canShowInstallOption, isIos, triggerInstall } = usePwaInstall();
 
@@ -136,18 +149,47 @@ export function AppShell() {
   }, [location.pathname]);
 
   useEffect(() => {
-    if (!isMobileMenuOpen) {
-      return;
-    }
+    if (!isMobileMenuOpen) return;
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const focusableSelector = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+    const getFocusableElements = () =>
+      Array.from(mobileDrawerRef.current?.querySelectorAll<HTMLElement>(focusableSelector) ?? []);
+
+    getFocusableElements()[0]?.focus();
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
+        event.preventDefault();
         setIsMobileMenuOpen(false);
+        return;
+      }
+
+      if (event.key !== 'Tab') return;
+      const focusable = getFocusableElements();
+      if (focusable.length === 0) {
+        event.preventDefault();
+        return;
+      }
+
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      document.body.style.overflow = previousOverflow;
+      mobileMenuTriggerRef.current?.focus();
+    };
   }, [isMobileMenuOpen]);
 
   return (
@@ -200,11 +242,12 @@ export function AppShell() {
             <ThemeToggleButton className="h-9 w-9 active:scale-95" />
             <button
               type="button"
+              ref={mobileMenuTriggerRef}
               onClick={() => setIsMobileMenuOpen((prev) => !prev)}
               aria-expanded={isMobileMenuOpen}
               aria-controls="mobile-navigation-drawer"
               aria-label={isMobileMenuOpen ? 'Fermer le menu' : 'Ouvrir le menu'}
-              className="inline-flex h-9 w-9 cursor-pointer items-center justify-center rounded-lg bg-zinc-100 text-zinc-700 transition-all hover:bg-zinc-200/70 active:scale-95 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700"
+              className="inline-flex h-11 w-11 cursor-pointer items-center justify-center rounded-lg bg-zinc-100 text-zinc-700 transition-all hover:bg-zinc-200/70 active:scale-95 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700"
             >
               <Icon icon={isMobileMenuOpen ? Cancel01Icon : Menu01Icon} size={18} />
             </button>
@@ -225,6 +268,7 @@ export function AppShell() {
             role="dialog"
             aria-modal="true"
             aria-label="Menu de navigation"
+            ref={mobileDrawerRef}
             className="relative flex h-full w-72 max-w-[85vw] flex-col bg-white dark:bg-zinc-900"
           >
             <div className="flex h-14 items-center justify-between px-4">
@@ -340,8 +384,9 @@ export function AppShell() {
         <main
           id="main-content"
           tabIndex={-1}
-          className="mx-auto w-full min-w-0 max-w-5xl px-3.5 pb-20 pt-3 outline-none sm:px-6 sm:pb-24 sm:pt-4 lg:px-8 lg:py-7"
+          className="mx-auto w-full min-w-0 max-w-5xl px-3.5 pb-24 pt-3 outline-none sm:px-6 sm:pb-28 sm:pt-4 lg:px-8 lg:py-7"
         >
+          <WorkspaceSectionNavigation />
           <Outlet />
         </main>
       </div>
@@ -357,20 +402,30 @@ export function AppShell() {
               <NavLink
                 to={item.path}
                 end={item.path === '/'}
-                className={({ isActive }) =>
-                  cn(
-                    'flex min-h-11 min-w-0 flex-col items-center justify-center gap-0.5 overflow-hidden rounded-lg px-1 py-0.5 text-[11px] transition-all active:scale-95',
-                    isActive
+                aria-current={
+                  (item.id === 'courses' && ['/courses', '/learning', '/skills'].some((path) => location.pathname === path || location.pathname.startsWith(path + '/'))) ||
+                  (item.id === 'planning' && ['/planning', '/tasks', '/sessions'].includes(location.pathname))
+                    ? 'page'
+                    : undefined
+                }
+                className={({ isActive }) => {
+                  const sectionActive =
+                    (item.id === 'courses' && ['/courses', '/learning', '/skills'].some((path) => location.pathname === path || location.pathname.startsWith(path + '/'))) ||
+                    (item.id === 'planning' && ['/planning', '/tasks', '/sessions'].includes(location.pathname));
+                  const active = isActive || sectionActive;
+                  return cn(
+                    'flex min-h-12 min-w-0 flex-col items-center justify-center gap-0.5 overflow-hidden rounded-lg px-1 py-1 text-[11px] transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-700 dark:focus-visible:outline-teal-400',
+                    active
                       ? 'font-semibold text-zinc-950 dark:text-zinc-50'
                       : 'font-medium text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200',
-                  )
-                }
+                  );
+                }}
               >
                 {({ isActive }) => (
                   <>
                     <span
                       className={cn(
-                        'flex h-6 w-9 items-center justify-center rounded-full transition-colors',
+                        'flex h-7 w-10 items-center justify-center rounded-full transition-colors',
                         isActive
                           ? 'bg-zinc-900 text-teal-300 dark:bg-zinc-100 dark:text-teal-700'
                           : 'text-zinc-500 dark:text-zinc-400',

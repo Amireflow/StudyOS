@@ -79,6 +79,25 @@ describe('Navigation principale et routage', () => {
     expect(await screen.findByRole('heading', { level: 1, name: 'Tableau de bord' })).toBeInTheDocument();
   });
 
+  it('affiche cinq entrées mobiles et les espaces regroupés avec leur sous-navigation', async () => {
+    renderAppAt('/tasks');
+
+    const desktopNav = screen.getByRole('navigation', { name: 'Navigation principale' });
+    expect(within(desktopNav).getByText('APPRENTISSAGE')).toBeInTheDocument();
+    expect(within(desktopNav).getByText('ORGANISATION')).toBeInTheDocument();
+    expect(within(desktopNav).getByRole('link', { name: 'Cours' })).toHaveAttribute('href', '/courses');
+    expect(within(desktopNav).getByRole('link', { name: 'Parcours' })).toHaveAttribute('href', '/learning');
+
+    const mobileNav = screen.getByRole('navigation', { name: 'Accès rapide mobile' });
+    expect(within(mobileNav).getAllByRole('link')).toHaveLength(5);
+    expect(within(mobileNav).getByRole('link', { name: 'Organiser' })).toHaveAttribute('aria-current', 'page');
+
+    const sectionNav = screen.getByRole('navigation', { name: 'Navigation Organisation' });
+    expect(within(sectionNav).getByRole('link', { name: 'Tâches' })).toHaveAttribute('aria-current', 'page');
+    expect(within(sectionNav).getByRole('link', { name: 'Planning' })).toHaveAttribute('href', '/planning');
+    expect(within(sectionNav).getByRole('link', { name: 'Séances' })).toHaveAttribute('href', '/sessions');
+  });
+
   it('ouvre et ferme le tiroir de navigation mobile', async () => {
     const user = userEvent.setup();
     renderAppAt('/');

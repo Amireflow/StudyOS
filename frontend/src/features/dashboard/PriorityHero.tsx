@@ -310,6 +310,8 @@ export function PriorityHero({
         <EmptyState
           icon={<Icon icon={Target02Icon} size={17} className="text-teal-700 dark:text-teal-400" />}
           title="Aucune priorité principale active"
+          description="Choisissez un résultat concret à faire avancer aujourd’hui."
+          className="py-4"
           action={
             <div className="flex flex-wrap items-center justify-center gap-2">
               <Button type="button" variant="primary" size="sm" onClick={openEditor}>
