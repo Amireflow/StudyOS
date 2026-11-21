@@ -54,7 +54,7 @@ class SessionContentResolver:
         # 3. Parcours pédagogique existant
         matched_path = self._find_matching_path(snapshot, priority)
         if matched_path is not None:
-            return self._resolve_from_learning_path(snapshot, matched_path.id, matched_path.title)
+            return self._resolve_from_learning_path(snapshot, matched_path.id, matched_path.title, priority)
 
         # 4. Tâche ou projet concret
         if priority.source_type == "project":
@@ -258,6 +258,7 @@ class SessionContentResolver:
         snapshot: PlanningContextSnapshot,
         path_id,
         path_title: str,
+        priority: LearningPriorityItem,
     ) -> PedagogicalStepPayload:
         modules = snapshot.modules_by_path.get(str(path_id), [])
         next_mod = next((m for m in modules if m.status.value != "completed"), None)
@@ -285,17 +286,7 @@ class SessionContentResolver:
                 + (f" → {next_les.title}" if next_les else ""),
             )
         # Un parcours sans module n'a pas de prochaine étape exploitable.
-        return self._resolve_preview_course_step(
-            LearningPriorityItem(
-                source_type="learning_path",
-                title=path_title,
-                subject=path_title,
-                domain="Apprentissage",
-                score=0,
-                recommended_minutes=60,
-            ),
-            user_id=snapshot.user_id,
-        )
+        return self._resolve_preview_course_step(priority, user_id=snapshot.user_id)
 
     def _resolve_preview_course_step(
         self,
