@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+from typing import Any
 from zoneinfo import ZoneInfo
 from app.planning.availability import resolve_zoneinfo
 from app.planning.collector import PlanningContextSnapshot

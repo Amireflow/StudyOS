@@ -1,10 +1,15 @@
 from __future__ import annotations
 
+from typing import Any
+from uuid import UUID
+
 from app.planning.collector import PlanningContextSnapshot
 from app.repositories.courses_sql import CourseRecord
 from app.schemas.common import CourseLanguage
+from app.schemas.courses import CoursePreviewRequest
 from app.schemas.planning import LearningPriorityItem, PedagogicalStepPayload
 from app.services.course_generator import build_course_blueprint, generate_level_content
+from app.services.courses_service import CourseService
 
 
 class SessionContentResolver:
@@ -289,21 +294,57 @@ class SessionContentResolver:
     def _resolve_preview_course_step(
         self,
         priority: LearningPriorityItem,
+        *,
+        user_id: UUID | None = None,
     ) -> PedagogicalStepPayload:
         subject = priority.subject.strip() or priority.title.strip()
-        cache_key = f"{subject.lower()}::{priority.source_type}"
+        cache_key = f"{str(user_id or 'local')}::{subject.lower()}::{priority.source_type}"
         cached = self._preview_cache.get(cache_key)
         if cached is None:
-            blueprint = build_course_blueprint(subject=subject, language=CourseLanguage.fr, total_levels=3)
-            level1 = generate_level_content(
-                subject=subject,
-                language=CourseLanguage.fr,
-                level_number=1,
-                total_levels=3,
-                settings=None,
-                focus_hint=priority.reasons[0] if priority.reasons else None,
-            )
-            cached = {"blueprint": blueprint, "level1": level1}
+            if self._course_service is not None and user_id is not None:
+                # Le CourseService résout la configuration IA de l'utilisateur,
+                # sa clé chiffrée et son contexte apprenant, sans créer de cours.
+                preview = self._course_service.preview_course(
+                    CoursePreviewRequest(
+                        subject=subject,
+                        language=CourseLanguage.fr,
+                        total_levels=3,
+                        goal=priority.title[:300],
+                    ),
+                    user_id=user_id,
+                )
+                roadmap = preview.levels_roadmap[0] if preview.levels_roadmap else None
+                lessons = [
+                    {
+                        "title": lesson.title,
+                        "summary": lesson.summary,
+                        "exercises": [{"title": exercise.title} for exercise in lesson.exercises],
+                    }
+                    for lesson in preview.first_level_lessons
+                ]
+                cached = {
+                    "blueprint": {"title": preview.title},
+                    "level1": {
+                        "title": roadmap.title if roadmap else f"Niveau 1 : {subject}",
+                        "lessons": lessons,
+                        "project_deliverables": list(preview.first_level_project_deliverables),
+                    },
+                }
+            else:
+                # Repli déterministe réservé au mode local et aux tests isolés.
+                blueprint = build_course_blueprint(
+                    subject=subject,
+                    language=CourseLanguage.fr,
+                    total_levels=3,
+                )
+                level1 = generate_level_content(
+                    subject=subject,
+                    language=CourseLanguage.fr,
+                    level_number=1,
+                    total_levels=3,
+                    focus_hint=priority.reasons[0] if priority.reasons else None,
+                )
+                cached = {"blueprint": blueprint, "level1": level1}
             self._preview_cache[cache_key] = cached
 
         blueprint = cached["blueprint"]  # type: ignore[assignment]
@@ -311,6 +352,7 @@ class SessionContentResolver:
         lessons = level1.get("lessons") or []
         first_lesson = lessons[0] if lessons else {}
         lesson_title = str(first_lesson.get("title") or f"Fondamentaux de {subject}")
+        lesson_summary = str(first_lesson.get("summary") or "").strip()
         exercises = [
             str(ex.get("title") or "").strip()
             for ex in (first_lesson.get("exercises") or [])
@@ -319,25 +361,28 @@ class SessionContentResolver:
         if priority.source_type == "exam_revision":
             return PedagogicalStepPayload(
                 content_source="exam_preparation_blueprint",
-                course_title=f"Révision intensive — {subject}",
+                course_title=f"Révision intensive : {subject}",
                 level_number=1,
                 level_title=str(level1.get("title") or f"Socle d'examen {subject}"),
-                lesson_title=f"Annales & points clés — {lesson_title}",
-                exercises_focus=exercises[:2] or [f"Fiches synthèses & exercices types {subject}"],
+                lesson_title=f"Annales et points clés : {lesson_title}",
+                exercises_focus=exercises[:2] or [f"Fiches synthèses et exercices types {subject}"],
                 deliverables=[f"Sujet d'entraînement corrigé sur {subject}"],
                 recommended_session_type="review",
-                next_step_summary=f"Révision ciblée {subject} : {lesson_title} et exercices types d'examen.",
+                next_step_summary=f"Révision ciblée {subject} : {lesson_title}. {lesson_summary}".strip(),
             )
 
+        summary = (
+            f"Cours recommandé « {blueprint.get('title')} », niveau 1 : {lesson_title}. {lesson_summary}"
+        ).strip()
         return PedagogicalStepPayload(
             content_source="course_generator_preview",
             course_title=str(blueprint.get("title") or f"Cours {subject}"),
             level_number=1,
-            level_title=str(level1.get("title") or f"Niveau 1 — Bases de {subject}"),
+            level_title=str(level1.get("title") or f"Niveau 1 : bases de {subject}"),
             lesson_title=lesson_title,
             exercises_focus=exercises[:3] or [f"Mise en pratique guidée sur {subject}"],
             deliverables=list(level1.get("project_deliverables") or [])[:2]
             or [f"Premier exercice validé sur {lesson_title}"],
             recommended_session_type="deep_work",
-            next_step_summary=f"Cours recommandé « {blueprint.get('title')} » · Niveau 1 : {lesson_title}.",
+            next_step_summary=summary,
         )
