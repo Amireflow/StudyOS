@@ -22,6 +22,10 @@ interface NavigationListProps {
   onItemClick?: () => void;
 }
 
+function pathMatches(pathname: string, basePath: string): boolean {
+  return pathname === basePath || pathname.startsWith(basePath + '/');
+}
+
 function NavigationList({ items, onItemClick }: NavigationListProps) {
   const { pathname } = useLocation();
 
@@ -30,10 +34,9 @@ function NavigationList({ items, onItemClick }: NavigationListProps) {
       {items.map((item) => {
         const sectionActive =
           (item.id === 'courses' &&
-            ['/courses', '/learning', '/skills'].some(
-              (path) => pathname === path || pathname.startsWith(path + '/'),
-            )) ||
-          (item.id === 'planning' && ['/planning', '/tasks', '/sessions'].includes(pathname));
+            ['/courses', '/learning', '/skills'].some((path) => pathMatches(pathname, path))) ||
+          (item.id === 'planning' &&
+            ['/planning', '/tasks', '/sessions'].some((path) => pathMatches(pathname, path)));
 
         return (
           <li key={item.id}>
@@ -41,7 +44,7 @@ function NavigationList({ items, onItemClick }: NavigationListProps) {
               to={item.path}
               end={item.path === '/'}
               onClick={onItemClick}
-              aria-current={sectionActive && pathname !== item.path ? 'page' : undefined}
+              aria-current={sectionActive || pathname === item.path ? 'page' : undefined}
               className={({ isActive }) =>
                 cn(
                   'group flex min-h-11 items-center rounded-lg px-3 py-2 text-sm transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-700 dark:focus-visible:outline-teal-400',
@@ -406,10 +409,9 @@ export function AppShell() {
           {mobileBarItems.map((item) => {
             const sectionActive =
               (item.id === 'courses' &&
-                ['/courses', '/learning', '/skills'].some(
-                  (path) => location.pathname === path || location.pathname.startsWith(path + '/'),
-                )) ||
-              (item.id === 'planning' && ['/planning', '/tasks', '/sessions'].includes(location.pathname));
+                ['/courses', '/learning', '/skills'].some((path) => pathMatches(location.pathname, path))) ||
+              (item.id === 'planning' &&
+                ['/planning', '/tasks', '/sessions'].some((path) => pathMatches(location.pathname, path)));
             const active = location.pathname === item.path || sectionActive;
 
             return (
