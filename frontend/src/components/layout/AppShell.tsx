@@ -6,7 +6,7 @@ import {
   Menu01Icon,
   Settings02Icon,
 } from '@hugeicons/core-free-icons';
-import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { cn } from '../../lib/cn';
 import { usePwaInstall } from '../../lib/pwa';
 import { useAuth } from '../../state/AuthContext';
@@ -40,39 +40,31 @@ function NavigationList({ items, onItemClick }: NavigationListProps) {
 
         return (
           <li key={item.id}>
-            <NavLink
+            <Link
               to={item.path}
-              end={item.path === '/'}
               onClick={onItemClick}
               aria-current={sectionActive || pathname === item.path ? 'page' : undefined}
-              className={({ isActive }) =>
-                cn(
-                  'group flex min-h-11 items-center rounded-lg px-3 py-2 text-sm transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-700 dark:focus-visible:outline-teal-400',
-                  isActive || sectionActive
-                    ? 'bg-zinc-900 font-semibold text-white dark:bg-zinc-100 dark:text-zinc-950'
-                    : 'font-medium text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100',
-                )
-              }
+              className={cn(
+                'group flex min-h-11 items-center rounded-lg px-3 py-2 text-sm transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-700 dark:focus-visible:outline-teal-400',
+                sectionActive || pathname === item.path
+                  ? 'bg-zinc-900 font-semibold text-white dark:bg-zinc-100 dark:text-zinc-950'
+                  : 'font-medium text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100',
+              )}
             >
-              {({ isActive }) => {
-                const active = isActive || sectionActive;
-                return (
-                  <span className="flex items-center gap-3">
-                    <Icon
-                      icon={item.icon}
-                      size={17}
-                      className={cn(
-                        'shrink-0 transition-colors',
-                        active
-                          ? 'text-teal-300 dark:text-teal-700'
-                          : 'text-zinc-400 group-hover:text-zinc-700 dark:text-zinc-500 dark:group-hover:text-zinc-200',
-                      )}
-                    />
-                    <span>{item.label}</span>
-                  </span>
-                );
-              }}
-            </NavLink>
+              <span className="flex items-center gap-3">
+                <Icon
+                  icon={item.icon}
+                  size={17}
+                  className={cn(
+                    'shrink-0 transition-colors',
+                    sectionActive || pathname === item.path
+                      ? 'text-teal-300 dark:text-teal-700'
+                      : 'text-zinc-400 group-hover:text-zinc-700 dark:text-zinc-500 dark:group-hover:text-zinc-200',
+                  )}
+                />
+                <span>{item.label}</span>
+              </span>
+            </Link>
           </li>
         );
       })}
