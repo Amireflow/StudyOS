@@ -1,9 +1,13 @@
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from types import SimpleNamespace
+from uuid import uuid4
 from app.ai.context_builder import BoundedUserContext
 from app.ai.prompt_manager import PromptManager
 from app.ai.provider import ProviderResult, _parse_llm_json_output
 from app.ai.tool_registry import ToolRegistry
+from app.planning.content_resolver import SessionContentResolver
+from app.schemas.planning import LearningPriorityItem
 from app.schemas.ai import RawProposalCandidate
 
 
@@ -320,3 +324,50 @@ def test_legacy_batch_of_study_sessions_is_routed_to_learning_planner(
     assert proposal["action_type"] == "generate_learning_plan"
     assert proposal["payload"]["max_sessions"] == 3
     assert client.get("/api/v1/schedule", headers=user_a_headers).json() == []
+
+
+
+def test_planning_content_resolver_uses_the_configured_user_course_service() -> None:
+    user_id = uuid4()
+
+    class FakeCourseService:
+        def __init__(self) -> None:
+            self.calls = []
+
+        def preview_course(self, payload, *, user_id):
+            self.calls.append((payload, user_id))
+            return SimpleNamespace(
+                title="Parcours REST généré par IA",
+                levels_roadmap=[SimpleNamespace(title="Fondations HTTP et REST")],
+                first_level_lessons=[
+                    SimpleNamespace(
+                        title="Concevoir une API REST",
+                        summary="Routes, verbes HTTP, statuts et validation des données.",
+                        exercises=[SimpleNamespace(title="Créer trois routes CRUD et les tester")],
+                    )
+                ],
+                first_level_project_deliverables=["API REST testée avec des requêtes HTTP"],
+            )
+
+    fake_course_service = FakeCourseService()
+    resolver = SessionContentResolver(course_service=fake_course_service)
+    priority = LearningPriorityItem(
+        source_type="personal_goal",
+        title="Maîtriser la conception d'API REST",
+        subject="API REST",
+        domain="Développement backend",
+        score=85,
+        recommended_minutes=90,
+    )
+
+    result = resolver._resolve_preview_course_step(priority, user_id=user_id)
+
+    assert len(fake_course_service.calls) == 1
+    request, called_user_id = fake_course_service.calls[0]
+    assert request.subject == "API REST"
+    assert called_user_id == user_id
+    assert result.course_title == "Parcours REST généré par IA"
+    assert result.level_title == "Fondations HTTP et REST"
+    assert result.lesson_title == "Concevoir une API REST"
+    assert result.exercises_focus == ["Créer trois routes CRUD et les tester"]
+    assert result.deliverables == ["API REST testée avec des requêtes HTTP"]
