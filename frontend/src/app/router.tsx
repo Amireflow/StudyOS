@@ -2,18 +2,15 @@ import { lazy, Suspense, useState, type ComponentType, type LazyExoticComponent 
 import { createBrowserRouter, RouterProvider, type RouteObject } from 'react-router-dom';
 import { AppShell } from '../components/layout/AppShell';
 import { RequireAuth } from '../state/AuthContext';
+import { LoginPage } from '../features/auth/LoginPage';
+import { DashboardPage } from '../features/dashboard/DashboardPage';
+import { NotFoundPage } from './NotFoundPage';
 
 const AiCoachPage = lazy(() =>
   import('../features/ai-coach/AiCoachPage').then((module) => ({ default: module.AiCoachPage })),
 );
-const LoginPage = lazy(() =>
-  import('../features/auth/LoginPage').then((module) => ({ default: module.LoginPage })),
-);
 const CoursesPage = lazy(() =>
   import('../features/courses/CoursesPage').then((module) => ({ default: module.CoursesPage })),
-);
-const DashboardPage = lazy(() =>
-  import('../features/dashboard/DashboardPage').then((module) => ({ default: module.DashboardPage })),
 );
 const LearningPage = lazy(() =>
   import('../features/learning/LearningPage').then((module) => ({ default: module.LearningPage })),
@@ -35,9 +32,6 @@ const SkillsPage = lazy(() =>
 );
 const TasksPage = lazy(() =>
   import('../features/tasks/TasksPage').then((module) => ({ default: module.TasksPage })),
-);
-const NotFoundPage = lazy(() =>
-  import('./NotFoundPage').then((module) => ({ default: module.NotFoundPage })),
 );
 
 type LazyPage = LazyExoticComponent<ComponentType>;
@@ -65,7 +59,7 @@ function lazyRoute(Component: LazyPage) {
 export const appRoutes: RouteObject[] = [
   {
     path: '/login',
-    element: lazyRoute(LoginPage),
+    element: <LoginPage />,
   },
   {
     path: '/',
@@ -77,7 +71,7 @@ export const appRoutes: RouteObject[] = [
     children: [
       {
         index: true,
-        element: lazyRoute(DashboardPage),
+        element: <DashboardPage />,
       },
       {
         path: 'planning',
@@ -125,7 +119,7 @@ export const appRoutes: RouteObject[] = [
       },
       {
         path: '*',
-        element: lazyRoute(NotFoundPage),
+        element: <NotFoundPage />,
       },
     ],
   },
