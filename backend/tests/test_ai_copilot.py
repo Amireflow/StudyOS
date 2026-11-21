@@ -1,9 +1,14 @@
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from types import SimpleNamespace
+from uuid import uuid4
 from app.ai.context_builder import BoundedUserContext
 from app.ai.prompt_manager import PromptManager
-from app.ai.provider import ProviderResult, _parse_llm_json_output
+from app.ai.provider import ProviderResult, _extract_count_word, _parse_llm_json_output
+from app.ai.tool_registry import ToolRegistry
+from app.planning.content_resolver import SessionContentResolver
 from app.schemas.ai import RawProposalCandidate
+from app.schemas.planning import LearningPriorityItem
 
 
 def test_ai_tools_whitelist_excludes_delete_and_sql(
@@ -249,4 +254,127 @@ def test_parse_llm_json_output_extracts_fenced_and_multiline_json_without_leakin
         "replace_future_planned": False,
         "instruction": "Planifier uniquement sur les créneaux recommandés",
     }
+
+def test_session_count_parser_handles_french_articles_and_limits() -> None:
+    assert _extract_count_word("programme de cinq séances cette semaine") == 5
+    assert _extract_count_word("organise trois séances") == 3
+    assert _extract_count_word("programme 12 séances") == 12
+    assert _extract_count_word("programme 99 séances") == 30
+
+
+def test_prompt_requires_the_dedicated_engine_for_every_multi_session_study_plan() -> None:
+    context = BoundedUserContext(
+        profile={},
+        included_scopes=["auto"],
+        is_partial_data=False,
+        missing_data=[],
+    )
+    prompt = PromptManager(ToolRegistry()).build_system_prompt(context)
+    assert "Toute demande de plan de travail" in prompt
+    assert "doit utiliser generate_learning_plan" in prompt
+    assert "Ne l'utilise JAMAIS pour construire plusieurs séances d'étude" in prompt
+
+
+def test_legacy_batch_of_study_sessions_is_routed_to_learning_planner(
+    app: FastAPI,
+    client: TestClient,
+    user_a_headers: dict[str, str],
+) -> None:
+    class LegacyBatchStudyProvider:
+        def generate_response(self, *, user_message, history, context, prompt_manager):
+            _ = (user_message, history, context, prompt_manager)
+            return ProviderResult(
+                reply="J'ai préparé trois créneaux d'étude.",
+                proposals=[
+                    RawProposalCandidate(
+                        action_type="batch_actions",
+                        title="Actions coordonnées (3 étapes)",
+                        explanation="Trois séances d'étude proposées séparément.",
+                        payload={
+                            "summary": "Trois séances d'apprentissage",
+                            "steps": [
+                                {
+                                    "action_type": "create_schedule_event",
+                                    "payload": {
+                                        "title": f"Séance {index + 1}",
+                                        "type": "learning",
+                                        "starts_at": f"2026-11-{22 + index:02d}T09:00:00+00:00",
+                                        "ends_at": f"2026-11-{22 + index:02d}T10:00:00+00:00",
+                                    },
+                                }
+                                for index in range(3)
+                            ],
+                        },
+                    )
+                ],
+                provider_name="test",
+                model_name="legacy-batch-fixture",
+            )
+
+    app.state.ai_provider = LegacyBatchStudyProvider()
+    try:
+        conversation = client.post(
+            "/api/v1/ai/conversations",
+            json={"title": "Study plan regression"},
+            headers=user_a_headers,
+        )
+        assert conversation.status_code == 201
+        turn = client.post(
+            f"/api/v1/ai/conversations/{conversation.json()['id']}/messages",
+            json={"content": "Prépare mon programme de travail cette semaine."},
+            headers=user_a_headers,
+        )
+        assert turn.status_code == 201
+        proposal = turn.json()["proposals"][0]
+        assert proposal["action_type"] == "generate_learning_plan"
+        assert proposal["payload"]["max_sessions"] == 3
+        assert client.get("/api/v1/schedule", headers=user_a_headers).json() == []
+    finally:
+        app.state.ai_provider = None
+
+
+def test_planning_content_resolver_uses_the_configured_user_course_service() -> None:
+    user_id = uuid4()
+
+    class FakeCourseService:
+        def __init__(self) -> None:
+            self.calls = []
+
+        def preview_course(self, payload, *, user_id):
+            self.calls.append((payload, user_id))
+            return SimpleNamespace(
+                title="Parcours REST généré par IA",
+                levels_roadmap=[SimpleNamespace(title="Fondations HTTP et REST")],
+                first_level_lessons=[
+                    SimpleNamespace(
+                        title="Concevoir une API REST",
+                        summary="Routes, verbes HTTP, statuts et validation des données.",
+                        exercises=[SimpleNamespace(title="Créer trois routes CRUD et les tester")],
+                    )
+                ],
+                first_level_project_deliverables=["API REST testée avec des requêtes HTTP"],
+            )
+
+    fake_course_service = FakeCourseService()
+    resolver = SessionContentResolver(course_service=fake_course_service)
+    priority = LearningPriorityItem(
+        source_type="personal_goal",
+        title="Maîtriser la conception d'API REST",
+        subject="API REST",
+        domain="Développement backend",
+        score=85,
+        recommended_minutes=90,
+    )
+
+    result = resolver._resolve_preview_course_step(priority, user_id=user_id)
+
+    assert len(fake_course_service.calls) == 1
+    request, called_user_id = fake_course_service.calls[0]
+    assert request.subject == "API REST"
+    assert called_user_id == user_id
+    assert result.course_title == "Parcours REST généré par IA"
+    assert result.level_title == "Fondations HTTP et REST"
+    assert result.lesson_title == "Concevoir une API REST"
+    assert result.exercises_focus == ["Créer trois routes CRUD et les tester"]
+    assert result.deliverables == ["API REST testée avec des requêtes HTTP"]
 
