@@ -278,7 +278,7 @@ class ActionValidator:
                 and isinstance(step.get("payload"), dict)
                 and str(step["payload"].get("type") or "").lower() in ("learning", "project")
             ] if isinstance(raw_steps, list) else []
-            if len(raw_steps) >= 2 and len(study_steps) == len(raw_steps):
+            if isinstance(raw_steps, list) and len(raw_steps) >= 2 and len(study_steps) == len(raw_steps):
                 candidate = RawProposalCandidate(
                     action_type=AiActionType.generate_learning_plan.value,
                     title="Construire un programme d'apprentissage structuré",
