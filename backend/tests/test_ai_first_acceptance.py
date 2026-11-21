@@ -172,6 +172,7 @@ def test_ai_first_scenarios_01_to_06_full_entity_lifecycle_without_duplicates(
     assert linked_task["project_id"] == portfolio["id"]
 
     # 6. Planning multi-séances cette semaine respectant le cours universitaire
+    schedule_before_plan = client.get("/api/v1/schedule", headers=user_a_headers).json()
     t6 = client.post(
         f"/api/v1/ai/conversations/{conv_id}/messages",
         json={"content": "Programme trois séances cette semaine."},
@@ -182,7 +183,7 @@ def test_ai_first_scenarios_01_to_06_full_entity_lifecycle_without_duplicates(
     assert prop6["action_type"] == "generate_learning_plan"
     assert prop6["payload"]["max_sessions"] == 3
     # La proposition ne crée encore aucun créneau avant confirmation utilisateur.
-    assert len(client.get("/api/v1/schedule", headers=user_a_headers).json()) == 1
+    assert client.get("/api/v1/schedule", headers=user_a_headers).json() == schedule_before_plan
     acc6 = client.post(f"/api/v1/ai/proposals/{prop6['id']}/accept", json={}, headers=user_a_headers)
     assert acc6.status_code == 200
     plan_result = acc6.json()["execution_result"]
