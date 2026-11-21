@@ -377,7 +377,7 @@ export function PlanningPage() {
               aria-pressed={viewMode === 'agenda'}
               onClick={() => setViewMode('agenda')}
               className={cn(
-                'inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors',
+                'inline-flex min-h-11 items-center gap-1.5 rounded-lg px-3 text-xs font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-700 dark:focus-visible:outline-teal-400',
                 viewMode === 'agenda'
                   ? 'bg-white text-zinc-900 dark:bg-zinc-900 dark:text-zinc-100'
                   : 'text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-200',
@@ -481,13 +481,14 @@ export function PlanningPage() {
               <button
                 key={dayKey}
                 type="button"
+                aria-label={`Sélectionner ${weekdayLabel} ${day.getDate()}`}
                 aria-pressed={isSelected}
                 onClick={() => {
                   setViewMode('agenda');
                   setSelectedDayKey((prev) => (prev === dayKey ? null : dayKey));
                 }}
                 className={cn(
-                  'flex min-w-0 flex-col items-center justify-center rounded-xl px-0.5 py-2 transition-colors',
+                  'flex min-h-16 min-w-0 flex-col items-center justify-center rounded-xl px-0.5 py-2 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-700 dark:focus-visible:outline-teal-400',
                   isSelected
                     ? 'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900'
                     : isToday
@@ -530,12 +531,13 @@ export function PlanningPage() {
                 <>
                   <button
                     type="button"
+                    aria-pressed={typeFilter === 'all' && !conflictsOnly}
                     onClick={() => {
                       setTypeFilter('all');
                       setConflictsOnly(false);
                     }}
                     className={cn(
-                      'shrink-0 rounded-full px-3 py-1 text-xs font-medium transition-colors',
+                      'inline-flex min-h-11 shrink-0 items-center rounded-full px-3 text-xs font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-700 dark:focus-visible:outline-teal-400',
                       typeFilter === 'all' && !conflictsOnly
                         ? 'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900'
                         : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700',
@@ -549,12 +551,13 @@ export function PlanningPage() {
                       <button
                         key={type}
                         type="button"
+                        aria-pressed={isActive}
                         onClick={() => {
                           setTypeFilter((prev) => (prev === type ? 'all' : type));
                           setConflictsOnly(false);
                         }}
                         className={cn(
-                          'shrink-0 rounded-full px-3 py-1 text-xs font-medium transition-colors',
+                          'inline-flex min-h-11 shrink-0 items-center rounded-full px-3 text-xs font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-700 dark:focus-visible:outline-teal-400',
                           isActive
                             ? 'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900'
                             : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700',
@@ -567,12 +570,13 @@ export function PlanningPage() {
                   {summary.conflictCount > 0 && (
                     <button
                       type="button"
+                      aria-pressed={conflictsOnly}
                       onClick={() => {
                         setConflictsOnly((prev) => !prev);
                         setTypeFilter('all');
                       }}
                       className={cn(
-                        'shrink-0 rounded-full px-3 py-1 text-xs font-medium transition-colors',
+                        'inline-flex min-h-11 shrink-0 items-center rounded-full px-3 text-xs font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-700 dark:focus-visible:outline-teal-400',
                         conflictsOnly
                           ? 'bg-rose-600 text-white dark:bg-rose-500'
                           : 'bg-rose-50 text-rose-700 hover:bg-rose-100 dark:bg-rose-950/50 dark:text-rose-300 dark:hover:bg-rose-950/80',

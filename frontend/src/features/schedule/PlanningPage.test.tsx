@@ -63,6 +63,30 @@ describe('PlanningPage', () => {
     ).toBeInTheDocument();
   });
 
+  it('expose les sept jours comme boutons accessibles et les filtres comme états pressés', async () => {
+    const user = userEvent.setup();
+    renderPlanningPage();
+
+    const dayButtons = await screen.findAllByRole('button', { name: /^Sélectionner / });
+    expect(dayButtons).toHaveLength(7);
+    expect(dayButtons[0]).toHaveAttribute('aria-pressed', 'false');
+
+    await user.click(dayButtons[0]);
+    expect(dayButtons[0]).toHaveAttribute('aria-pressed', 'true');
+
+    await user.click(await screen.findByRole('button', { name: 'Nouveau créneau' }));
+    await user.type(screen.getByLabelText(/Titre/), 'Atelier filtre');
+    await user.selectOptions(screen.getByLabelText(/Type/), 'project');
+    fireEvent.change(screen.getByLabelText(/Début/), { target: { value: '09:00' } });
+    fireEvent.change(screen.getByLabelText(/Fin/), { target: { value: '10:00' } });
+    await user.click(screen.getByRole('button', { name: 'Ajouter le créneau' }));
+
+    const projectFilter = await screen.findByRole('button', { name: 'Projet' });
+    expect(projectFilter).toHaveAttribute('aria-pressed', 'true');
+    await user.click(screen.getByRole('button', { name: 'Tous' }));
+    expect(screen.getByRole('button', { name: 'Tous' })).toHaveAttribute('aria-pressed', 'true');
+  });
+
   it('signale un conflit avant enregistrement (SCHED-03), duplique vers la semaine suivante (SCHED-04) et supprime', async () => {
     const user = userEvent.setup();
     renderPlanningPage();

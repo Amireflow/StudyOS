@@ -233,7 +233,7 @@ export function TasksPage() {
               aria-pressed={viewMode === 'list'}
               onClick={() => setViewMode('list')}
               className={cn(
-                'inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition-colors sm:px-3',
+                'inline-flex min-h-11 items-center gap-1.5 rounded-lg px-2.5 text-xs font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-700 dark:focus-visible:outline-teal-400 sm:px-3',
                 viewMode === 'list'
                   ? 'bg-white text-zinc-900 dark:bg-zinc-800 dark:text-zinc-100'
                   : 'text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-200',
@@ -247,7 +247,7 @@ export function TasksPage() {
               aria-pressed={viewMode === 'board'}
               onClick={() => setViewMode('board')}
               className={cn(
-                'inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition-colors sm:px-3',
+                'inline-flex min-h-11 items-center gap-1.5 rounded-lg px-2.5 text-xs font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-700 dark:focus-visible:outline-teal-400 sm:px-3',
                 viewMode === 'board'
                   ? 'bg-white text-zinc-900 dark:bg-zinc-800 dark:text-zinc-100'
                   : 'text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-200',

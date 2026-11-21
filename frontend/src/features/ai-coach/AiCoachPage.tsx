@@ -1282,7 +1282,7 @@ export function AiCoachPage() {
                   aria-label="Envoyer au Copilote"
                   isLoading={isSending}
                   disabled={!promptText.trim() || isSending}
-                  className="h-8 w-8 shrink-0 rounded-xl px-0"
+                  className="h-11 w-11 min-h-11 min-w-11 shrink-0 rounded-xl px-0"
                 >
                   {!isSending && <Icon icon={ArrowUp02Icon} size={16} />}
                 </Button>
