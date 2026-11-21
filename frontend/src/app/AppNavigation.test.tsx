@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { createMemoryRouter, RouterProvider } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -115,6 +115,33 @@ describe('Navigation principale et routage', () => {
 
     expect(screen.queryByRole('dialog', { name: 'Menu de navigation' })).not.toBeInTheDocument();
     expect(await screen.findByRole('heading', { level: 1, name: 'Compétences' })).toBeInTheDocument();
+  });
+
+  it('confine le focus dans le tiroir mobile, ferme avec Échap et restaure le déclencheur', async () => {
+    const user = userEvent.setup();
+    renderAppAt('/');
+
+    const trigger = await screen.findByRole('button', { name: 'Ouvrir le menu' });
+    await user.click(trigger);
+
+    const dialog = screen.getByRole('dialog', { name: 'Menu de navigation' });
+    const focusable = Array.from(
+      dialog.querySelectorAll<HTMLElement>(
+        'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      ),
+    );
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+
+    expect(document.activeElement).toBe(first);
+    await user.tab({ shift: true });
+    expect(document.activeElement).toBe(last);
+    await user.tab();
+    expect(document.activeElement).toBe(first);
+
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('dialog', { name: 'Menu de navigation' })).not.toBeInTheDocument();
+    await waitFor(() => expect(trigger).toHaveFocus());
   });
 
   it('affiche la page 404 pour une route inconnue', () => {
