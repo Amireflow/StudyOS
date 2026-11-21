@@ -13,6 +13,7 @@ from app.schemas.planning import (
     PlanLoadSummary,
     PlanMissingInfoItem,
     PlannedSessionProposal,
+    PedagogicalStepPayload,
     SlotCategory,
     TimeSlotWindow,
 )
@@ -129,7 +130,7 @@ class WeeklyPlanAllocator:
 
         # Résoudre le contenu à la demande : les priorités jamais planifiées ne
         # déclenchent pas de génération IA coûteuse ou inutile.
-        resolved_by_key: dict[int, object] = {}
+        resolved_by_key: dict[int, PedagogicalStepPayload] = {}
 
         # Demande restante par priorité (par ordre décroissant de score, tout en répartissant en round-robin pondéré pour la diversité)
         remaining_need: dict[int, int] = {
