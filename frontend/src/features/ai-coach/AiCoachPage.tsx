@@ -16,7 +16,7 @@ import {
   SparklesIcon,
   Target02Icon,
 } from '@hugeicons/core-free-icons';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
 import { InlineConfirm, Input } from '../../components/ui/FormFields';
@@ -250,6 +250,7 @@ export function AiCoachPage() {
   } = useAiStore();
 
   const [promptText, setPromptText] = useState('');
+  const [searchParams, setSearchParams] = useSearchParams();
   const selectedScope: AiContextScope = 'auto';
   const [proposalFilter, setProposalFilter] = useState<ProposalFilter>('all');
   const [railTab, setRailTab] = useState<RailTab>('proposals');
@@ -315,6 +316,17 @@ export function AiCoachPage() {
 
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
+
+  // Les pages Apprendre/Planning peuvent transmettre une demande précise au Copilote.
+  // Le texte est prérempli sans être envoyé : l'utilisateur garde le contrôle.
+  useEffect(() => {
+    const initialPrompt = searchParams.get('prompt')?.trim();
+    if (!initialPrompt) return;
+    setPromptText(initialPrompt);
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.delete('prompt');
+    setSearchParams(nextParams, { replace: true });
+  }, [searchParams, setSearchParams]);
   const awaitingStreamAfterSendRef = useRef(false);
   const lastKnownAssistantIdRef = useRef<string | null>(null);
 
