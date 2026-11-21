@@ -36,17 +36,6 @@ type ProposalFilter = 'all' | 'pending' | 'executed' | 'rejected';
 type RailTab = 'proposals' | 'reports';
 type MobileView = 'chat' | 'rail';
 
-const SCOPE_OPTIONS: Array<{ value: AiContextScope; label: string }> = [
-  { value: 'auto', label: 'Contexte auto' },
-  { value: 'today', label: 'Journée' },
-  { value: 'tasks', label: 'Tâches' },
-  { value: 'schedule', label: 'Planning' },
-  { value: 'learning', label: 'Apprentissage' },
-  { value: 'skills', label: 'Compétences' },
-  { value: 'projects', label: 'Projets' },
-  { value: 'weekly', label: 'Semaine (7 j)' },
-];
-
 const PROPOSAL_FILTERS: Array<{ value: ProposalFilter; label: string }> = [
   { value: 'all', label: 'Toutes' },
   { value: 'pending', label: 'En attente' },
@@ -62,38 +51,20 @@ const STARTER_PROMPTS: Array<{
 }> = [
   {
     title: 'Planifier ma journée',
-    subtitle: 'Organiser les créneaux autour de ma priorité',
-    prompt: 'Planifie ma journée autour de ma priorité active et de mes créneaux disponibles.',
+    subtitle: 'Construire un programme réaliste depuis mes contraintes',
+    prompt: 'Analyse ma priorité active, mes cours fixes et mes disponibilités, puis propose un programme réaliste pour ma journée.',
     icon: Calendar03Icon,
   },
   {
-    title: 'Prioriser mes tâches',
-    subtitle: 'Classer les actions selon l’urgence et la charge',
-    prompt: 'Analyse mes tâches en cours et propose un ordre de priorité réaliste.',
-    icon: CheckmarkSquare02Icon,
-  },
-  {
-    title: 'Créer une tâche ciblée',
-    subtitle: 'Préparer une action structurée à valider',
-    prompt: 'Crée une tâche : « Préparer la séance de révision » avec priorité normale.',
-    icon: Target02Icon,
-  },
-  {
-    title: 'Bloquer un créneau d’étude',
-    subtitle: 'Réserver un bloc de travail dans le planning',
-    prompt: 'Planifie un créneau d’étude de 60 minutes sur le prochain intervalle libre.',
-    icon: Timer02Icon,
-  },
-  {
-    title: 'Recommander une révision',
-    subtitle: 'Cibler la compétence la plus utile maintenant',
-    prompt: 'Quelle compétence devrais-je renforcer cette semaine selon mon avancement ?',
+    title: 'Apprendre une compétence',
+    subtitle: 'Créer une progression complète et adaptée à mon niveau',
+    prompt: 'Je veux apprendre React depuis mon niveau actuel. Évalue les prérequis et construis une progression complète avec cours, exercices et projets.',
     icon: BookOpen01Icon,
   },
   {
-    title: 'Apprendre une compétence',
-    subtitle: 'Analyser la faisabilité et planifier sans conflit',
-    prompt: 'Je voudrais apprendre le développement avec React.',
+    title: 'Créer un cours complet',
+    subtitle: 'Préparer les niveaux, leçons et évaluations',
+    prompt: 'Crée un cours complet et progressif sur Python, du niveau débutant jusqu’au niveau intermédiaire, avec explications, exemples, exercices et projets évaluables.',
     icon: Target02Icon,
   },
 ];
@@ -280,7 +251,7 @@ export function AiCoachPage() {
   } = useAiStore();
 
   const [promptText, setPromptText] = useState('');
-  const [selectedScope, setSelectedScope] = useState<AiContextScope>('auto');
+  const selectedScope: AiContextScope = 'auto';
   const [proposalFilter, setProposalFilter] = useState<ProposalFilter>('all');
   const [railTab, setRailTab] = useState<RailTab>('proposals');
   const [mobileView, setMobileView] = useState<MobileView>('chat');
@@ -569,98 +540,128 @@ export function AiCoachPage() {
           </div>
         </div>
 
-        <div className="no-scrollbar flex items-center gap-1 overflow-x-auto">
+        <div className="flex shrink-0 items-center gap-2">
           <Button
             type="button"
             variant="primary"
             size="sm"
-            className="h-8 shrink-0 px-2.5 text-xs"
+            className="min-h-11 shrink-0 px-3 text-xs"
             onClick={() => void handleNewConversation()}
           >
             <Icon icon={MessageAdd01Icon} size={14} />
             Nouvelle conversation
           </Button>
 
-          {conversations.length > 0 && (
-            <Button
-              type="button"
-              variant={isHistoryOpen ? 'primary' : 'ghost'}
-              size="sm"
-              className="h-8 shrink-0 px-2.5 text-xs"
-              aria-label="Historique des conversations"
-              aria-expanded={isHistoryOpen}
-              onClick={() => {
-                setIsHistoryOpen((prev) => !prev);
-                setIsToolsOpen(false);
-                setIsMemoryOpen(false);
-              }}
+          <details className="relative">
+            <summary
+              aria-label="Options avancées du Copilote"
+              className="inline-flex min-h-11 cursor-pointer list-none items-center rounded-xl bg-zinc-100 px-3 text-xs font-semibold text-zinc-700 transition-colors hover:bg-zinc-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-700 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700 dark:focus-visible:outline-teal-400"
             >
-              <Icon icon={HistoryIcon} size={14} />
-              Historique
-            </Button>
-          )}
-
-          <div className="mx-0.5 hidden h-4 w-px bg-zinc-200 sm:block dark:bg-zinc-800" />
-
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            className="h-8 shrink-0 px-2.5 text-xs"
-            isLoading={isGeneratingBriefing}
-            onClick={() => void handleGenerateBriefing()}
-          >
-            <Icon icon={File02Icon} size={14} />
-            Briefing du jour
-          </Button>
-
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            className="h-8 shrink-0 px-2.5 text-xs"
-            isLoading={isGeneratingWeekly}
-            onClick={() => void handleGenerateWeekly()}
-          >
-            <Icon icon={File02Icon} size={14} />
-            Bilan hebdo
-          </Button>
-
-          <Button
-            type="button"
-            variant={isMemoryOpen ? 'primary' : 'ghost'}
-            size="sm"
-            className="h-8 shrink-0 px-2.5 text-xs"
-            aria-expanded={isMemoryOpen}
-            onClick={() => {
-              setIsMemoryOpen((prev) => !prev);
-              setIsHistoryOpen(false);
-              setIsToolsOpen(false);
-            }}
-          >
-            <Icon icon={SparklesIcon} size={14} />
-            Mémoire IA
-          </Button>
-
-          <Button
-            type="button"
-            variant={isToolsOpen ? 'primary' : 'ghost'}
-            size="sm"
-            className="h-8 shrink-0 px-2.5 text-xs"
-            aria-expanded={isToolsOpen}
-            onClick={() => {
-              setIsToolsOpen((prev) => !prev);
-              setIsHistoryOpen(false);
-              setIsMemoryOpen(false);
-            }}
-          >
-            <Icon icon={SlidersHorizontalIcon} size={14} />
-            Outils ({tools.length})
-          </Button>
-
+              Plus
+            </summary>
+            <div className="absolute right-0 top-full z-40 mt-2 flex max-h-[min(70dvh,520px)] w-64 flex-col gap-1 overflow-y-auto rounded-xl border border-zinc-200 bg-white p-2 shadow-lg dark:border-zinc-700 dark:bg-zinc-900">
+              {conversations.length > 0 && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="min-h-11 justify-start"
+                  aria-label="Historique des conversations"
+                  aria-expanded={isHistoryOpen}
+                  onClick={() => {
+                    setIsHistoryOpen((prev) => !prev);
+                    setIsToolsOpen(false);
+                    setIsMemoryOpen(false);
+                  }}
+                >
+                  <Icon icon={HistoryIcon} size={14} />
+                  Historique
+                </Button>
+              )}
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="min-h-11 justify-start"
+                isLoading={isGeneratingBriefing}
+                onClick={() => void handleGenerateBriefing()}
+              >
+                <Icon icon={File02Icon} size={14} />
+                Briefing du jour
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="min-h-11 justify-start"
+                isLoading={isGeneratingWeekly}
+                onClick={() => void handleGenerateWeekly()}
+              >
+                <Icon icon={File02Icon} size={14} />
+                Bilan hebdo
+              </Button>
+              <Button
+                type="button"
+                variant={isMemoryOpen ? 'primary' : 'ghost'}
+                size="sm"
+                className="min-h-11 justify-start"
+                aria-expanded={isMemoryOpen}
+                onClick={() => {
+                  setIsMemoryOpen((prev) => !prev);
+                  setIsHistoryOpen(false);
+                  setIsToolsOpen(false);
+                }}
+              >
+                <Icon icon={SparklesIcon} size={14} />
+                Mémoire IA
+              </Button>
+              <Button
+                type="button"
+                variant={isToolsOpen ? 'primary' : 'ghost'}
+                size="sm"
+                className="min-h-11 justify-start"
+                aria-expanded={isToolsOpen}
+                onClick={() => {
+                  setIsToolsOpen((prev) => !prev);
+                  setIsHistoryOpen(false);
+                  setIsMemoryOpen(false);
+                }}
+              >
+                <Icon icon={SlidersHorizontalIcon} size={14} />
+                Outils ({tools.length})
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="min-h-11 justify-start"
+                onClick={() => setIsTimetableImportOpen((prev) => !prev)}
+              >
+                <Icon icon={Calendar03Icon} size={14} />
+                Importer mon emploi du temps
+              </Button>
+              {(proposals.length > 0 || reports.length > 0) && (
+                <Button
+                  type="button"
+                  variant={isDesktopRailVisible ? 'primary' : 'ghost'}
+                  size="sm"
+                  className="min-h-11 justify-start lg:hidden"
+                  onClick={() => {
+                    setRailTab('proposals');
+                    setMobileView('rail');
+                  }}
+                >
+                  <Icon icon={CheckmarkSquare02Icon} size={14} />
+                  Propositions en attente
+                  {pendingProposalsCount > 0 && <Badge variant="warning">{pendingProposalsCount}</Badge>}
+                </Button>
+              )}
+            </div>
+          </details>
           {(proposals.length > 0 || reports.length > 0) && (
             <button
               type="button"
+              aria-label="Afficher le panneau des actions et synthèses"
               onClick={() => {
                 if (isDesktopRailVisible) {
                   setIsDesktopRailDismissed(true);
@@ -671,7 +672,7 @@ export function AiCoachPage() {
                 }
               }}
               className={cn(
-                'hidden h-8 shrink-0 items-center gap-1.5 rounded-xl px-2.5 text-xs font-medium transition-colors lg:inline-flex',
+                'hidden min-h-11 shrink-0 items-center gap-1.5 rounded-xl px-3 text-xs font-medium transition-colors lg:inline-flex',
                 isDesktopRailVisible
                   ? 'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900'
                   : 'bg-zinc-100 text-zinc-700 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-300',
@@ -685,8 +686,7 @@ export function AiCoachPage() {
               )}
             </button>
           )}
-        </div>
-      </header>
+        </div>      </header>
 
       {mutationError && (
         <div
@@ -1241,41 +1241,14 @@ export function AiCoachPage() {
               />
 
               <div className="mt-2 flex items-center justify-between gap-2">
-                <div className="no-scrollbar flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto">
-                  <select
-                    aria-label="Périmètre du contexte transmis"
-                    value={selectedScope}
-                    onChange={(e) => setSelectedScope(e.target.value as AiContextScope)}
-                    className="min-h-7 max-w-[150px] shrink-0 truncate rounded-xl bg-white px-2.5 py-1 text-xs font-medium text-zinc-700 focus-visible:outline-2 focus-visible:outline-teal-600 sm:max-w-none dark:bg-zinc-900 dark:text-zinc-200"
-                  >
-                    {SCOPE_OPTIONS.map((scope) => (
-                      <option key={scope.value} value={scope.value}>
-                        {scope.label}
-                      </option>
-                    ))}
-                  </select>
-
-                  <button
-                    type="button"
-                    onClick={() => setIsTimetableImportOpen((prev) => !prev)}
-                    className={cn(
-                      'inline-flex h-7 shrink-0 items-center gap-1.5 rounded-xl px-2.5 text-xs font-medium transition-colors',
-                      isTimetableImportOpen
-                        ? 'bg-teal-700 text-white dark:bg-teal-500 dark:text-zinc-950'
-                        : 'bg-white text-zinc-600 hover:text-zinc-900 dark:bg-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100',
-                    )}
-                  >
-                    <Icon icon={Calendar03Icon} size={13} />
-                    Emploi du temps
-                  </button>
-
-                  <Link
-                    to="/settings"
-                    className="inline-flex h-7 shrink-0 items-center gap-1.5 rounded-xl bg-white px-2.5 text-xs font-medium text-zinc-600 transition-colors hover:text-zinc-900 dark:bg-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
-                  >
-                    <Icon icon={Settings02Icon} size={13} />
-                    Consignes
-                  </Link>
+                <div className="flex min-w-0 flex-1 items-center gap-2">
+                  <span className="inline-flex min-h-9 items-center gap-1.5 rounded-lg bg-white px-2.5 text-xs font-medium text-zinc-600 dark:bg-zinc-900 dark:text-zinc-300">
+                    <Icon icon={ShieldCheckIcon} size={13} />
+                    Contexte automatique
+                  </span>
+                  <span className="hidden text-[11px] text-zinc-500 sm:inline dark:text-zinc-400">
+                    StudyOS utilise les données utiles à votre demande.
+                  </span>
                 </div>
 
                 <Button
