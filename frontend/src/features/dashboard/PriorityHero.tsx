@@ -314,12 +314,25 @@ export function PriorityHero({
           className="py-4"
           action={
             <div className="flex flex-wrap items-center justify-center gap-2">
-              <Button type="button" variant="primary" size="sm" onClick={openEditor}>
-                Définir une priorité
-              </Button>
-              <Link to="/tasks" className={buttonClasses('secondary', 'sm')}>
-                Tâches
+              <Link
+                to={"/ai-coach?prompt=" + encodeURIComponent("Analyse mes cours, échéances, objectifs, projets et charge actuelle. Recommande UNE priorité principale mesurable pour maintenant, explique pourquoi elle est prioritaire et propose au maximum trois actions critiques. Ne modifie rien avant ma confirmation.")}
+                className={buttonClasses('primary', 'md')}
+              >
+                Choisir ma priorité avec le Copilote
               </Link>
+              <details className="relative">
+                <summary className="inline-flex min-h-11 cursor-pointer list-none items-center rounded-lg bg-zinc-100 px-3 text-xs font-semibold text-zinc-600 hover:bg-zinc-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-700 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700 dark:focus-visible:outline-teal-400">
+                  Plus
+                </summary>
+                <div className="absolute right-0 z-20 mt-2 flex w-48 flex-col gap-1 rounded-xl border border-zinc-200 bg-white p-2 shadow-lg dark:border-zinc-700 dark:bg-zinc-900">
+                  <Button type="button" variant="ghost" size="sm" className="min-h-11 w-full justify-start" onClick={openEditor}>
+                    Définir manuellement
+                  </Button>
+                  <Link to="/tasks" className={buttonClasses('ghost', 'sm') + ' min-h-11 justify-start'}>
+                    Voir les tâches
+                  </Link>
+                </div>
+              </details>
             </div>
           }
         />
