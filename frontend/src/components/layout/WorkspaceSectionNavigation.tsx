@@ -41,7 +41,7 @@ export function WorkspaceSectionNavigation() {
 
   return (
     <nav
-      aria-label={\`Navigation \${title}\`}
+      aria-label={'Navigation ' + title}
       className={cn(
         'mb-4 flex min-w-0 items-center gap-2 overflow-x-auto rounded-xl border border-zinc-200/80 bg-white/80 p-1.5 dark:border-zinc-800 dark:bg-zinc-900/80',
         isCourseDetail ? 'sm:mb-3' : 'sm:mb-5',
