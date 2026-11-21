@@ -11,11 +11,6 @@ async function openManualTaskForm(user: ReturnType<typeof userEvent.setup>) {
   await user.click(screen.getByRole('button', { name: 'Créer manuellement' }));
 }
 
-async function openManualTaskForm(user: ReturnType<typeof userEvent.setup>) {
-  await user.click(screen.getByText('Plus'));
-  await user.click(screen.getByRole('button', { name: 'Créer manuellement' }));
-}
-
 function renderTasksPage() {
   return render(
     <AppProviders initialSession={TEST_API_SESSION}>

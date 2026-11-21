@@ -11,11 +11,6 @@ async function openManualProjectForm(user: ReturnType<typeof userEvent.setup>) {
   await user.click(screen.getByRole('button', { name: 'Nouveau projet manuel' }));
 }
 
-async function openManualProjectForm(user: ReturnType<typeof userEvent.setup>) {
-  await user.click(screen.getByText('Plus'));
-  await user.click(screen.getByRole('button', { name: 'Nouveau projet manuel' }));
-}
-
 function renderProjectsPage() {
   return render(
     <AppProviders initialSession={TEST_API_SESSION}>
