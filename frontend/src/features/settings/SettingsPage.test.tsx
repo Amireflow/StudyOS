@@ -28,6 +28,8 @@ describe('SettingsPage', () => {
     const nav = await screen.findByRole('navigation', { name: 'Sections des paramètres' });
     expect(within(nav).getByRole('link', { name: 'Profil' })).toHaveAttribute('href', '#settings-profile');
     expect(within(nav).getByRole('link', { name: 'Fournisseur IA' })).toHaveAttribute('href', '#settings-ai-provider');
+    expect(within(nav).getByRole('link', { name: 'Sécurité' })).toHaveAttribute('href', '#settings-security');
+    expect(document.getElementById('settings-security')).toBeInTheDocument();
     expect(within(nav).getByRole('link', { name: 'Apparence' })).toHaveAttribute('href', '#settings-appearance');
     expect(within(nav).getByRole('link', { name: 'Espace de travail' })).toHaveAttribute('href', '#settings-workspace');
     expect(within(nav).getByRole('link', { name: 'Connexions' })).toHaveAttribute('href', '#settings-connections');

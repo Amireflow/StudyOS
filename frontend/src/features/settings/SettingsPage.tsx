@@ -281,6 +281,7 @@ export function SettingsPage() {
         {[
           { label: 'Profil', href: '#settings-profile' },
           { label: 'Fournisseur IA', href: '#settings-ai-provider' },
+          ...(session?.mode === 'api' ? [{ label: 'Sécurité', href: '#settings-security' }] : []),
           { label: 'Apparence', href: '#settings-appearance' },
           { label: 'Espace de travail', href: '#settings-workspace' },
           { label: 'Connexions', href: '#settings-connections' },
@@ -594,7 +595,11 @@ export function SettingsPage() {
       </div>
 
       {/* Compte & sécurité (affiché uniquement en session API authentifiée) */}
-      <AccountSecurityCard />
+      {session?.mode === 'api' && (
+        <div id="settings-security" className="scroll-mt-24">
+          <AccountSecurityCard />
+        </div>
+      )}
 
       {/* Grille inférieure : Apparence & Espace de travail */}
       <div className="grid gap-4 lg:grid-cols-2">
