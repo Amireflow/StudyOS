@@ -111,7 +111,7 @@ class LearningPlanningService:
         )
         self._availability_engine = AvailabilityEngine()
         self._prioritizer = LearningPrioritizer()
-        self._content_resolver = SessionContentResolver()
+        self._content_resolver = SessionContentResolver(course_service=course_service)
         self._allocator = WeeklyPlanAllocator(self._content_resolver)
 
     # ------------------------------------------------------------------
@@ -303,6 +303,7 @@ class LearningPlanningService:
             weekly_hours_override=payload.weekly_hours_override,
             daily_max_minutes=payload.daily_max_minutes,
             preferred_session_minutes=payload.preferred_session_minutes,
+            max_sessions=payload.max_sessions,
             min_session_minutes=payload.min_session_minutes,
         )
 
