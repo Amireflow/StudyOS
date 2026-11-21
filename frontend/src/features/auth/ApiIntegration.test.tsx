@@ -128,7 +128,7 @@ describe('Intégration API FastAPI & Authentification (Lot 5)', () => {
     const desktopNav = screen.getByRole('navigation', { name: 'Navigation principale' });
     await user.click(within(desktopNav).getByRole('link', { name: 'Tâches' }));
 
-    await user.click(screen.getByRole('button', { name: 'Nouvelle tâche' }));
+    await user.click(await screen.findByRole('button', { name: 'Nouvelle tâche' }));
     await user.type(screen.getByLabelText(/Titre/), 'Connecter PostgreSQL');
     await user.click(screen.getByRole('button', { name: 'Ajouter la tâche' }));
 
