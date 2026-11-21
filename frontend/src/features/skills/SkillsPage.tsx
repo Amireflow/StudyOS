@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Add01Icon, Award02Icon, Search01Icon } from '@hugeicons/core-free-icons';
-import { useSearchParams } from 'react-router-dom';
-import { Button } from '../../components/ui/Button';
+import { Link, useSearchParams } from 'react-router-dom';
+import { Button, buttonClasses } from '../../components/ui/Button';
 import { Input, Select } from '../../components/ui/FormFields';
 import { Icon } from '../../components/ui/Icon';
 import {
@@ -322,10 +322,26 @@ export function SkillsPage() {
           )}
         </div>
 
-        <Button type="button" variant="primary" size="sm" onClick={openCreateSkill}>
-          <Icon icon={Add01Icon} size={15} />
-          Nouvelle compétence
-        </Button>
+        <div className="flex shrink-0 items-center gap-2">
+          <Link
+            to={"/ai-coach?prompt=" + encodeURIComponent("Analyse mes cours, parcours, projets et preuves existants. Identifie les compétences réellement nécessaires, distingue celles déjà démontrées de celles à acquérir, puis propose une évaluation initiale et les prochaines étapes. Ne crée ni compétence ni niveau sans ma confirmation.")}
+            className={buttonClasses('primary', 'sm')}
+          >
+            <Icon icon={Award02Icon} size={15} />
+            Évaluer avec le Copilote
+          </Link>
+          <details className="relative">
+            <summary className="inline-flex min-h-11 cursor-pointer list-none items-center rounded-lg bg-zinc-100 px-3 text-xs font-semibold text-zinc-600 hover:bg-zinc-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-700 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700 dark:focus-visible:outline-teal-400">
+              Plus
+            </summary>
+            <div className="absolute right-0 z-30 mt-2 w-56 rounded-xl border border-zinc-200 bg-white p-2 shadow-lg dark:border-zinc-700 dark:bg-zinc-900">
+              <Button type="button" variant="ghost" size="sm" className="min-h-11 w-full justify-start" onClick={openCreateSkill}>
+                <Icon icon={Add01Icon} size={14} />
+                Ajouter manuellement
+              </Button>
+            </div>
+          </details>
+        </div>
       </header>
 
       {feedback && <SuccessBanner message={feedback} onDismiss={() => setFeedback(null)} />}
@@ -510,9 +526,12 @@ export function SkillsPage() {
             icon={<Icon icon={Award02Icon} size={17} className="text-teal-700 dark:text-teal-400" />}
             title="Aucune compétence enregistrée"
             action={
-              <Button type="button" variant="primary" size="sm" onClick={openCreateSkill}>
-                Ajouter ma première compétence
-              </Button>
+              <Link
+                to={"/ai-coach?prompt=" + encodeURIComponent("Aide-moi à identifier les compétences que je dois maîtriser pour atteindre mes objectifs actuels. Analyse mes données d'apprentissage et propose les évaluations utiles avant de créer quoi que ce soit.")}
+                className={buttonClasses('primary', 'md')}
+              >
+                Identifier mes compétences avec le Copilote
+              </Link>
             }
           />
         </div>
