@@ -2,11 +2,14 @@
 
 Espace personnel de pilotage des études, de l'apprentissage par preuves et des projets, avec copilote IA contrôlé.
 
-## Documentation de référence (v1.1)
+## Documentation produit V2 — référence à valider
 
-- [PRD — Amireflow Study OS](./PRD-Amireflow-Study-OS.md)
-- [Cahier des charges — Amireflow Study OS](./Cahier-des-charges-Amireflow-Study-OS.md)
+- [StudyOS V2 — Vision produit et contrat fonctionnel](./docs/PRODUCT-V2-CADRAGE.md)
+- [PRD historique V1.1](./PRD-Amireflow-Study-OS.md)
+- [Cahier des charges technique historique](./Cahier-des-charges-Amireflow-Study-OS.md)
 - [Guide Utilisateur & Déploiement Cloud](./GUIDE-UTILISATEUR-ET-DEPLOIEMENT.md)
+
+Le document V2 devient la référence produit cible et prime sur les documents historiques en cas de contradiction. Ce cadrage ne supprime aucune fonctionnalité, donnée ou route existante.
 
 ## Refonte UX/UI
 
