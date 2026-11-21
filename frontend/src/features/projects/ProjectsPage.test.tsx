@@ -100,8 +100,13 @@ describe('ProjectsPage', () => {
     expect(api.state.tasks[0].title).toBe('Écrire les tests Pytest des projets');
 
     const statusFilters = screen.getByRole('group', { name: 'Filtrer les projets par statut' });
+    const allFilter = within(statusFilters).getByRole('button', { name: 'Tous' });
     const plannedFilter = within(statusFilters).getByRole('button', { name: 'Planifiés' });
+    expect(allFilter).toHaveAttribute('aria-pressed', 'true');
+    await user.click(plannedFilter);
     expect(plannedFilter).toHaveAttribute('aria-pressed', 'true');
+    expect(allFilter).toHaveAttribute('aria-pressed', 'false');
+
     const activeFilter = within(statusFilters).getByRole('button', { name: 'Actifs' });
     await user.click(activeFilter);
     expect(activeFilter).toHaveAttribute('aria-pressed', 'true');
