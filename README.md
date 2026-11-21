@@ -8,6 +8,17 @@ Espace personnel de pilotage des études, de l'apprentissage par preuves et des 
 - [Cahier des charges — Amireflow Study OS](./Cahier-des-charges-Amireflow-Study-OS.md)
 - [Guide Utilisateur & Déploiement Cloud](./GUIDE-UTILISATEUR-ET-DEPLOIEMENT.md)
 
+## Refonte UX/UI
+
+Dossier de conception et de validation progressive :
+
+- [Audit UX/UI initial](./docs/ux-refonte/01-UX-AUDIT.md)
+- [Architecture de l'information et navigation](./docs/ux-refonte/02-INFORMATION-ARCHITECTURE.md)
+- [Parcours utilisateurs](./docs/ux-refonte/03-USER-FLOWS.md)
+- [Wireframes fonctionnels détaillés](./docs/ux-refonte/04-WIREFRAMES-DETAILLES.md)
+
+La refonte est conduite sur la branche dédiée `ux/audit-initial-2026-11-21`. Les documents sont des spécifications de conception ; aucune refonte visuelle applicative n'est considérée comme validée tant que les wireframes et le design system ne sont pas approuvés.
+
 ## Structure du dépôt
 
 - `frontend/` : application web React + TypeScript strict + Vite + Tailwind CSS + TanStack Query
