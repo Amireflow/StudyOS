@@ -371,7 +371,7 @@ export function PlanningPage() {
             </Button>
           </div>
 
-          <div className="inline-flex items-center gap-1 rounded-xl bg-zinc-100 p-1 dark:bg-zinc-800/80">
+          <div role="group" aria-label="Choisir la vue du planning" className="inline-flex items-center gap-1 rounded-xl bg-zinc-100 p-1 dark:bg-zinc-800/80">
             <button
               type="button"
               aria-pressed={viewMode === 'agenda'}
@@ -530,7 +530,7 @@ export function PlanningPage() {
         {/* Ligne 4 : Filtres par catégorie */}
         {(weekEvents.length > 0 || selectedDayKey !== null) && (
           <div className="flex items-center justify-between gap-2">
-            <div className="no-scrollbar flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto pb-0.5 sm:flex-wrap sm:overflow-visible sm:pb-0">
+            <div role="group" aria-label="Filtrer les créneaux par type" className="no-scrollbar flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto pb-0.5 sm:flex-wrap sm:overflow-visible sm:pb-0">
               {weekEvents.length > 0 && (
                 <>
                   <button

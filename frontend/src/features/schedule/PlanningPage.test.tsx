@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -81,11 +81,16 @@ describe('PlanningPage', () => {
     fireEvent.change(screen.getByLabelText(/Fin/), { target: { value: '10:00' } });
     await user.click(screen.getByRole('button', { name: 'Ajouter le créneau' }));
 
-    const projectFilter = await screen.findByRole('button', { name: 'Projet' });
+    const typeFilters = screen.getByRole('group', { name: 'Filtrer les créneaux par type' });
+    const projectFilter = within(typeFilters).getByRole('button', { name: 'Projet' });
     await user.click(projectFilter);
     expect(projectFilter).toHaveAttribute('aria-pressed', 'true');
-    await user.click(screen.getByRole('button', { name: 'Tous' }));
-    expect(screen.getByRole('button', { name: 'Tous' })).toHaveAttribute('aria-pressed', 'true');
+    const allFilter = within(typeFilters).getByRole('button', { name: 'Tous' });
+    await user.click(allFilter);
+    expect(allFilter).toHaveAttribute('aria-pressed', 'true');
+
+    const viewSwitcher = screen.getByRole('group', { name: 'Choisir la vue du planning' });
+    expect(within(viewSwitcher).getByRole('button', { name: 'Agenda' })).toHaveAttribute('aria-pressed', 'true');
   });
 
   it('signale un conflit avant enregistrement (SCHED-03), duplique vers la semaine suivante (SCHED-04) et supprime', async () => {

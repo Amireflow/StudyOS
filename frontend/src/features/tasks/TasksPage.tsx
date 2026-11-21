@@ -227,7 +227,7 @@ export function TasksPage() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          <div className="inline-flex items-center gap-1 rounded-xl bg-zinc-100 p-1 dark:bg-zinc-900">
+          <div role="group" aria-label="Changer la vue des tâches" className="inline-flex items-center gap-1 rounded-xl bg-zinc-100 p-1 dark:bg-zinc-900">
             <button
               type="button"
               aria-pressed={viewMode === 'list'}
