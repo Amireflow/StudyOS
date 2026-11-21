@@ -210,3 +210,62 @@ L'inventaire source est terminé et révèle une base déjà fonctionnelle (thè
 **Aucune modification applicative n'a été faite.** Les seuls changements de ce lot sont ce rapport de référence et son lien dans le README.
 
 **Étape suivante après validation :** compléter les captures réelles, puis ouvrir le Lot 1 (tokens et fondations du Design System), avec tests de non-régression.
+
+
+## 9. Inspection des captures fournies — mobile
+
+**Date de réception :** 21 novembre 2026  
+**Sources :** quatre captures fournies par l'utilisateur depuis l'application mobile en thème sombre.  
+**Périmètre effectivement visible :** tableau de bord, planning hebdomadaire, accueil du Copilote, tiroir de navigation ouvert.
+
+> Ces observations décrivent uniquement les pixels visibles dans les captures. Elles ne certifient ni le comportement des interactions, ni les dimensions CSS exactes, ni l'accessibilité technique.
+
+### 9.1 Constats par écran
+
+| Écran | Constats visibles | Conséquence UX |
+|---|---|---|
+| Tableau de bord | Quatre cartes KPI en grille 2 colonnes ; bloc « Priorité principale » volumineux ; liste des tâches partiellement masquée par la navigation basse | Réduire la concurrence visuelle, faire ressortir une seule action prioritaire et vérifier le padding bas/scroll pour éviter l'impression de contenu coupé |
+| Planning | Barre d'actions à deux boutons ; navigation de semaine ; bascule Agenda/Grille ; résumé de charge ; rangée de jours ; filtres horizontaux ; cartes de créneaux denses | Clarifier la hiérarchie des commandes, rendre les filtres accessibles sans masquer leurs options et améliorer la lecture rapide des créneaux |
+| Copilote | En-tête et actions rapides, onglets Discussion/Actions/Synthèses, grand panneau d'accueil avec cinq suggestions | Réduire la hauteur de l'état vide, présenter les suggestions de manière plus compacte et donner une place immédiatement identifiable à la zone de saisie/conversation |
+| Tiroir de navigation | Dix destinations visibles à plat, grande surface latérale, paramètres et compte en bas | Appliquer les groupes approuvés « Apprentissage » et « Organisation » sans supprimer de destination ni modifier les routes |
+
+### 9.2 Système visuel observé
+
+- Le thème sombre est homogène entre les quatre captures : fond presque noir, surfaces zinc foncé, texte clair et accent turquoise.
+- Les actions principales blanches contrastent fortement avec les actions secondaires sombres.
+- Les rayons des cartes et conteneurs sont généreux et répétés ; l'empilement de grandes surfaces arrondies donne une sensation de densité.
+- Les titres et valeurs principales sont bien visibles, mais les métadonnées grises et certains libellés secondaires sont nombreux.
+- La barre de navigation basse reste présente sur les pages et semble recouvrir la suite de la section « Tâches prioritaires » dans la capture du tableau de bord ; il faut vérifier si le scroll et l'inset inférieur permettent d'atteindre le contenu complet.
+
+### 9.3 Écarts visuels confirmés ou renforcés
+
+| ID | Observation issue des captures | Action à intégrer |
+|---|---|---|
+| VIS-01 | Le tableau de bord expose plusieurs KPI avant la priorité principale | Donner la priorité visuelle à l'objectif/action du jour ; réduire le poids des KPI secondaires |
+| VIS-02 | Le bloc « Priorité principale » occupe une grande hauteur même à l'état vide | Concevoir un état vide compact avec un appel à l'action clair |
+| VIS-03 | Le planning cumule plusieurs rangées de commandes et de filtres | Réorganiser les contrôles en niveaux : période, vue, filtres ; préserver l'accès tactile |
+| VIS-04 | Les cartes de créneaux contiennent titre, heure, durée, catégorie, salle, enseignant et actions | Structurer les métadonnées et séparer l'action principale des actions secondaires |
+| VIS-05 | L'accueil du Copilote est dominé par cinq grandes suggestions | Compacter les suggestions et rendre la conversation/saisie immédiatement évidente |
+| VIS-06 | La navigation du tiroir reste plate malgré la décision d'architecture validée | Regrouper les entrées par domaines sans changer les destinations |
+| VIS-07 | La barre basse peut masquer visuellement le contenu suivant sur le dashboard | Vérifier le safe-area/padding bas et la dernière position de scroll sur iOS |
+
+### 9.4 Limites restantes
+
+Les captures reçues ne couvrent pas encore :
+- les vues desktop ;
+- l'index des cours et le lecteur de leçon ;
+- les paramètres ;
+- le thème clair ;
+- les états interactifs (menus déroulants ouverts, formulaires, erreurs, dialogues, clavier virtuel).
+
+Elles ne permettent pas de mesurer précisément les contrastes WCAG, les zones tactiles en CSS, le focus clavier, les annonces lecteur d'écran ou les polices réellement chargées.
+
+### 9.5 Mise à jour de la validation du Lot 0
+
+- [x] Captures réelles mobile du tableau de bord, planning, Copilote et tiroir reçues et inspectées.
+- [ ] Captures réelles desktop et écrans Cours/Lecteur/Paramètres.
+- [ ] Vérification navigateur de la police calculée et des ressources chargées.
+- [ ] Mesures réelles de contraste et inspection clavier/lecteur d'écran.
+- [ ] Exécution locale typecheck, tests et build.
+
+**Statut inchangé : Lot 0 partiellement terminé.** La référence visuelle mobile est maintenant documentée pour quatre vues. La couverture visuelle complète et les vérifications runtime restent à réaliser. Aucun fichier applicatif n'a été modifié.
