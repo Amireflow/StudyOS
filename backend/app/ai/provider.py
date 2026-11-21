@@ -1630,6 +1630,13 @@ def _handle_ai_first_intents(
         for p in (
             "programme d'apprentissage",
             "programme d’apprentissage",
+            "plan de travail",
+            "programme de travail",
+            "planning de travail",
+            "planifie ma semaine",
+            "planifier ma semaine",
+            "organise ma semaine",
+            "organiser ma semaine",
             "programme d apprentissage",
             "emploi du temps d'apprentissage",
             "emploi du temps d’apprentissage",
