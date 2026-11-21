@@ -1,24 +1,71 @@
-import { useState } from 'react';
+import { lazy, Suspense, useState, type ComponentType, type LazyExoticComponent } from 'react';
 import { createBrowserRouter, RouterProvider, type RouteObject } from 'react-router-dom';
 import { AppShell } from '../components/layout/AppShell';
 import { RequireAuth } from '../state/AuthContext';
-import { AiCoachPage } from '../features/ai-coach/AiCoachPage';
-import { LoginPage } from '../features/auth/LoginPage';
-import { CoursesPage } from '../features/courses/CoursesPage';
-import { DashboardPage } from '../features/dashboard/DashboardPage';
-import { LearningPage } from '../features/learning/LearningPage';
-import { ProjectsPage } from '../features/projects/ProjectsPage';
-import { PlanningPage } from '../features/schedule/PlanningPage';
-import { SessionsPage } from '../features/sessions/SessionsPage';
-import { SettingsPage } from '../features/settings/SettingsPage';
-import { SkillsPage } from '../features/skills/SkillsPage';
-import { TasksPage } from '../features/tasks/TasksPage';
-import { NotFoundPage } from './NotFoundPage';
+
+const AiCoachPage = lazy(() =>
+  import('../features/ai-coach/AiCoachPage').then((module) => ({ default: module.AiCoachPage })),
+);
+const LoginPage = lazy(() =>
+  import('../features/auth/LoginPage').then((module) => ({ default: module.LoginPage })),
+);
+const CoursesPage = lazy(() =>
+  import('../features/courses/CoursesPage').then((module) => ({ default: module.CoursesPage })),
+);
+const DashboardPage = lazy(() =>
+  import('../features/dashboard/DashboardPage').then((module) => ({ default: module.DashboardPage })),
+);
+const LearningPage = lazy(() =>
+  import('../features/learning/LearningPage').then((module) => ({ default: module.LearningPage })),
+);
+const ProjectsPage = lazy(() =>
+  import('../features/projects/ProjectsPage').then((module) => ({ default: module.ProjectsPage })),
+);
+const PlanningPage = lazy(() =>
+  import('../features/schedule/PlanningPage').then((module) => ({ default: module.PlanningPage })),
+);
+const SessionsPage = lazy(() =>
+  import('../features/sessions/SessionsPage').then((module) => ({ default: module.SessionsPage })),
+);
+const SettingsPage = lazy(() =>
+  import('../features/settings/SettingsPage').then((module) => ({ default: module.SettingsPage })),
+);
+const SkillsPage = lazy(() =>
+  import('../features/skills/SkillsPage').then((module) => ({ default: module.SkillsPage })),
+);
+const TasksPage = lazy(() =>
+  import('../features/tasks/TasksPage').then((module) => ({ default: module.TasksPage })),
+);
+const NotFoundPage = lazy(() =>
+  import('./NotFoundPage').then((module) => ({ default: module.NotFoundPage })),
+);
+
+type LazyPage = LazyExoticComponent<ComponentType>;
+
+function RouteLoadingFallback() {
+  return (
+    <div
+      role="status"
+      aria-live="polite"
+      className="flex min-h-[35vh] items-center justify-center px-4 text-sm text-zinc-500 dark:text-zinc-400"
+    >
+      Chargement de la page…
+    </div>
+  );
+}
+
+function lazyRoute(Component: LazyPage) {
+  return (
+    <Suspense fallback={<RouteLoadingFallback />}>
+      <Component />
+    </Suspense>
+  );
+}
 
 export const appRoutes: RouteObject[] = [
   {
     path: '/login',
-    element: <LoginPage />,
+    element: lazyRoute(LoginPage),
   },
   {
     path: '/',
@@ -30,55 +77,55 @@ export const appRoutes: RouteObject[] = [
     children: [
       {
         index: true,
-        element: <DashboardPage />,
+        element: lazyRoute(DashboardPage),
       },
       {
         path: 'planning',
-        element: <PlanningPage />,
+        element: lazyRoute(PlanningPage),
       },
       {
         path: 'tasks',
-        element: <TasksPage />,
+        element: lazyRoute(TasksPage),
       },
       {
         path: 'sessions',
-        element: <SessionsPage />,
+        element: lazyRoute(SessionsPage),
       },
       {
         path: 'courses',
-        element: <CoursesPage />,
+        element: lazyRoute(CoursesPage),
       },
       {
         path: 'courses/:courseId',
-        element: <CoursesPage />,
+        element: lazyRoute(CoursesPage),
       },
       {
         path: 'learning',
-        element: <LearningPage />,
+        element: lazyRoute(LearningPage),
       },
       {
         path: 'skills',
-        element: <SkillsPage />,
+        element: lazyRoute(SkillsPage),
       },
       {
         path: 'projects',
-        element: <ProjectsPage />,
+        element: lazyRoute(ProjectsPage),
       },
       {
         path: 'objectives',
-        element: <ProjectsPage />,
+        element: lazyRoute(ProjectsPage),
       },
       {
         path: 'ai-coach',
-        element: <AiCoachPage />,
+        element: lazyRoute(AiCoachPage),
       },
       {
         path: 'settings',
-        element: <SettingsPage />,
+        element: lazyRoute(SettingsPage),
       },
       {
         path: '*',
-        element: <NotFoundPage />,
+        element: lazyRoute(NotFoundPage),
       },
     ],
   },
