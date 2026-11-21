@@ -12,16 +12,12 @@ export interface FormFieldProps {
 }
 
 /**
- * Enveloppe de champ de formulaire accessible : relie le label, l'aide
- * et le message d'erreur (`role="alert"`) juste sous le contrôle.
+ * Enveloppe de champ : label visible, aide et erreur au même emplacement.
  */
 export function FormField({ id, label, required, hint, error, children }: FormFieldProps) {
   return (
     <div className="min-w-0 space-y-1.5">
-      <label
-        htmlFor={id}
-        className="block text-xs font-medium tracking-tight text-zinc-700 sm:text-sm dark:text-zinc-300"
-      >
+      <label htmlFor={id} className="ui-field-label block">
         {label}
         {required && (
           <span className="ml-1 text-rose-600 dark:text-rose-400" aria-hidden="true">
@@ -31,12 +27,12 @@ export function FormField({ id, label, required, hint, error, children }: FormFi
       </label>
       {children}
       {hint && !error && (
-        <p id={`${id}-hint`} className="text-xs text-zinc-500 dark:text-zinc-400">
+        <p id={id + '-hint'} className="ui-field-help">
           {hint}
         </p>
       )}
       {error && (
-        <p id={`${id}-error`} role="alert" className="text-xs font-medium text-rose-600 dark:text-rose-400">
+        <p id={id + '-error'} role="alert" className="ui-field-error">
           {error}
         </p>
       )}
@@ -44,15 +40,10 @@ export function FormField({ id, label, required, hint, error, children }: FormFi
   );
 }
 
-const baseControlClasses =
-  'block w-full min-w-0 max-w-full min-h-10 rounded-lg bg-zinc-100/80 px-3 py-2 text-base sm:text-sm text-zinc-900 transition-colors placeholder:text-zinc-400 focus:bg-zinc-100 focus:outline-none disabled:bg-zinc-50 disabled:text-zinc-500 dark:bg-zinc-800/80 dark:text-zinc-100 dark:placeholder:text-zinc-500 dark:focus:bg-zinc-800 dark:disabled:bg-zinc-900 dark:disabled:text-zinc-500';
+const baseControlClasses = 'ui-form-control block w-full min-w-0 max-w-full';
 
 function controlClasses(hasError?: boolean, className?: string): string {
-  return cn(
-    baseControlClasses,
-    hasError && 'bg-rose-50/80 text-rose-900 dark:bg-rose-950/50 dark:text-rose-200',
-    className,
-  );
+  return cn(baseControlClasses, hasError && 'ui-form-control--error', className);
 }
 
 export interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
@@ -113,7 +104,7 @@ export interface InlineConfirmProps {
 
 /**
  * Confirmation accessible en deux clics pour éviter toute suppression
- * ou annulation accidentelle sans recourir à `window.confirm`.
+ * ou annulation accidentelle sans recourir à window.confirm.
  */
 export function InlineConfirm({
   triggerLabel,
@@ -145,7 +136,7 @@ export function InlineConfirm({
   }
 
   return (
-    <div className="inline-flex items-center gap-1.5" role="group" aria-label={`Confirmation : ${triggerLabel}`}>
+    <div className="inline-flex items-center gap-1.5" role="group" aria-label={'Confirmation : ' + triggerLabel}>
       <Button
         variant="danger"
         size={size}
