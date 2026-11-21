@@ -323,8 +323,11 @@ export function DashboardPage() {
         onFeedback={setFeedback}
       />
 
-      {/* Ruban d'indicateurs quotidiens */}
-      <section aria-label="Indicateurs du jour" className="grid grid-cols-2 gap-2.5 sm:grid-cols-4 sm:gap-3">
+      <details className="rounded-xl bg-white px-4 py-2.5 dark:bg-zinc-900">
+        <summary className="min-h-10 cursor-pointer list-none text-xs font-semibold text-zinc-600 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-700 dark:text-zinc-300 dark:focus-visible:outline-teal-400">
+          Voir les indicateurs du jour
+        </summary>
+        <section aria-label="Indicateurs du jour" className="grid grid-cols-2 gap-2.5 pb-2 pt-2 sm:grid-cols-4 sm:gap-3">
         <div className="rounded-2xl bg-white p-3 sm:p-4 dark:bg-zinc-900">
           <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Avancement</p>
           <p
@@ -385,12 +388,13 @@ export function DashboardPage() {
                 : 'Créneau planifié'}
           </p>
         </div>
-      </section>
+        </section>
+      </details>
 
-      {/* Grille asymétrique 12 colonnes */}
+      {/* Grille des actions du jour */}
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-12 lg:items-start">
         {/* Colonne principale */}
-        <div className="min-w-0 space-y-5 lg:col-span-7">
+        <div className="order-2 min-w-0 space-y-5 lg:order-1 lg:col-span-7">
           {/* Tâches prioritaires + capture rapide */}
           <section
             aria-labelledby="dashboard-tasks-heading"
@@ -553,65 +557,63 @@ export function DashboardPage() {
             )}
           </section>
 
-          {/* Séances récentes */}
-          <section
-            aria-labelledby="dashboard-sessions-heading"
-            className="rounded-2xl bg-white p-5 dark:bg-zinc-900"
-          >
-            <div className="mb-4 flex items-center justify-between gap-2">
-              <h2
-                id="dashboard-sessions-heading"
-                className="text-sm font-semibold text-zinc-900 dark:text-zinc-100"
-              >
-                Séances récentes
-              </h2>
-              <Link to="/sessions" className={buttonClasses('ghost', 'sm')}>
-                Séances
-              </Link>
+          {/* Historique secondaire, ouvert à la demande */}
+          <details className="rounded-2xl bg-white p-4 dark:bg-zinc-900">
+            <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-2 text-sm font-semibold text-zinc-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-700 dark:text-zinc-100 dark:focus-visible:outline-teal-400">
+              <span>Séances récentes</span>
+              <span className="text-xs font-medium text-zinc-500 dark:text-zinc-400">
+                {recentCompletedSessions.length}
+              </span>
+            </summary>
+            <div className="pt-3">
+              <div className="mb-3 flex justify-end">
+                <Link to="/sessions" className={buttonClasses('ghost', 'sm')}>
+                  Historique complet
+                </Link>
+              </div>
+              {recentCompletedSessions.length === 0 ? (
+                <EmptyState
+                  icon={<Icon icon={Timer02Icon} size={17} />}
+                  title="Aucune séance achevée"
+                  action={
+                    <Link to="/sessions" className={buttonClasses('secondary', 'sm')}>
+                      Ouvrir les séances
+                    </Link>
+                  }
+                />
+              ) : (
+                <ul className="space-y-2">
+                  {recentCompletedSessions.map((session) => (
+                    <li
+                      key={session.id}
+                      className="rounded-xl bg-zinc-50/80 px-3.5 py-2.5 dark:bg-zinc-800/60"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="truncate text-sm font-medium text-zinc-900 dark:text-zinc-100">
+                          {session.title}
+                        </p>
+                        <Badge variant="primary">
+                          {formatDuration(getSessionDurationMinutes(session))}
+                        </Badge>
+                      </div>
+                      <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
+                        {session.category} · {formatDateTimeFr(session.startedAt)}
+                      </p>
+                      {session.result && (
+                        <p className="mt-1 line-clamp-1 text-xs text-zinc-600 dark:text-zinc-300">
+                          {session.result}
+                        </p>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              )}
             </div>
-
-            {recentCompletedSessions.length === 0 ? (
-              <EmptyState
-                icon={<Icon icon={Timer02Icon} size={17} />}
-                title="Aucune séance achevée"
-                action={
-                  <Link to="/sessions" className={buttonClasses('secondary', 'sm')}>
-                    Ouvrir les séances
-                  </Link>
-                }
-              />
-            ) : (
-              <ul className="space-y-2">
-                {recentCompletedSessions.map((session) => (
-                  <li
-                    key={session.id}
-                    className="rounded-xl bg-zinc-50/80 px-3.5 py-2.5 dark:bg-zinc-800/60"
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <p className="truncate text-sm font-medium text-zinc-900 dark:text-zinc-100">
-                        {session.title}
-                      </p>
-                      <Badge variant="primary">
-                        {formatDuration(getSessionDurationMinutes(session))}
-                      </Badge>
-                    </div>
-                    <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
-                      {session.category} · {formatDateTimeFr(session.startedAt)}
-                    </p>
-                    {session.result && (
-                      <p className="mt-1 line-clamp-1 text-xs text-zinc-600 dark:text-zinc-300">
-                        {session.result}
-                      </p>
-                    )}
-                  </li>
-                ))}
-              </ul>
-            )}
-          </section>
+          </details>
         </div>
 
         {/* Colonne secondaire */}
-        <div className="min-w-0 space-y-5 lg:col-span-5">
+        <div className="order-1 min-w-0 space-y-5 lg:order-2 lg:col-span-5">
           {/* Planning d'aujourd'hui */}
           <section
             aria-labelledby="dashboard-today-heading"
@@ -770,20 +772,14 @@ export function DashboardPage() {
             )}
           </section>
 
-          {/* Cap & apprentissage (conditionnel) */}
+          {/* Liens vers les données secondaires */}
           {hasLearningOverview && (
-            <section
-              aria-labelledby="dashboard-learning-heading"
-              className="rounded-2xl bg-white p-5 dark:bg-zinc-900"
-            >
-              <h2
-                id="dashboard-learning-heading"
-                className="mb-3 text-sm font-semibold text-zinc-900 dark:text-zinc-100"
-              >
-                Cap &amp; apprentissage
-              </h2>
-
-              <div className="space-y-2.5">
+            <details className="rounded-2xl bg-white p-4 dark:bg-zinc-900">
+              <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-2 text-sm font-semibold text-zinc-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-700 dark:text-zinc-100 dark:focus-visible:outline-teal-400">
+                <span>Mes apprentissages et projets</span>
+                <span className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Détails</span>
+              </summary>
+              <div className="space-y-2.5 pt-3">
                 {paths.length > 0 && (
                   <Link
                     to="/learning"
@@ -872,7 +868,7 @@ export function DashboardPage() {
                   </Link>
                 )}
               </div>
-            </section>
+            </details>
           )}
         </div>
       </div>
