@@ -2,7 +2,6 @@ import { useMemo, useState } from 'react';
 import {
   Add01Icon,
   ArrowRight01Icon,
-  BookOpen01Icon,
   Mortarboard02Icon,
   Search01Icon,
 } from '@hugeicons/core-free-icons';
@@ -214,39 +213,14 @@ export function CoursesPage() {
           icon={<Icon icon={Mortarboard02Icon} size={18} />}
           action={
             courses.length === 0 ? (
-              <div className="flex flex-wrap items-center justify-center gap-2">
-                <Button
-                  type="button"
-                  variant="primary"
-                  size="sm"
-                  onClick={() =>
-                    void handleCreateCourse({
-                      subject: 'Python',
-                      language: 'fr',
-                      totalLevels: 3,
-                      linkSkill: true,
-                    })
-                  }
-                >
-                  <Icon icon={BookOpen01Icon} size={14} />
-                  Démarrer Python
-                </Button>
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="sm"
-                  onClick={() =>
-                    void handleCreateCourse({
-                      subject: 'TypeScript',
-                      language: 'fr',
-                      totalLevels: 3,
-                      linkSkill: true,
-                    })
-                  }
-                >
-                  Démarrer TypeScript
-                </Button>
-              </div>
+              <Button
+                type="button"
+                variant="primary"
+                size="md"
+                onClick={() => setIsCreatorOpen(true)}
+              >
+                Décrire ce que je veux apprendre
+              </Button>
             ) : undefined
           }
         />
