@@ -41,7 +41,7 @@ export function CourseCreatorPanel({
   const handlePreviewClick = async () => {
     setLocalError(null);
     if (subject.trim().length < 2) {
-      setLocalError('Indiquez d’abord un langage ou sujet (ex. Python, TypeScript, SQL).');
+      setLocalError('Décrivez le sujet que vous souhaitez apprendre (ex. Python, Java ou développement backend).');
       return;
     }
     setIsPreviewLoading(true);
@@ -65,7 +65,11 @@ export function CourseCreatorPanel({
     e.preventDefault();
     setLocalError(null);
     if (subject.trim().length < 2) {
-      setLocalError('Le langage ou sujet doit contenir au moins 2 caractères.');
+      setLocalError('Décrivez le sujet que vous souhaitez apprendre.');
+      return;
+    }
+    if (!preview) {
+      setLocalError('Prévisualisez et vérifiez votre programme avant de créer le cours.');
       return;
     }
     await onCreate({
@@ -89,7 +93,7 @@ export function CourseCreatorPanel({
             <Icon icon={Mortarboard02Icon} size={19} />
           </span>
           <h2 className="text-base font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
-            Créer un cours structuré
+            Que veux-tu apprendre ?
           </h2>
         </div>
       </div>
@@ -98,7 +102,7 @@ export function CourseCreatorPanel({
         <div className="space-y-2">
           <FormField
             id="course-subject"
-            label="Sujet ou langage"
+            label="Sujet ou domaine"
             required
             error={localError ?? undefined}
           >
@@ -107,9 +111,10 @@ export function CourseCreatorPanel({
               value={subject}
               onChange={(e) => {
                 setSubject(e.target.value);
+                setLocalError(null);
                 setPreview(null);
               }}
-              placeholder="Ex. Python, TypeScript, SQL, Rust…"
+              placeholder="Ex. Python depuis zéro pour développer des API backend…"
               maxLength={120}
             />
           </FormField>
@@ -134,70 +139,82 @@ export function CourseCreatorPanel({
           </div>
         </div>
 
-        <div className="grid gap-4 sm:grid-cols-3">
-          <FormField id="course-title" label="Titre personnalisé (optionnel)">
-            <Input
-              id="course-title"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              placeholder="Généré automatiquement si vide"
-              maxLength={160}
-            />
-          </FormField>
-
-          <FormField id="course-language" label="Langue du cours">
-            <Select
-              id="course-language"
-              value={language}
-              onChange={(e) => {
-                setLanguage(e.target.value as CourseLanguage);
-                setPreview(null);
-              }}
-            >
-              <option value="fr">Français</option>
-              <option value="en">English</option>
-              <option value="bilingual">Bilingue FR / EN</option>
-            </Select>
-          </FormField>
-
-          <FormField id="course-levels" label="Nombre de niveaux">
-            <Select
-              id="course-levels"
-              value={String(totalLevels)}
-              onChange={(e) => {
-                setTotalLevels(Number(e.target.value));
-                setPreview(null);
-              }}
-            >
-              <option value="2">2 niveaux</option>
-              <option value="3">3 niveaux</option>
-              <option value="4">4 niveaux</option>
-              <option value="5">5 niveaux</option>
-            </Select>
-          </FormField>
-        </div>
-
-        <FormField id="course-goal" label="Objectif personnel (optionnel)">
+        <FormField id="course-goal" label="Quel résultat veux-tu atteindre ? (facultatif)">
           <Textarea
             id="course-goal"
-            rows={2}
+            rows={3}
             value={goal}
-            onChange={(e) => setGoal(e.target.value)}
-            placeholder="Ex. Automatiser mes scripts et réussir mes évaluations backend."
+            onChange={(e) => {
+              setGoal(e.target.value);
+              setPreview(null);
+            }}
+            placeholder="Ex. Maîtriser les bases, créer une API REST, réussir un examen ou réaliser un projet concret."
             maxLength={300}
           />
         </FormField>
 
-        <label className="inline-flex cursor-pointer items-center gap-2.5 rounded-xl bg-zinc-50 px-3.5 py-2.5 text-xs font-medium text-zinc-700 dark:bg-zinc-800/70 dark:text-zinc-300">
-          <input
-            id="course-link-skill"
-            type="checkbox"
-            checked={linkSkill}
-            onChange={(e) => setLinkSkill(e.target.checked)}
-            className="h-4 w-4 rounded accent-teal-600"
-          />
-          <span>Associer une compétence liée (0/5 au départ, évolue sur projets validés)</span>
-        </label>
+        <details className="rounded-xl bg-zinc-50 px-3.5 py-3 dark:bg-zinc-800/60">
+          <summary className="min-h-9 cursor-pointer text-xs font-semibold text-zinc-600 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-700 dark:text-zinc-300 dark:focus-visible:outline-teal-400">
+            Options avancées (facultatif)
+          </summary>
+          <div className="space-y-3 pt-3">
+            <div className="grid gap-3 sm:grid-cols-3">
+              <FormField id="course-title" label="Titre personnalisé">
+                <Input
+                  id="course-title"
+                  value={title}
+                  onChange={(e) => {
+                    setTitle(e.target.value);
+                    setPreview(null);
+                  }}
+                  placeholder="Laisser l'IA choisir"
+                  maxLength={160}
+                />
+              </FormField>
+
+              <FormField id="course-language" label="Langue">
+                <Select
+                  id="course-language"
+                  value={language}
+                  onChange={(e) => {
+                    setLanguage(e.target.value as CourseLanguage);
+                    setPreview(null);
+                  }}
+                >
+                  <option value="fr">Français</option>
+                  <option value="en">English</option>
+                  <option value="bilingual">Bilingue FR / EN</option>
+                </Select>
+              </FormField>
+
+              <FormField id="course-levels" label="Niveaux">
+                <Select
+                  id="course-levels"
+                  value={String(totalLevels)}
+                  onChange={(e) => {
+                    setTotalLevels(Number(e.target.value));
+                    setPreview(null);
+                  }}
+                >
+                  <option value="2">2 niveaux</option>
+                  <option value="3">3 niveaux</option>
+                  <option value="4">4 niveaux</option>
+                  <option value="5">5 niveaux</option>
+                </Select>
+              </FormField>
+            </div>
+            <label className="inline-flex cursor-pointer items-center gap-2.5 text-xs font-medium text-zinc-700 dark:text-zinc-300">
+              <input
+                id="course-link-skill"
+                type="checkbox"
+                checked={linkSkill}
+                onChange={(e) => setLinkSkill(e.target.checked)}
+                className="h-4 w-4 rounded accent-teal-600"
+              />
+              <span>Lier une compétence démontrée à la progression</span>
+            </label>
+          </div>
+        </details>
 
         <div className="flex flex-wrap items-center gap-2.5 pt-1">
           <Button
@@ -205,21 +222,33 @@ export function CourseCreatorPanel({
             variant="secondary"
             size="md"
             isLoading={isPreviewLoading}
-            disabled={isSubmitting}
+            disabled={isSubmitting || subject.trim().length < 2}
             onClick={() => void handlePreviewClick()}
           >
             <Icon icon={SparklesIcon} size={16} />
-            Prévisualiser le plan
+            Analyser et construire le programme
           </Button>
-          <Button type="submit" variant="primary" size="md" isLoading={isSubmitting}>
+          <Button
+            type="submit"
+            variant="primary"
+            size="md"
+            isLoading={isSubmitting}
+            disabled={!preview || isPreviewLoading}
+          >
             <Icon icon={Rocket01Icon} size={16} />
-            Créer le cours complet
+            Valider et créer le cours
           </Button>
           <Button type="button" variant="ghost" size="md" onClick={onCancel}>
             Annuler
           </Button>
         </div>
       </form>
+
+      {!preview && !isPreviewLoading && (
+        <p className="text-xs leading-5 text-zinc-500 dark:text-zinc-400">
+          StudyOS va analyser ton besoin, préparer la progression et te montrer le programme avant toute création.
+        </p>
+      )}
 
       {preview && (
         <div className="mt-6 space-y-4 rounded-2xl bg-zinc-50 p-4 sm:p-5 dark:bg-zinc-800/70">
