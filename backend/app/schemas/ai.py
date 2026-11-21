@@ -818,6 +818,7 @@ class GenerateLearningPlanProposalPayload(BaseModel):
     weekly_hours_override: float | None = Field(default=None, gt=0.5, le=80)
     daily_max_minutes: int | None = Field(default=None, ge=30, le=600)
     preferred_session_minutes: int | None = Field(default=None, ge=25, le=180)
+    max_sessions: int | None = Field(default=None, ge=1, le=30)
     include_potential_slots: bool = True
     create_missing_courses: bool = False
     apply_immediately: bool = True
