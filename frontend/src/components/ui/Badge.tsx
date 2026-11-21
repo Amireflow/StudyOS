@@ -13,7 +13,7 @@ export interface BadgeProps extends HTMLAttributes<HTMLSpanElement> {
  */
 export function Badge({ variant = 'neutral', className, children, ...props }: BadgeProps) {
   return (
-    <span className={cn('ui-badge', \`ui-badge--\${variant}\`, className)} {...props}>
+    <span className={cn('ui-badge', 'ui-badge--' + variant, className)} {...props}>
       {children}
     </span>
   );

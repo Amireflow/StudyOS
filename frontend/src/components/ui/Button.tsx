@@ -14,7 +14,7 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 }
 
 export function buttonClasses(variant: ButtonVariant = 'primary', size: ButtonSize = 'md'): string {
-  return cn('ui-button', \`ui-button--\${variant}\`, \`ui-button--\${size}\`);
+  return cn('ui-button', 'ui-button--' + variant, 'ui-button--' + size);
 }
 
 /**

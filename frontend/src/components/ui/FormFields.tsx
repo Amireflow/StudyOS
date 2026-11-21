@@ -27,12 +27,12 @@ export function FormField({ id, label, required, hint, error, children }: FormFi
       </label>
       {children}
       {hint && !error && (
-        <p id={\`\${id}-hint\`} className="ui-field-help">
+        <p id={id + '-hint'} className="ui-field-help">
           {hint}
         </p>
       )}
       {error && (
-        <p id={\`\${id}-error\`} role="alert" className="ui-field-error">
+        <p id={id + '-error'} role="alert" className="ui-field-error">
           {error}
         </p>
       )}
@@ -136,7 +136,7 @@ export function InlineConfirm({
   }
 
   return (
-    <div className="inline-flex items-center gap-1.5" role="group" aria-label={\`Confirmation : \${triggerLabel}\`}>
+    <div className="inline-flex items-center gap-1.5" role="group" aria-label={'Confirmation : ' + triggerLabel}>
       <Button
         variant="danger"
         size={size}
