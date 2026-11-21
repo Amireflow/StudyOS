@@ -3,6 +3,7 @@ from fastapi.testclient import TestClient
 from app.ai.context_builder import BoundedUserContext
 from app.ai.prompt_manager import PromptManager
 from app.ai.provider import ProviderResult, _parse_llm_json_output
+from app.ai.tool_registry import ToolRegistry
 from app.schemas.ai import RawProposalCandidate
 
 
@@ -250,3 +251,72 @@ def test_parse_llm_json_output_extracts_fenced_and_multiline_json_without_leakin
         "instruction": "Planifier uniquement sur les créneaux recommandés",
     }
 
+
+
+def test_prompt_requires_the_dedicated_engine_for_every_multi_session_study_plan() -> None:
+    context = BoundedUserContext(
+        profile={},
+        included_scopes=["auto"],
+        is_partial_data=False,
+        missing_data=[],
+    )
+    prompt = PromptManager(ToolRegistry()).build_system_prompt(context)
+    assert "Toute demande de plan de travail" in prompt
+    assert "doit obligatoirement utiliser generate_learning_plan" in prompt
+    assert "Ne l'utilise JAMAIS pour construire plusieurs séances d'étude" in prompt
+    assert "planifier plusieurs créneaux" not in prompt
+
+
+def test_legacy_batch_of_study_sessions_is_routed_to_learning_planner(
+    app: FastAPI,
+    client: TestClient,
+    user_a_headers: dict[str, str],
+) -> None:
+    class LegacyBatchStudyProvider:
+        def generate_response(self, *, user_message, history, context, prompt_manager):
+            _ = (user_message, history, context, prompt_manager)
+            return ProviderResult(
+                reply="J'ai préparé trois créneaux d'étude.",
+                proposals=[
+                    RawProposalCandidate(
+                        action_type="batch_actions",
+                        title="Actions coordonnées (3 étapes)",
+                        explanation="Trois séances d'étude proposées séparément.",
+                        payload={
+                            "summary": "Trois séances d'apprentissage",
+                            "steps": [
+                                {
+                                    "action_type": "create_schedule_event",
+                                    "payload": {
+                                        "title": f"Séance {index + 1}",
+                                        "type": "learning",
+                                        "starts_at": f"2026-11-{22 + index:02d}T09:00:00+00:00",
+                                        "ends_at": f"2026-11-{22 + index:02d}T10:00:00+00:00",
+                                    },
+                                }
+                                for index in range(3)
+                            ],
+                        },
+                    )
+                ],
+                provider_name="test",
+                model_name="legacy-batch-fixture",
+            )
+
+    app.state.ai_provider = LegacyBatchStudyProvider()
+    conversation = client.post(
+        "/api/v1/ai/conversations",
+        json={"title": "Study plan regression"},
+        headers=user_a_headers,
+    )
+    assert conversation.status_code == 201
+    turn = client.post(
+        f"/api/v1/ai/conversations/{conversation.json()['id']}/messages",
+        json={"content": "Prépare mon programme de travail cette semaine."},
+        headers=user_a_headers,
+    )
+    assert turn.status_code == 201
+    proposal = turn.json()["proposals"][0]
+    assert proposal["action_type"] == "generate_learning_plan"
+    assert proposal["payload"]["max_sessions"] == 3
+    assert client.get("/api/v1/schedule", headers=user_a_headers).json() == []
