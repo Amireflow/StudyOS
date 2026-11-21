@@ -206,7 +206,7 @@ export function PlanningPage() {
     return (
       <div className="space-y-5">
         <header>
-          <h1 className="text-xl font-semibold tracking-tight text-zinc-900 sm:text-2xl dark:text-zinc-50">
+          <h1 className="ui-page-title">
             Planning
           </h1>
         </header>
@@ -219,7 +219,7 @@ export function PlanningPage() {
     return (
       <div className="space-y-5">
         <header>
-          <h1 className="text-xl font-semibold tracking-tight text-zinc-900 sm:text-2xl dark:text-zinc-50">
+          <h1 className="ui-page-title">
             Planning
           </h1>
         </header>
@@ -233,7 +233,7 @@ export function PlanningPage() {
       {/* En-tête */}
       <header className="flex flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-xl font-semibold tracking-tight text-zinc-900 sm:text-2xl dark:text-zinc-50">
+          <h1 className="ui-page-title">
             Planning
           </h1>
           <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">

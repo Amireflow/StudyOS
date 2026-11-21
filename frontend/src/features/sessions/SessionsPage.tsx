@@ -198,7 +198,7 @@ export function SessionsPage() {
     return (
       <div className="space-y-5">
         <header>
-          <h1 className="text-xl font-semibold tracking-tight text-zinc-900 sm:text-2xl dark:text-zinc-50">
+          <h1 className="ui-page-title">
             Séances
           </h1>
         </header>
@@ -211,7 +211,7 @@ export function SessionsPage() {
     return (
       <div className="space-y-5">
         <header>
-          <h1 className="text-xl font-semibold tracking-tight text-zinc-900 sm:text-2xl dark:text-zinc-50">
+          <h1 className="ui-page-title">
             Séances
           </h1>
         </header>
@@ -229,7 +229,7 @@ export function SessionsPage() {
       {/* En-tête */}
       <header className="flex flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-xl font-semibold tracking-tight text-zinc-900 sm:text-2xl dark:text-zinc-50">
+          <h1 className="ui-page-title">
             Séances
           </h1>
           {summary.completedCount > 0 && (
