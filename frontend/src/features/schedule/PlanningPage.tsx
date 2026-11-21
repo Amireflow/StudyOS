@@ -248,12 +248,14 @@ export function PlanningPage() {
             size="sm"
             className="shrink-0"
             onClick={() => {
+              setIsIntelligentPlanOpen((prev) => !prev);
               setIsImportingTimetable(false);
-              handleOpenCreateForDate(selectedDayKey ?? toLocalDateKey(new Date()));
+              setIsCreating(false);
+              setEditingEvent(null);
             }}
           >
-            <Icon icon={Add01Icon} size={15} />
-            Nouveau créneau
+            <Icon icon={Calendar03Icon} size={15} />
+            Construire mon programme
           </Button>
           <Button
             type="button"
@@ -269,20 +271,26 @@ export function PlanningPage() {
             <Icon icon={File02Icon} size={15} />
             Importer mon emploi du temps
           </Button>
-          <Button
-            type="button"
-            variant="secondary"
-            size="sm"
-            className="shrink-0"
-            onClick={() => {
-              setIsIntelligentPlanOpen((prev) => !prev);
-              setIsImportingTimetable(false);
-              setIsCreating(false);
-            }}
-          >
-            <Icon icon={Calendar03Icon} size={15} />
-            Programme intelligent
-          </Button>
+          <details className="relative shrink-0">
+            <summary className="inline-flex min-h-11 cursor-pointer list-none items-center rounded-lg bg-zinc-100 px-3 text-xs font-semibold text-zinc-600 hover:bg-zinc-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-700 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700 dark:focus-visible:outline-teal-400">
+              Plus
+            </summary>
+            <div className="absolute right-0 z-30 mt-2 w-56 rounded-xl border border-zinc-200 bg-white p-2 shadow-lg dark:border-zinc-700 dark:bg-zinc-900">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="min-h-11 w-full justify-start"
+                onClick={() => {
+                  setIsImportingTimetable(false);
+                  handleOpenCreateForDate(selectedDayKey ?? toLocalDateKey(new Date()));
+                }}
+              >
+                <Icon icon={Add01Icon} size={14} />
+                Ajouter un événement ponctuel
+              </Button>
+            </div>
+          </details>
           <Button
             type="button"
             variant="secondary"
@@ -654,10 +662,14 @@ export function PlanningPage() {
               <Button
                 type="button"
                 variant="primary"
-                size="sm"
-                onClick={() => handleOpenCreateForDate(toLocalDateKey(new Date()))}
+                size="md"
+                onClick={() => {
+                  setIsIntelligentPlanOpen(true);
+                  setIsImportingTimetable(false);
+                  setIsCreating(false);
+                }}
               >
-                Créer un premier créneau
+                Construire mon premier programme
               </Button>
               <Button
                 type="button"
