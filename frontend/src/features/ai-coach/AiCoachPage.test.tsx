@@ -6,10 +6,10 @@ import { AppProviders } from '../../app/providers';
 import { installMockStudyApi, TEST_API_SESSION } from '../../test/mockStudyApi';
 import { AiCoachPage } from './AiCoachPage';
 
-function renderAiCoachPage() {
+function renderAiCoachPage(initialEntry = '/') {
   return render(
     <AppProviders initialSession={TEST_API_SESSION}>
-      <MemoryRouter>
+      <MemoryRouter initialEntries={[initialEntry]}>
         <AiCoachPage />
       </MemoryRouter>
     </AppProviders>,
@@ -69,6 +69,16 @@ describe('AiCoachPage', () => {
 
     await user.click(screen.getByRole('button', { name: 'Bilan hebdo' }));
     expect(await screen.findByText('Bilan hebdomadaire')).toBeInTheDocument();
+  });
+
+  it('préremplit la demande transmise par un autre espace sans l’envoyer automatiquement', async () => {
+    installMockStudyApi();
+    const prompt = 'Construis un parcours React adapté à mes compétences actuelles.';
+    renderAiCoachPage('/ai-coach?prompt=' + encodeURIComponent(prompt));
+
+    const input = await screen.findByLabelText(/Votre message au Copilote/);
+    await waitFor(() => expect(input).toHaveValue(prompt));
+    expect(screen.queryByText(prompt)).not.toBeInTheDocument();
   });
 
   it('annonce les trois vues mobiles du Copilote comme états pressés exclusifs', async () => {
