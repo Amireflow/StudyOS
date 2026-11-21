@@ -233,7 +233,7 @@ export function LearningPage() {
     return (
       <div className="space-y-5">
         <header>
-          <h1 className="text-xl font-semibold tracking-tight text-zinc-900 sm:text-2xl dark:text-zinc-50">
+          <h1 className="ui-page-title">
             Apprentissage
           </h1>
         </header>
@@ -246,7 +246,7 @@ export function LearningPage() {
     return (
       <div className="space-y-5">
         <header>
-          <h1 className="text-xl font-semibold tracking-tight text-zinc-900 sm:text-2xl dark:text-zinc-50">
+          <h1 className="ui-page-title">
             Apprentissage
           </h1>
         </header>
@@ -260,7 +260,7 @@ export function LearningPage() {
       {/* En-tête */}
       <header className="flex flex-wrap items-center justify-between gap-2.5">
         <div>
-          <h1 className="text-xl font-semibold tracking-tight text-zinc-900 sm:text-2xl dark:text-zinc-50">
+          <h1 className="ui-page-title">
             Apprentissage
           </h1>
           {summary.totalLessons > 0 && (

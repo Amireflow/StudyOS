@@ -286,7 +286,7 @@ export function SkillsPage() {
   };
 
   const pageTitle = (
-    <h1 className="text-xl font-semibold tracking-tight text-zinc-900 sm:text-2xl dark:text-zinc-50">
+    <h1 className="ui-page-title">
       Compétences
     </h1>
   );

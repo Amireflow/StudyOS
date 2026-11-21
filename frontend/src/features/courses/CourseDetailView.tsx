@@ -305,7 +305,7 @@ export function CourseDetailView({ courseId }: CourseDetailViewProps) {
               {detail.status === 'paused' && <Badge variant="warning">En pause</Badge>}
             </div>
 
-            <h1 className="mt-2 break-words text-lg font-bold tracking-tight text-zinc-950 sm:text-xl dark:text-zinc-50">
+            <h1 className="ui-page-title mt-2 break-words">
               {detail.title}
             </h1>
             {detail.description && (

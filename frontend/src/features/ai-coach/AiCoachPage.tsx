@@ -558,7 +558,7 @@ export function AiCoachPage() {
             <Icon icon={AiChat02Icon} size={16} />
           </div>
           <div className="flex min-w-0 items-center gap-2">
-            <h1 className="text-base font-semibold tracking-tight text-zinc-900 dark:text-zinc-100">
+            <h1 className="ui-page-title">
               Copilote
             </h1>
             {activeConversation && (
@@ -1001,7 +1001,7 @@ export function AiCoachPage() {
             )}
           >
             {messages.length === 0 && !isSending ? (
-              <div className="mx-auto flex max-w-2xl flex-col justify-center py-6 sm:py-12">
+              <div className="mx-auto flex max-w-2xl flex-col justify-center py-4 sm:py-8">
                 <div className="text-center">
                   <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-2xl bg-teal-50 text-teal-700 dark:bg-teal-950/60 dark:text-teal-400">
                     <Icon icon={SparklesIcon} size={20} />
@@ -1014,22 +1014,22 @@ export function AiCoachPage() {
                   </p>
                 </div>
 
-                <div className="mt-5 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                <div className="mt-4 grid grid-cols-1 gap-1.5 sm:grid-cols-2 sm:gap-2">
                   {STARTER_PROMPTS.map((item) => (
                     <button
                       key={item.title}
                       type="button"
                       onClick={() => handleUseStarterPrompt(item.prompt)}
-                      className="flex items-center gap-3 rounded-xl bg-zinc-50 p-3 text-left transition-colors hover:bg-zinc-100 dark:bg-zinc-800/70 dark:hover:bg-zinc-800"
+                      className="flex min-h-16 items-center gap-3 rounded-xl bg-zinc-50 px-3 py-2.5 text-left transition-colors hover:bg-zinc-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-700 dark:bg-zinc-800/70 dark:hover:bg-zinc-800 dark:focus-visible:outline-teal-400"
                     >
                       <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-white text-teal-700 dark:bg-zinc-900 dark:text-teal-400">
                         <Icon icon={item.icon} size={16} />
                       </span>
                       <div className="min-w-0 flex-1">
-                        <p className="truncate text-xs font-semibold text-zinc-900 dark:text-zinc-100">
+                        <p className="truncate text-[13px] font-semibold text-zinc-900 dark:text-zinc-100">
                           {item.title}
                         </p>
-                        <p className="truncate text-[11px] text-zinc-500 dark:text-zinc-400">
+                        <p className="line-clamp-1 text-xs text-zinc-500 dark:text-zinc-400">
                           {item.subtitle}
                         </p>
                       </div>
