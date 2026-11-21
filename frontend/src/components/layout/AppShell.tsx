@@ -205,7 +205,7 @@ export function AppShell() {
       <aside className="hidden lg:fixed lg:inset-y-0 lg:flex lg:w-60 lg:flex-col lg:bg-white dark:lg:bg-zinc-900">
         <div className="flex h-14 items-center justify-between px-4 pl-5">
           <BrandLogo />
-          <ThemeToggleButton className="h-8 w-8" />
+          <ThemeToggleButton className="h-10 w-10" />
         </div>
 
         <ScrollArea
@@ -233,13 +233,13 @@ export function AppShell() {
                 type="button"
                 onClick={() => void handleInstallClick()}
                 aria-label="Installer l’application sur le téléphone"
-                className="inline-flex h-8 items-center gap-1 rounded-lg bg-teal-700 px-2.5 text-xs font-semibold text-white transition-transform active:scale-95 dark:bg-teal-600"
+                className="inline-flex min-h-11 items-center gap-1 rounded-lg bg-teal-700 px-2.5 text-xs font-semibold text-white transition-transform active:scale-95 dark:bg-teal-600"
               >
                 <Icon icon={Download01Icon} size={14} />
                 <span>Installer</span>
               </button>
             )}
-            <ThemeToggleButton className="h-9 w-9 active:scale-95" />
+            <ThemeToggleButton className="h-11 w-11 active:scale-95" />
             <button
               type="button"
               ref={mobileMenuTriggerRef}
@@ -277,7 +277,7 @@ export function AppShell() {
                 type="button"
                 onClick={() => setIsMobileMenuOpen(false)}
                 aria-label="Fermer le menu"
-                className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100 cursor-pointer"
+                className="inline-flex h-11 w-11 items-center justify-center rounded-lg text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100 cursor-pointer"
               >
                 <Icon icon={Cancel01Icon} size={18} />
               </button>
