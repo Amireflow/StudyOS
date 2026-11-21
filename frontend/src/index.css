@@ -264,6 +264,16 @@ html.dark {
     background-color: var(--color-border);
   }
 
+  .ui-button--outline {
+    color: var(--color-text);
+    background-color: transparent;
+    border-color: var(--color-border-strong);
+  }
+
+  .ui-button--outline:hover:not(:disabled) {
+    background-color: var(--color-surface-muted);
+  }
+
   .ui-button--ghost {
     color: var(--color-text-secondary);
     background-color: transparent;
@@ -272,6 +282,17 @@ html.dark {
   .ui-button--ghost:hover:not(:disabled) {
     color: var(--color-text);
     background-color: var(--color-surface-muted);
+  }
+
+  .ui-button--link {
+    color: var(--color-accent);
+    background-color: transparent;
+    text-decoration: none;
+    text-underline-offset: 3px;
+  }
+
+  .ui-button--link:hover:not(:disabled) {
+    text-decoration: underline;
   }
 
   .ui-button--danger {

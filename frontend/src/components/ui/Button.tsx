@@ -3,7 +3,7 @@ import { Loading03Icon } from '@hugeicons/core-free-icons';
 import { cn } from '../../lib/cn';
 import { Icon } from './Icon';
 
-export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger';
+export type ButtonVariant = 'primary' | 'secondary' | 'outline' | 'ghost' | 'danger' | 'link';
 export type ButtonSize = 'sm' | 'md';
 
 export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {

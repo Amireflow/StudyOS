@@ -20,6 +20,18 @@ describe('Design System foundations', () => {
     expect(button).toHaveAttribute('aria-busy', 'true');
   });
 
+  it('supports outline and link button variants', () => {
+    render(
+      <>
+        <Button variant="outline">Prévisualiser</Button>
+        <Button variant="link">Voir les détails</Button>
+      </>,
+    );
+
+    expect(screen.getByRole('button', { name: 'Prévisualiser' })).toHaveClass('ui-button--outline');
+    expect(screen.getByRole('button', { name: 'Voir les détails' })).toHaveClass('ui-button--link');
+  });
+
   it('keeps form labels visible and applies the shared control class', () => {
     render(
       <FormField id="course-title" label="Titre du cours" hint="Un nom court et précis.">
