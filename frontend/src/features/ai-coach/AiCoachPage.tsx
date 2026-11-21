@@ -929,9 +929,10 @@ export function AiCoachPage() {
       >
         <button
           type="button"
+          aria-pressed={mobileView === 'chat'}
           onClick={() => setMobileView('chat')}
           className={cn(
-            'rounded-xl px-2.5 py-1.5 text-xs font-semibold transition-colors',
+            'min-h-11 rounded-xl px-2.5 py-1.5 text-xs font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-700 dark:focus-visible:outline-teal-400',
             mobileView === 'chat'
               ? 'bg-white text-zinc-900 dark:bg-zinc-800 dark:text-zinc-100'
               : 'text-zinc-600 dark:text-zinc-400',
@@ -941,12 +942,13 @@ export function AiCoachPage() {
         </button>
         <button
           type="button"
+          aria-pressed={mobileView === 'rail' && railTab === 'proposals'}
           onClick={() => {
             setRailTab('proposals');
             setMobileView('rail');
           }}
           className={cn(
-            'flex items-center justify-center gap-1.5 rounded-xl px-2.5 py-1.5 text-xs font-semibold transition-colors',
+            'flex items-center justify-center gap-1.5 min-h-11 rounded-xl px-2.5 py-1.5 text-xs font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-700 dark:focus-visible:outline-teal-400',
             mobileView === 'rail' && railTab === 'proposals'
               ? 'bg-white text-zinc-900 dark:bg-zinc-800 dark:text-zinc-100'
               : 'text-zinc-600 dark:text-zinc-400',
@@ -961,12 +963,13 @@ export function AiCoachPage() {
         </button>
         <button
           type="button"
+          aria-pressed={mobileView === 'rail' && railTab === 'reports'}
           onClick={() => {
             setRailTab('reports');
             setMobileView('rail');
           }}
           className={cn(
-            'flex items-center justify-center gap-1.5 rounded-xl px-2.5 py-1.5 text-xs font-semibold transition-colors',
+            'flex items-center justify-center gap-1.5 min-h-11 rounded-xl px-2.5 py-1.5 text-xs font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-700 dark:focus-visible:outline-teal-400',
             mobileView === 'rail' && railTab === 'reports'
               ? 'bg-white text-zinc-900 dark:bg-zinc-800 dark:text-zinc-100'
               : 'text-zinc-600 dark:text-zinc-400',

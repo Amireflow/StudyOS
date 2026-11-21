@@ -129,7 +129,7 @@ export function CoursesPage() {
               <Icon icon={Mortarboard02Icon} size={18} />
             </div>
             <div>
-              <h1 className="text-lg font-semibold tracking-tight text-zinc-900 sm:text-xl dark:text-zinc-50">
+              <h1 className="ui-page-title">
                 Cours
               </h1>
               <p className="text-xs text-zinc-500 dark:text-zinc-400">
@@ -178,8 +178,8 @@ export function CoursesPage() {
                 onClick={() => setStatusFilter(opt.value)}
                 className={
                   statusFilter === opt.value
-                    ? 'shrink-0 cursor-pointer rounded-lg bg-white px-3 py-1 text-xs font-semibold text-zinc-900 dark:bg-zinc-900 dark:text-zinc-100'
-                    : 'shrink-0 cursor-pointer rounded-lg px-3 py-1 text-xs font-medium text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100'
+                    ? 'inline-flex min-h-11 shrink-0 cursor-pointer items-center rounded-lg bg-white px-3 text-xs font-semibold text-zinc-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-700 dark:bg-zinc-900 dark:text-zinc-100 dark:focus-visible:outline-teal-400'
+                    : 'inline-flex min-h-11 shrink-0 cursor-pointer items-center rounded-lg px-3 text-xs font-medium text-zinc-600 hover:text-zinc-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-700 dark:text-zinc-400 dark:hover:text-zinc-100 dark:focus-visible:outline-teal-400'
                 }
               >
                 {opt.label}

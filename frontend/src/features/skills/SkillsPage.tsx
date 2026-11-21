@@ -29,7 +29,7 @@ import {
 
 type QuickFilter = 'all' | 'validated' | 'unsubstantiated';
 
-const PILL_BASE = 'rounded-full px-3 py-1 text-xs font-medium transition-colors';
+const PILL_BASE = 'inline-flex min-h-11 items-center rounded-full px-3 text-xs font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-700 dark:focus-visible:outline-teal-400';
 const PILL_ACTIVE = 'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900';
 const PILL_IDLE =
   'bg-zinc-100 text-zinc-600 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700';
