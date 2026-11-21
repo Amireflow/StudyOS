@@ -51,13 +51,13 @@ const STARTER_PROMPTS: Array<{
   {
     title: 'Planifier ma journée',
     subtitle: 'Construire un programme réaliste depuis mes contraintes',
-    prompt: 'Analyse ma priorité active, mes cours fixes et mes disponibilités, puis propose un programme réaliste pour ma journée.',
+    prompt: 'Planifie ma journée autour de ma priorité active et de mes créneaux disponibles.',
     icon: Calendar03Icon,
   },
   {
     title: 'Apprendre une compétence',
     subtitle: 'Créer une progression complète et adaptée à mon niveau',
-    prompt: 'Je veux apprendre React depuis mon niveau actuel. Évalue les prérequis et construis une progression complète avec cours, exercices et projets.',
+    prompt: 'Je voudrais apprendre le développement avec React.',
     icon: BookOpen01Icon,
   },
   {

@@ -105,7 +105,7 @@ describe('AiCoachPage', () => {
 
     const promptInput = screen.getByLabelText(/Votre message au Copilote/);
     expect(promptInput).toHaveValue(
-      'Analyse ma priorité active, mes cours fixes et mes disponibilités, puis propose un programme réaliste pour ma journée.',
+      'Planifie ma journée autour de ma priorité active et de mes créneaux disponibles.',
     );
 
     await user.keyboard('{Enter}');
