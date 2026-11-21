@@ -265,6 +265,36 @@ class ActionValidator:
         user_id: UUID,
         candidate: RawProposalCandidate,
     ) -> ValidatedProposal:
+        # Les anciens modèles peuvent encore renvoyer plusieurs create_schedule_event
+        # dans un batch pour simuler un programme d'étude. Re-router ce cas vers
+        # le moteur spécialisé, qui recalcule les priorités et disponibilités réelles.
+        if candidate.action_type == AiActionType.batch_actions.value:
+            raw_steps = candidate.payload.get("steps") or candidate.payload.get("actions") or []
+            study_steps = [
+                step
+                for step in raw_steps
+                if isinstance(step, dict)
+                and str(step.get("action_type") or step.get("action") or "") == AiActionType.create_schedule_event.value
+                and isinstance(step.get("payload"), dict)
+                and str(step["payload"].get("type") or "").lower() in ("learning", "project")
+            ] if isinstance(raw_steps, list) else []
+            if isinstance(raw_steps, list) and len(raw_steps) >= 2 and len(study_steps) == len(raw_steps):
+                candidate = RawProposalCandidate(
+                    action_type=AiActionType.generate_learning_plan.value,
+                    title="Construire un programme d'apprentissage structuré",
+                    explanation=(
+                        "Les créneaux proposés individuellement sont recalculés par le moteur StudyOS "
+                        "à partir des priorités pédagogiques, des cours, des disponibilités et de la charge réelle."
+                    ),
+                    payload={
+                        "horizon_days": 7,
+                        "max_sessions": min(30, len(study_steps)),
+                        "include_potential_slots": True,
+                        "replace_future_planned": True,
+                        "apply_immediately": True,
+                    },
+                )
+
         if not self._tool_registry.is_allowed_proposal_action(candidate.action_type):
             raise AppError(
                 422,

@@ -220,6 +220,7 @@ class PlanMissingInfoItem(BaseModel):
 
 class LearningPlanGenerateRequest(BaseModel):
     horizon_days: int = Field(default=7, ge=1, le=30)
+    max_sessions: int | None = Field(default=None, ge=1, le=30)
     range_start: datetime | None = None
     timezone: str | None = Field(default=None, min_length=2, max_length=64)
     focus_subject: str | None = Field(default=None, max_length=120)

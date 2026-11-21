@@ -811,13 +811,17 @@ _FR_NUMBER_WORDS: dict[str, int] = {
     "quatre": 4,
     "cinq": 5,
     "six": 6,
+    "sept": 7,
+    "huit": 8,
+    "neuf": 9,
+    "dix": 10,
 }
 
 
 def _extract_count_word(lowered: str, default: int = 2) -> int:
     digit_m = re.search(r"\b(\d+)\s*(?:séances?|sessions?|créneaux?|blocs?)\b", lowered)
     if digit_m:
-        return max(1, min(7, int(digit_m.group(1))))
+        return max(1, min(30, int(digit_m.group(1))))
     for word, val in _FR_NUMBER_WORDS.items():
         if re.search(rf"\b{word}\s+(?:séances?|sessions?|créneaux?|blocs?)\b", lowered):
             return val
@@ -1569,113 +1573,56 @@ def _handle_ai_first_intents(
                 model_name=model_name,
             )
 
-    # 7. Planification de N séances cette semaine (respectant disponibilités + cours + volume hebdo)
+    # 7. Toute demande de plusieurs séances passe par le moteur de planification dédié.
     multi_session_m = re.search(
-        r"(?:programme|planifie|organise|prévois|ajoute)\s+(?:[2-7]|deux|trois|quatre|cinq|six|plusieurs|des)\s+(?:séances|sessions|créneaux)\b",
+        r"(?:programme|planifie|organise|prévois|ajoute|prépare)\s+(?:de\s+)?(?:[2-9]|1[0-9]|2[0-9]|30|deux|trois|quatre|cinq|six|sept|huit|neuf|dix|plusieurs|des)\s+(?:séances|sessions|créneaux)\b",
         lowered,
     )
     if multi_session_m or re.search(
-        r"\b(?:deux|trois|quatre|cinq|six|[2-7])\s+(?:séances|sessions|créneaux)\s+(?:cette\s+semaine|sur\s+la\s+semaine)\b",
+        r"\b(?:[2-9]|1[0-9]|2[0-9]|30|deux|trois|quatre|cinq|six|sept|huit|neuf|dix)\s+(?:séances|sessions|créneaux)\s+(?:cette\s+semaine|sur\s+la\s+semaine)\b",
         lowered,
     ):
         count = _extract_count_word(lowered, default=3)
-        weekly_budget_min = avail_prefs.get("max_weekly_study_minutes")
-        existing_personal_min = int((context.strategic_analysis or {}).get("weekly_personal_minutes", 0))
-        # Sélectionner des créneaux distincts par jour en priorité dans weekly_candidate_slots
-        selected_slots: list[dict[str, Any]] = []
-        used_dates: set[str] = set()
-        accumulated_min = existing_personal_min
-        for slot in weekly_slots:
-            if len(selected_slots) >= count:
-                break
-            if slot["local_date"] in used_dates:
-                continue
-            if weekly_budget_min is not None and (accumulated_min + int(slot["duration_minutes"])) > int(weekly_budget_min):
-                continue
-            selected_slots.append(slot)
-            used_dates.add(slot["local_date"])
-            accumulated_min += int(slot["duration_minutes"])
-        for slot in weekly_slots:
-            if len(selected_slots) >= count:
-                break
-            if slot in selected_slots:
-                continue
-            if weekly_budget_min is not None and (accumulated_min + int(slot["duration_minutes"])) > int(weekly_budget_min):
-                continue
-            selected_slots.append(slot)
-            accumulated_min += int(slot["duration_minutes"])
-
-        if selected_slots:
-            primary_focus = (
-                (personal_goals[0]["title"] if personal_goals else None)
-                or context.profile.get("active_priority_title")
-                or (projects[0]["name"] if projects else "Travail personnel")
+        primary_focus = (
+            (personal_goals[0]["title"] if personal_goals else None)
+            or context.profile.get("active_priority_title")
+            or (projects[0]["name"] if projects else "vos priorités actives")
+        )
+        plan_payload: dict[str, Any] = {
+            "horizon_days": 7,
+            "max_sessions": count,
+            "include_potential_slots": True,
+            "create_missing_courses": False,
+            "apply_immediately": True,
+            "replace_future_planned": True,
+        }
+        proposals.append(
+            RawProposalCandidate(
+                action_type=AiActionType.generate_learning_plan.value,
+                title=f"Construire un programme de {count} séances réellement adaptées",
+                explanation=(
+                    "Le moteur StudyOS recalculera les priorités pédagogiques, les prochaines étapes "
+                    "des cours et parcours existants, puis sélectionnera des créneaux réels sans "
+                    "chevaucher les cours ni dépasser la charge autorisée."
+                ),
+                payload=plan_payload,
             )
-            steps = [
-                {
-                    "action_type": AiActionType.create_schedule_event.value,
-                    "payload": {
-                        "title": f"Séance {idx + 1} : {primary_focus}",
-                        "type": "learning",
-                        "starts_at": slot["starts_at"],
-                        "ends_at": slot["ends_at"],
-                        "notes": f"Planifié selon vos disponibilités ({slot['day_label']} {slot['local_start_time']} à {slot['local_end_time']}).",
-                    },
-                }
-                for idx, slot in enumerate(selected_slots)
-            ]
-            if len(steps) == 1:
-                proposals.append(
-                    RawProposalCandidate(
-                        action_type=AiActionType.create_schedule_event.value,
-                        title=f"Planifier 1 séance ({primary_focus})",
-                        explanation="Créneau sans conflit conforme à vos disponibilités.",
-                        payload=steps[0]["payload"],
-                    )
-                )
-            else:
-                proposals.append(
-                    RawProposalCandidate(
-                        action_type=AiActionType.batch_actions.value,
-                        title=f"Programmer {len(steps)} séances cette semaine ({primary_focus})",
-                        explanation="Respecte vos cours universitaires, jours exclus et contraintes mémorisées.",
-                        payload={
-                            "summary": f"{len(steps)} séances hebdomadaires pour {primary_focus}",
-                            "steps": steps,
-                            "compensate_on_failure": True,
-                        },
-                    )
-                )
-            slot_desc = ", ".join(
-                f"{s['day_label']} {s['local_start_time']} à {s['local_end_time']}" for s in selected_slots
-            )
-            budget_note = (
-                f" (budget hebdo {avail_prefs.get('weekly_study_hours')}h respecté)"
-                if avail_prefs.get("weekly_study_hours") is not None
-                else ""
-            )
-            course_entries: list[str] = []
-            for c in (context.university_courses or [])[:3]:
-                title_str = str(c.get("title", "")).strip()
-                if not title_str:
-                    continue
-                st = str(c.get("local_start_time") or "").strip()
-                et = str(c.get("local_end_time") or "").strip()
-                course_entries.append(f"{title_str} ({st} à {et})" if st and et else title_str)
-            course_note = (
-                f" (cours respectés : {', '.join(course_entries)})" if course_entries else ""
-            )
-            lines.append(
-                f"J'ai sélectionné **{len(selected_slots)} séance(s)** disponibles{budget_note} sans chevaucher vos cours{course_note} : {slot_desc}."
-            )
-            return ProviderResult(
-                reply="\n\n".join(lines),
-                proposals=proposals,
-                is_estimate=context.is_partial_data,
-                missing_data=context.missing_data,
-                provider_name="local",
-                model_name=model_name,
-            )
+        )
+        lines.append(
+            f"J'ai transmis la demande de **{count} séance(s)** au moteur de planification complet. "
+            f"Il va répartir le travail autour de **{primary_focus}**, des matières et objectifs réellement "
+            "actifs, des difficultés identifiées et de vos disponibilités. Le nombre demandé est un plafond : "
+            "aucune séance ne sera inventée si les créneaux ou les priorités ne le permettent pas. "
+            "Validez pour générer et appliquer le programme."
+        )
+        return ProviderResult(
+            reply="\n\n".join(lines),
+            proposals=proposals,
+            is_estimate=context.is_partial_data,
+            missing_data=context.missing_data,
+            provider_name="local",
+            model_name=model_name,
+        )
 
     # 7b. Génération ou recalcul du programme d'apprentissage intelligent multi-sources
     if any(
@@ -1683,6 +1630,13 @@ def _handle_ai_first_intents(
         for p in (
             "programme d'apprentissage",
             "programme d’apprentissage",
+            "plan de travail",
+            "programme de travail",
+            "planning de travail",
+            "planifie ma semaine",
+            "planifier ma semaine",
+            "organise ma semaine",
+            "organiser ma semaine",
             "programme d apprentissage",
             "emploi du temps d'apprentissage",
             "emploi du temps d’apprentissage",
@@ -1691,6 +1645,10 @@ def _handle_ai_first_intents(
             "crée-moi un programme",
             "cree-moi un programme",
             "programme mes séances",
+            "programme de séances",
+            "programme de plusieurs séances",
+            "organise plusieurs séances",
+            "prépare plusieurs séances",
             "planifie mes séances",
             "organise mes séances",
             "prépare mes révisions",

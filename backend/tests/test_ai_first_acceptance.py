@@ -179,9 +179,13 @@ def test_ai_first_scenarios_01_to_06_full_entity_lifecycle_without_duplicates(
     )
     assert t6.status_code == 201
     prop6 = t6.json()["proposals"][0]
-    assert prop6["action_type"] == "batch_actions"
+    assert prop6["action_type"] == "generate_learning_plan"
+    assert prop6["payload"]["max_sessions"] == 3
     acc6 = client.post(f"/api/v1/ai/proposals/{prop6['id']}/accept", json={}, headers=user_a_headers)
     assert acc6.status_code == 200
+    plan_result = acc6.json()["execution_result"]
+    assert plan_result["entity"] == "learning_plan"
+    assert 1 <= plan_result["applied_event_count"] <= 3
     events = client.get("/api/v1/schedule", headers=user_a_headers).json()
     ai_events = [ev for ev in events if ev.get("source") == "ai_proposal"]
     assert len(ai_events) >= 3

@@ -2434,6 +2434,7 @@ class AIOrchestrator:
                         weekly_hours_override=payload.get("weekly_hours_override"),
                         daily_max_minutes=payload.get("daily_max_minutes"),
                         preferred_session_minutes=payload.get("preferred_session_minutes"),
+                        max_sessions=payload.get("max_sessions"),
                         include_potential_slots=bool(payload.get("include_potential_slots", True)),
                         create_missing_courses=bool(payload.get("create_missing_courses", False)),
                     ),
