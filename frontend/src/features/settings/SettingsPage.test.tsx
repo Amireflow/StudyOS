@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -19,6 +19,23 @@ function renderSettingsPage() {
 describe('SettingsPage', () => {
   afterEach(() => {
     vi.restoreAllMocks();
+  });
+
+  it('propose une navigation interne par intention entre les sections de paramètres', async () => {
+    installMockStudyApi();
+    renderSettingsPage();
+
+    const nav = await screen.findByRole('navigation', { name: 'Sections des paramètres' });
+    expect(within(nav).getByRole('link', { name: 'Profil' })).toHaveAttribute('href', '#settings-profile');
+    expect(within(nav).getByRole('link', { name: 'Fournisseur IA' })).toHaveAttribute('href', '#settings-ai-provider');
+    expect(within(nav).getByRole('link', { name: 'Apparence' })).toHaveAttribute('href', '#settings-appearance');
+    expect(within(nav).getByRole('link', { name: 'Espace de travail' })).toHaveAttribute('href', '#settings-workspace');
+    expect(within(nav).getByRole('link', { name: 'Connexions' })).toHaveAttribute('href', '#settings-connections');
+    expect(document.getElementById('settings-profile')).toBeInTheDocument();
+    expect(document.getElementById('settings-ai-provider')).toBeInTheDocument();
+    expect(document.getElementById('settings-appearance')).toBeInTheDocument();
+    expect(document.getElementById('settings-workspace')).toBeInTheDocument();
+    expect(document.getElementById('settings-connections')).toBeInTheDocument();
   });
 
   it('permet d’appliquer un fuseau rapide, un préréglage de consignes Copilote et d’enregistrer le profil via l’API sans boutons d’exemple', async () => {

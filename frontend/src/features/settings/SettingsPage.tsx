@@ -274,6 +274,27 @@ export function SettingsPage() {
     <div className="space-y-3.5 sm:space-y-5">
       <PageHeader title="Paramètres" />
 
+      <nav
+        aria-label="Sections des paramètres"
+        className="no-scrollbar flex min-w-0 items-center gap-1.5 overflow-x-auto rounded-xl border border-zinc-200/80 bg-white/80 p-1.5 dark:border-zinc-800 dark:bg-zinc-900/80"
+      >
+        {[
+          { label: 'Profil', href: '#settings-profile' },
+          { label: 'Fournisseur IA', href: '#settings-ai-provider' },
+          { label: 'Apparence', href: '#settings-appearance' },
+          { label: 'Espace de travail', href: '#settings-workspace' },
+          { label: 'Connexions', href: '#settings-connections' },
+        ].map((item) => (
+          <a
+            key={item.href}
+            href={item.href}
+            className="inline-flex min-h-11 shrink-0 items-center rounded-lg px-3 text-xs font-semibold text-zinc-600 transition-colors hover:bg-zinc-100 hover:text-zinc-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-700 dark:text-zinc-300 dark:hover:bg-zinc-800 dark:hover:text-zinc-50 dark:focus-visible:outline-teal-400"
+          >
+            {item.label}
+          </a>
+        ))}
+      </nav>
+
       {feedback && <SuccessBanner message={feedback} onDismiss={() => setFeedback(null)} />}
       {mutationError && (
         <ErrorState message={mutationError} onRetry={clearMutationError} retryLabel="Fermer" />
@@ -318,8 +339,9 @@ export function SettingsPage() {
 
       {/* Formulaire Profil, Fuseau horaire & Consignes Copilote IA */}
       <section
+        id="settings-profile"
         aria-label="Profil et préférences"
-        className="space-y-4 rounded-2xl bg-white p-5 dark:bg-zinc-900"
+        className="scroll-mt-24 space-y-4 rounded-2xl bg-white p-5 dark:bg-zinc-900"
       >
         <div className="flex items-center gap-2">
           <Icon icon={Settings02Icon} size={17} className="text-teal-700 dark:text-teal-400" />
@@ -381,7 +403,7 @@ export function SettingsPage() {
                     type="button"
                     onClick={() => setTimezone(tz)}
                     className={cn(
-                      'shrink-0 rounded-lg px-2 py-0.5 text-[11px] font-medium transition-colors',
+                      'inline-flex min-h-11 shrink-0 items-center rounded-lg px-3 text-xs font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-700 dark:focus-visible:outline-teal-400',
                       timezone === tz
                         ? 'bg-teal-700 text-white dark:bg-teal-500 dark:text-zinc-950'
                         : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200/80 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700',
@@ -409,7 +431,7 @@ export function SettingsPage() {
                       type="button"
                       onClick={() => setAiInstructions(preset.text)}
                       className={cn(
-                        'inline-flex shrink-0 items-center gap-1 rounded-lg px-2 py-0.5 text-[11px] font-medium transition-colors',
+                        'inline-flex min-h-11 shrink-0 items-center gap-1 rounded-lg px-3 text-xs font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-700 dark:focus-visible:outline-teal-400',
                         isSelected
                           ? 'bg-teal-700 text-white dark:bg-teal-500 dark:text-zinc-950'
                           : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200/80 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700',
@@ -522,7 +544,7 @@ export function SettingsPage() {
                         )
                       }
                       className={cn(
-                        'rounded-lg px-2.5 py-1 text-xs font-medium transition-colors',
+                        'inline-flex min-h-11 items-center rounded-lg px-3 text-xs font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-700 dark:focus-visible:outline-teal-400',
                         isExcluded
                           ? 'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-950'
                           : 'bg-white text-zinc-600 hover:bg-zinc-100 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700',
@@ -565,7 +587,9 @@ export function SettingsPage() {
       </section>
 
       {/* Configuration fournisseur IA & récupération dynamique des modèles */}
-      <AiProviderSettingsCard />
+      <div id="settings-ai-provider" className="scroll-mt-24">
+        <AiProviderSettingsCard />
+      </div>
 
       {/* Compte & sécurité (affiché uniquement en session API authentifiée) */}
       <AccountSecurityCard />
@@ -574,8 +598,9 @@ export function SettingsPage() {
       <div className="grid gap-4 lg:grid-cols-2">
         {/* Apparence (épurée sans surcharge textuelle) */}
         <section
+          id="settings-appearance"
           aria-label="Apparence"
-          className="flex flex-col justify-between gap-3 rounded-2xl bg-white p-5 sm:flex-row sm:items-center dark:bg-zinc-900"
+          className="scroll-mt-24 flex flex-col justify-between gap-3 rounded-2xl bg-white p-5 sm:flex-row sm:items-center dark:bg-zinc-900"
         >
           <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-50">Apparence</h2>
           <ThemeSegmentedControl />
@@ -583,8 +608,9 @@ export function SettingsPage() {
 
         {/* Données & Espace de travail */}
         <section
+          id="settings-workspace"
           aria-label="Données et espace de travail"
-          className="space-y-3 rounded-2xl bg-white p-5 dark:bg-zinc-900"
+          className="scroll-mt-24 space-y-3 rounded-2xl bg-white p-5 dark:bg-zinc-900"
         >
           <div className="flex items-center justify-between gap-2">
             <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-50">
@@ -613,8 +639,9 @@ export function SettingsPage() {
 
       {/* Connexions API & Cloud */}
       <section
+        id="settings-connections"
         aria-label="Connexions API & Cloud"
-        className="space-y-3 rounded-2xl bg-white p-5 dark:bg-zinc-900"
+        className="scroll-mt-24 space-y-3 rounded-2xl bg-white p-5 dark:bg-zinc-900"
       >
         <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-50">
           Connexions
