@@ -25,6 +25,32 @@ describe('CoursesPage & verrou pédagogique multi-niveaux', () => {
     vi.restoreAllMocks();
   });
 
+  it('bloque toute création tant que le programme IA n’a pas été prévisualisé', async () => {
+    const api = installMockStudyApi();
+    const user = userEvent.setup();
+    renderCoursesApp();
+
+    await user.click(await screen.findByRole('button', { name: 'Nouveau cours' }));
+    const createButton = screen.getByRole('button', { name: 'Valider et créer le cours' });
+    expect(createButton).toBeDisabled();
+
+    await user.type(screen.getByLabelText(/Sujet ou domaine/), 'Python');
+    await user.type(
+      screen.getByLabelText(/Quel résultat veux-tu atteindre/),
+      'Développer une API backend et réussir mes exercices pratiques.',
+    );
+    expect(createButton).toBeDisabled();
+
+    await user.click(screen.getByRole('button', { name: 'Analyser et construire le programme' }));
+    expect(await screen.findByText(/Programme des niveaux/)).toBeInTheDocument();
+    expect(api.state.courses).toHaveLength(0);
+    expect(createButton).toBeEnabled();
+
+    await user.click(createButton);
+    expect(await screen.findByRole('tab', { name: /Chapitres/ })).toBeInTheDocument();
+    expect(api.state.courses).toHaveLength(1);
+  });
+
   it('prévisualise et crée un cours Python complet au Niveau 1, puis applique le verrou pédagogique avant de débloquer le Niveau 2', async () => {
     const api = installMockStudyApi();
     const user = userEvent.setup();
