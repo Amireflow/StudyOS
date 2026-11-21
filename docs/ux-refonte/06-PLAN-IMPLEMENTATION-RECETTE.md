@@ -22,7 +22,7 @@ Transformer progressivement la conception UX en interface cohérente, responsive
 
 ### Lot 0 — Référence visuelle et inventaire technique
 
-<badge>Statut documentaire : partiel accepté pour poursuivre</badge>
+**Statut : partiel accepté pour poursuivre.**
 
 Livrables réalisés :
 - inventaire des tokens, composants partagés, navigation, routes et scripts de qualité ;
@@ -37,7 +37,7 @@ La limitation et les observations sont conservées dans `07-LOT-0-ETAT-REFERENCE
 
 ### Lot 1 — Fondations du Design System
 
-<badge color="success">Implémentation et CI réussies</badge>
+**Statut : implémentation et CI réussies.**
 
 Périmètre :
 - tokens CSS sémantiques clair/sombre ;
@@ -62,7 +62,7 @@ Critère de sortie :
 
 ### Lot 2 — Shell, navigation et Dashboard
 
-<badge color="success">Implémenté sur main</badge>
+**Statut : implémenté sur main.**
 
 Périmètre :
 - groupes Apprentissage et Organisation ;
@@ -78,7 +78,7 @@ Critère de sortie :
 
 ### Lot 3 — Apprentissage
 
-<badge color="success">Implémenté sur main</badge>
+**Statut : implémenté sur main.**
 
 Périmètre :
 - index des cours et parcours ;
@@ -95,7 +95,7 @@ Critère de sortie :
 
 ### Lot 4 — Organisation
 
-<badge color="success">Implémenté sur main</badge>
+**Statut : implémenté sur main.**
 
 Périmètre :
 - planning hebdomadaire et liste mobile ;
@@ -111,7 +111,7 @@ Critère de sortie :
 
 ### Lot 5 — Projets, Copilote et Paramètres
 
-<badge color="success">Implémenté sur main</badge>
+**Statut : implémenté sur main.**
 
 Périmètre :
 - projets et objectifs ;
@@ -126,7 +126,7 @@ Critère de sortie :
 
 ### Lot 6 — Recette transversale et stabilisation
 
-<badge color="warning">Partiellement terminé — inspection navigateur restante</badge>
+**Statut : partiellement terminé — inspection navigateur restante.**
 
 Déjà vérifié automatiquement :
 - TypeScript strict ;
@@ -166,7 +166,7 @@ Un lot n'est terminé que si :
 3. typecheck, tests et build passent ;
 4. les parcours desktop et mobile ont été inspectés ;
 5. aucune régression métier n'est identifiée ;
-6. les changements sont commités sur la branche dédiée ;
+6. les changements sont commités dans la branche de travail définie pour le lot ;
 7. le bilan mentionne les fichiers modifiés, preuves et limites restantes.
 
 ## 6. Mesures de succès UX

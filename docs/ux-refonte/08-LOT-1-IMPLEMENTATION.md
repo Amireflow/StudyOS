@@ -75,7 +75,7 @@ Exécution GitHub Actions liée au commit applicatif `124f2e84e51daab894c65f163a
 | Alembic — migrations et réversibilité | réussite |
 | Pytest backend | 133 tests réussis, 5 avertissements |
 
-Le build final signale un chunk JavaScript minifié de 1 000,40 kB, supérieur au seuil d'avertissement de 700 kB configuré. Le build réussit ; l'optimisation du découpage du bundle est un sujet séparé et n'a pas été élargie dans ce lot.
+Le build initial de ce lot signalait un chunk JavaScript minifié de 1 000,40 kB, supérieur au seuil d'avertissement de 700 kB configuré. Le build réussissait ; le découpage du bundle a ensuite été traité dans le Lot 6 par chargement à la demande des pages métier.
 
 Une première exécution CI a échoué au typecheck à cause de caractères d'échappement dans trois expressions TypeScript. Ces erreurs ont été corrigées dans le commit suivant ; la seconde exécution, sur le commit indiqué ci-dessus, est entièrement verte.
 
@@ -90,9 +90,4 @@ Une première exécution CI a échoué au typecheck à cause de caractères d'é
 
 **Implémentation de base et CI : réussies.** L'inspection visuelle après modification reste un élément de la recette transversale Lot 6 ; elle n'est pas considérée comme réalisée.
 
-Avant de passer au Lot 2 :
-1. déployer ou ouvrir une prévisualisation de la branche ;
-2. vérifier au minimum le tableau de bord, le planning, le Copilote et les formulaires en thème clair et sombre sur mobile ;
-3. confirmer l'absence de débordement, de boutons trop petits et de régression dans les formulaires.
-
-La pull request reste en brouillon et aucune modification n'a été fusionnée dans `main`.
+Le Lot 2 et les lots suivants ont depuis été réalisés dans `main`. La recette visuelle après modification a été regroupée dans le Lot 6 et reste à effectuer sur une vraie prévisualisation ou le site déployé. La PR #3 a été fusionnée dans `main`.
