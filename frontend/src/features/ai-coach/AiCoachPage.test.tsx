@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -68,6 +68,30 @@ describe('AiCoachPage', () => {
 
     await user.click(screen.getByRole('button', { name: 'Bilan hebdo' }));
     expect(await screen.findByText('Bilan hebdomadaire')).toBeInTheDocument();
+  });
+
+  it('annonce les trois vues mobiles du Copilote comme états pressés exclusifs', async () => {
+    installMockStudyApi();
+    const user = userEvent.setup();
+    renderAiCoachPage();
+
+    const nav = await screen.findByRole('navigation', { name: 'Vues mobiles du copilote' });
+    const discussion = within(nav).getByRole('button', { name: 'Discussion' });
+    const actions = within(nav).getByRole('button', { name: 'Actions' });
+    const syntheses = within(nav).getByRole('button', { name: /Synthèses/ });
+
+    expect(discussion).toHaveAttribute('aria-pressed', 'true');
+    expect(actions).toHaveAttribute('aria-pressed', 'false');
+    expect(syntheses).toHaveAttribute('aria-pressed', 'false');
+
+    await user.click(actions);
+    expect(discussion).toHaveAttribute('aria-pressed', 'false');
+    expect(actions).toHaveAttribute('aria-pressed', 'true');
+    expect(syntheses).toHaveAttribute('aria-pressed', 'false');
+
+    await user.click(syntheses);
+    expect(actions).toHaveAttribute('aria-pressed', 'false');
+    expect(syntheses).toHaveAttribute('aria-pressed', 'true');
   });
 
   it('propose des amorces rapides, envoie avec Entrée, et permet d’ouvrir les outils et l’historique', async () => {

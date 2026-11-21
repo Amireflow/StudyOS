@@ -401,6 +401,7 @@ export function SettingsPage() {
                   <button
                     key={tz}
                     type="button"
+                    aria-pressed={timezone === tz}
                     onClick={() => setTimezone(tz)}
                     className={cn(
                       'inline-flex min-h-11 shrink-0 items-center rounded-lg px-3 text-xs font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-700 dark:focus-visible:outline-teal-400',
@@ -429,6 +430,7 @@ export function SettingsPage() {
                     <button
                       key={preset.label}
                       type="button"
+                      aria-pressed={isSelected}
                       onClick={() => setAiInstructions(preset.text)}
                       className={cn(
                         'inline-flex min-h-11 shrink-0 items-center gap-1 rounded-lg px-3 text-xs font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-700 dark:focus-visible:outline-teal-400',

@@ -339,7 +339,7 @@ export function CourseDetailView({ courseId }: CourseDetailViewProps) {
                 aria-label={`Niveau ${lv.levelNumber} : ${lv.title}`}
                 onClick={() => setSelectedLevelNumber(lv.levelNumber)}
                 className={cn(
-                  'flex min-w-[140px] shrink-0 cursor-pointer flex-col items-start gap-1 rounded-xl p-2.5 text-left transition-colors sm:min-w-0 sm:p-3',
+                  'flex min-h-16 min-w-[140px] shrink-0 cursor-pointer flex-col items-start justify-center gap-1 rounded-xl p-2.5 text-left transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-700 dark:focus-visible:outline-teal-400 sm:min-w-0 sm:p-3',
                   isSelected
                     ? 'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-950'
                     : isLocked
@@ -422,7 +422,7 @@ export function CourseDetailView({ courseId }: CourseDetailViewProps) {
                 aria-selected={activeTab === 'chapters'}
                 onClick={() => setActiveTab('chapters')}
                 className={cn(
-                  'min-w-0 cursor-pointer truncate rounded-xl px-2.5 py-1.5 text-xs font-semibold transition-colors sm:px-3.5',
+                  'inline-flex min-h-11 min-w-0 cursor-pointer items-center justify-center truncate rounded-xl px-2.5 text-xs font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-700 dark:focus-visible:outline-teal-400 sm:px-3.5',
                   activeTab === 'chapters'
                     ? 'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-950'
                     : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800',
@@ -437,7 +437,7 @@ export function CourseDetailView({ courseId }: CourseDetailViewProps) {
                 aria-selected={activeTab === 'project'}
                 onClick={() => setActiveTab('project')}
                 className={cn(
-                  'min-w-0 cursor-pointer truncate rounded-xl px-2.5 py-1.5 text-xs font-semibold transition-colors sm:px-3.5',
+                  'inline-flex min-h-11 min-w-0 cursor-pointer items-center justify-center truncate rounded-xl px-2.5 text-xs font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-700 dark:focus-visible:outline-teal-400 sm:px-3.5',
                   activeTab === 'project'
                     ? 'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-950'
                     : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800',
@@ -452,7 +452,7 @@ export function CourseDetailView({ courseId }: CourseDetailViewProps) {
                 aria-selected={activeTab === 'resources'}
                 onClick={() => setActiveTab('resources')}
                 className={cn(
-                  'min-w-0 cursor-pointer truncate rounded-xl px-2.5 py-1.5 text-xs font-semibold transition-colors sm:px-3.5',
+                  'inline-flex min-h-11 min-w-0 cursor-pointer items-center justify-center truncate rounded-xl px-2.5 text-xs font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-700 dark:focus-visible:outline-teal-400 sm:px-3.5',
                   activeTab === 'resources'
                     ? 'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-950'
                     : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800',
