@@ -201,7 +201,8 @@ describe('DashboardPage', () => {
     const user = userEvent.setup();
     renderDashboardPage();
 
-    await user.click(await screen.findByRole('button', { name: 'Nouvelle tâche' }));
+    await user.click(screen.getByText('Plus'));
+    await user.click(screen.getByRole('button', { name: 'Capture manuelle rapide' }));
     await user.type(screen.getByLabelText('Nouvelle tâche rapide'), 'Préparer le TP SQL');
     await user.click(screen.getByRole('button', { name: 'Ajouter' }));
 
