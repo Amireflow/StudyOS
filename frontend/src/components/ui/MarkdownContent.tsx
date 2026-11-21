@@ -118,13 +118,13 @@ function CodeBlock({ language, code }: { language: string; code: string }) {
           type="button"
           onClick={() => void handleCopy()}
           aria-label="Copier le code"
-          className="inline-flex shrink-0 items-center gap-1 rounded-md bg-zinc-700/70 px-2 py-1 text-[11px] font-medium text-zinc-100 transition-colors hover:bg-zinc-600/80"
+          className="inline-flex min-h-11 shrink-0 items-center gap-1 rounded-lg bg-zinc-700/70 px-3 py-2 text-xs font-medium text-zinc-100 transition-colors hover:bg-zinc-600/80 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-300"
         >
           <Icon icon={copied ? Tick01Icon : Copy01Icon} size={13} />
           <span>{copied ? 'Copié' : 'Copier'}</span>
         </button>
       </div>
-      <pre className="max-w-full overflow-x-auto p-3.5 font-mono text-xs leading-relaxed text-zinc-100">
+      <pre className="max-w-full overflow-x-auto p-4 font-mono text-[13px] leading-6 text-zinc-100">
         <code>{code}</code>
       </pre>
     </div>
@@ -272,7 +272,7 @@ export function MarkdownContent({ content, className }: MarkdownContentProps) {
         blocks.push(
           <h2
             key={`h-${idx}`}
-            className="mt-5 first:mt-0 break-words text-base font-bold tracking-tight text-zinc-950 dark:text-zinc-50"
+            className="mt-7 first:mt-0 break-words text-xl font-bold leading-7 tracking-tight text-zinc-950 dark:text-zinc-50"
           >
             {headingText}
           </h2>,
@@ -281,7 +281,7 @@ export function MarkdownContent({ content, className }: MarkdownContentProps) {
         blocks.push(
           <h3
             key={`h-${idx}`}
-            className="mt-5 first:mt-0 break-words text-[15px] font-bold tracking-tight text-zinc-900 dark:text-zinc-100"
+            className="mt-6 first:mt-0 break-words text-lg font-bold leading-7 tracking-tight text-zinc-900 dark:text-zinc-100"
           >
             {headingText}
           </h3>,
@@ -327,7 +327,7 @@ export function MarkdownContent({ content, className }: MarkdownContentProps) {
         idx += 1;
       }
       blocks.push(
-        <ul key={`ul-${idx}`} className="my-2.5 list-disc space-y-1.5 pl-5 text-sm leading-relaxed break-words">
+        <ul key={`ul-${idx}`} className="my-3 list-disc space-y-2 pl-5 text-[15px] leading-7 break-words">
           {items.map((item, i) => (
             <li key={`li-${i}`} className="break-words">{renderInline(item)}</li>
           ))}
@@ -344,7 +344,7 @@ export function MarkdownContent({ content, className }: MarkdownContentProps) {
         idx += 1;
       }
       blocks.push(
-        <ol key={`ol-${idx}`} className="my-2.5 list-decimal space-y-1.5 pl-5 text-sm leading-relaxed break-words">
+        <ol key={`ol-${idx}`} className="my-3 list-decimal space-y-2 pl-5 text-[15px] leading-7 break-words">
           {items.map((item, i) => (
             <li key={`oli-${i}`} className="break-words">{renderInline(item)}</li>
           ))}
@@ -370,7 +370,7 @@ export function MarkdownContent({ content, className }: MarkdownContentProps) {
       idx += 1;
     }
     blocks.push(
-      <p key={`p-${idx}`} className="my-2.5 break-words text-sm leading-relaxed first:mt-0 last:mb-0">
+      <p key={`p-${idx}`} className="my-3 break-words text-[15px] leading-7 first:mt-0 last:mb-0">
         {paraLines.map((pl, pIdx) => (
           <Fragment key={`pl-${pIdx}`}>
             {pIdx > 0 && ' '}
