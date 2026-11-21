@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any
+from typing import Any
 from zoneinfo import ZoneInfo
 from app.planning.availability import resolve_zoneinfo
 from app.planning.collector import PlanningContextSnapshot
@@ -43,6 +44,7 @@ class WeeklyPlanAllocator:
         weekly_hours_override: float | None = None,
         daily_max_minutes: int | None = None,
         preferred_session_minutes: int | None = None,
+        max_sessions: int | None = None,
         min_session_minutes: int = 30,
         break_minutes: int = 10,
     ) -> tuple[
@@ -54,6 +56,7 @@ class WeeklyPlanAllocator:
     ]:
         tz, _ = resolve_zoneinfo(availability.timezone)
         history = snapshot.work_history
+        session_limit = max(1, min(30, int(max_sessions))) if max_sessions is not None else None
 
         prefs_merged: dict[str, object] = {}
         if snapshot.profile and isinstance(snapshot.profile.preferences, dict):
@@ -126,11 +129,8 @@ class WeeklyPlanAllocator:
         arbitrage_items: list[PlanArbitrageItem] = []
         warnings: list[str] = []
 
-        # Pré-résoudre le contenu pédagogique de chaque priorité
-        resolved_by_key = {
-            idx: self._content_resolver.resolve_for_priority(snapshot, item)
-            for idx, item in enumerate(priorities)
-        }
+        # Résoudre le contenu pédagogique uniquement pour les priorités réellement planifiées.
+        resolved_by_key: dict[int, Any] = {}
 
         # Demande restante par priorité (par ordre décroissant de score, tout en répartissant en round-robin pondéré pour la diversité)
         remaining_need: dict[int, int] = {
@@ -142,8 +142,12 @@ class WeeklyPlanAllocator:
         ordered_indices = list(range(len(priorities)))
         max_rounds = max(6, len(blocks) + 1)
         for _round in range(max_rounds):
+            if session_limit is not None and len(planned_sessions) >= session_limit:
+                break
             made_progress = False
             for idx in ordered_indices:
+                if session_limit is not None and len(planned_sessions) >= session_limit:
+                    break
                 item = priorities[idx]
                 need = remaining_need[idx]
                 if need < min_session_minutes:
@@ -205,7 +209,10 @@ class WeeklyPlanAllocator:
                 remaining_need[idx] = max(0, remaining_need[idx] - alloc_mins)
                 made_progress = True
 
-                pedagogical = resolved_by_key[idx]
+                pedagogical = resolved_by_key.get(idx)
+                if pedagogical is None:
+                    pedagogical = self._content_resolver.resolve_for_priority(snapshot, item)
+                    resolved_by_key[idx] = pedagogical
                 slot_type_label = (
                     "Créneau confirmé"
                     if blk.window.category == SlotCategory.confirmed_availability
@@ -251,11 +258,17 @@ class WeeklyPlanAllocator:
             unscheduled = remaining_need[idx]
             scheduled = max(0, needed - unscheduled)
             if unscheduled >= min_session_minutes:
-                reason = (
-                    "Reporté faute de capacité avant l'échéance ou sous le plafond hebdomadaire/journalier protecteur."
-                    if scheduled == 0
-                    else "Temps partiellement alloué ; le reliquat est reporté pour éviter toute surcharge."
-                )
+                if session_limit is not None and len(planned_sessions) >= session_limit:
+                    reason = (
+                        f"Plafond de {session_limit} séance(s) atteint conformément à la demande ; "
+                        "le reliquat reste reporté pour préserver la charge de travail."
+                    )
+                else:
+                    reason = (
+                        "Reporté faute de capacité avant l'échéance ou sous le plafond hebdomadaire/journalier protecteur."
+                        if scheduled == 0
+                        else "Temps partiellement alloué ; le reliquat est reporté pour éviter toute surcharge."
+                    )
                 arbitrage_items.append(
                     PlanArbitrageItem(
                         source_type=item.source_type,
