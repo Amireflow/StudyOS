@@ -82,6 +82,7 @@ describe('PlanningPage', () => {
     await user.click(screen.getByRole('button', { name: 'Ajouter le créneau' }));
 
     const projectFilter = await screen.findByRole('button', { name: 'Projet' });
+    await user.click(projectFilter);
     expect(projectFilter).toHaveAttribute('aria-pressed', 'true');
     await user.click(screen.getByRole('button', { name: 'Tous' }));
     expect(screen.getByRole('button', { name: 'Tous' })).toHaveAttribute('aria-pressed', 'true');
