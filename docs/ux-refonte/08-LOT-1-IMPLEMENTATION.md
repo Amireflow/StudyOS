@@ -1,8 +1,8 @@
 # 08 — Lot 1 : implémentation et vérification des fondations
 
 > Date : 21 novembre 2026  
-> Branche : `ux/audit-initial-2026-11-21`  
-> Pull request : [#3 — Refonte UX/UI StudyOS](https://github.com/Amireflow/StudyOS/pull/3) (brouillon, non fusionnée)  
+> Branche de développement initiale : `ux/audit-initial-2026-11-21`, intégrée à `main` par PR #3  
+> Pull request : [#3 — Refonte UX/UI StudyOS](https://github.com/Amireflow/StudyOS/pull/3) (fusionnée dans `main`)  
 > Commit applicatif testé : `124f2e84e51daab894c65f163ac7edfd227d9ffa`  
 > Statut : contrôles techniques verts ; inspection visuelle après modification encore nécessaire.
 
@@ -88,7 +88,7 @@ Une première exécution CI a échoué au typecheck à cause de caractères d'é
 
 ## 6. Décision de sortie
 
-**Implémentation de base et CI : réussies. Lot 1 : en attente de validation visuelle.**
+**Implémentation de base et CI : réussies.** L'inspection visuelle après modification reste un élément de la recette transversale Lot 6 ; elle n'est pas considérée comme réalisée.
 
 Avant de passer au Lot 2 :
 1. déployer ou ouvrir une prévisualisation de la branche ;

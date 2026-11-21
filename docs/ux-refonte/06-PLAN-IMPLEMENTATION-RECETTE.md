@@ -9,7 +9,7 @@ Transformer progressivement la conception UX en interface cohérente, responsive
 
 ## 2. Garde-fous non négociables
 
-- Travailler sur `ux/audit-initial-2026-11-21`, jamais directement sur `main`.
+- À la demande explicite de l'utilisateur, la refonte a été intégrée dans `main` via la Pull Request #3 ; les lots de continuation sont également commités sur `main`.
 - Ne pas modifier les API, schémas DB, permissions, RLS, règles de validation de compétences ou workflow de propositions IA dans un lot purement visuel.
 - Préserver routes, URLs profondes, historique navigateur, données et comportements actuels.
 - Ne supprimer aucun contrôle métier au motif de simplifier l'écran.
@@ -22,18 +22,22 @@ Transformer progressivement la conception UX en interface cohérente, responsive
 
 ### Lot 0 — Référence visuelle et inventaire technique
 
-Livrables :
-- captures desktop 1440 px et mobile 390 px des parcours principaux ;
-- inventaire des tokens CSS/Tailwind et composants partagés ;
-- vérification de la police réellement chargée ;
-- liste des variantes et usages actuels de Button, Card, FormFields, Badge, PageHeader et StateFeedback.
+<badge>Statut documentaire : partiel accepté pour poursuivre</badge>
 
-Validation :
-- références visuelles enregistrées ;
-- inventaire lié aux composants réels ;
-- aucun code produit modifié.
+Livrables réalisés :
+- inventaire des tokens, composants partagés, navigation, routes et scripts de qualité ;
+- inspection de quatre captures mobiles : tableau de bord, planning, accueil Copilote et tiroir.
+
+Limites acceptées par l'utilisateur pour ne pas bloquer l'exécution :
+- absence de captures desktop, index des cours, lecteur pédagogique, paramètres et thème clair ;
+- police réellement rendue et contrôles navigateur non mesurés ;
+- aucun test manuel VoiceOver/NVDA ni relevé de contraste calculé depuis le DOM.
+
+La limitation et les observations sont conservées dans `07-LOT-0-ETAT-REFERENCE.md`. Le Lot 0 reste partiel au sens strict ; aucune vérification manquante n'est déclarée réussie.
 
 ### Lot 1 — Fondations du Design System
+
+<badge color="success">Implémentation et CI réussies</badge>
 
 Périmètre :
 - tokens CSS sémantiques clair/sombre ;
@@ -58,6 +62,8 @@ Critère de sortie :
 
 ### Lot 2 — Shell, navigation et Dashboard
 
+<badge color="success">Implémenté sur main</badge>
+
 Périmètre :
 - groupes Apprentissage et Organisation ;
 - navigation desktop/mobile et état actif ;
@@ -71,6 +77,8 @@ Critère de sortie :
 - aucune perte de contexte au changement de section.
 
 ### Lot 3 — Apprentissage
+
+<badge color="success">Implémenté sur main</badge>
 
 Périmètre :
 - index des cours et parcours ;
@@ -87,6 +95,8 @@ Critère de sortie :
 
 ### Lot 4 — Organisation
 
+<badge color="success">Implémenté sur main</badge>
+
 Périmètre :
 - planning hebdomadaire et liste mobile ;
 - studio de programme intelligent en étapes ;
@@ -101,6 +111,8 @@ Critère de sortie :
 
 ### Lot 5 — Projets, Copilote et Paramètres
 
+<badge color="success">Implémenté sur main</badge>
+
 Périmètre :
 - projets et objectifs ;
 - interface conversationnelle du Copilote ;
@@ -114,13 +126,22 @@ Critère de sortie :
 
 ### Lot 6 — Recette transversale et stabilisation
 
-- tests responsive aux largeurs 320, 360, 390, 768, 1024, 1280 et 1440 px ;
-- tests clavier, focus, lecteurs d'écran et zoom ;
-- vérification contrastes WCAG 2.2 AA ;
-- parcours E2E critiques ;
-- comparaison des captures avant/après ;
-- vérification de l'absence de scroll horizontal global ;
-- vérification des états vides, chargement, erreurs et données partielles.
+<badge color="warning">Partiellement terminé — inspection navigateur restante</badge>
+
+Déjà vérifié automatiquement :
+- TypeScript strict ;
+- suite Vitest avec tests de navigation, lecteur, planning, projets, Copilote, paramètres et parcours d'acceptation ;
+- build production ;
+- migrations Alembic et tests backend ;
+- état accessible des contrôles (aria-pressed, groupes nommés), tests du tiroir mobile avec focus trap/Échap/restauration.
+
+Encore à réaliser avant de déclarer la refonte entièrement terminée :
+- inspection visuelle réelle sur mobile et desktop (320, 360, 390, 768, 1024, 1280, 1440 px) ;
+- test tactile au vrai appareil, contraste calculé depuis le DOM et parcours manuel VoiceOver/NVDA ;
+- capture avant/après et confirmation de l'absence de scroll horizontal global ;
+- inspection du rendu déployé sur l'environnement de prévisualisation ou production.
+
+Les tests jsdom/Vitest sont une preuve de comportement DOM simulé ; ils ne remplacent pas les vérifications navigateur et lecteur d'écran.
 
 ## 4. Matrice de recette minimale
 
@@ -162,7 +183,11 @@ Ne pas présenter une amélioration comme acquise sans mesures comparables. Les 
 
 ## 7. État d'avancement et prochaine validation
 
-Le Design System a été validé par l'utilisateur. Le Lot 0 a produit l'inventaire source et quatre références mobiles ; la couverture visuelle restante a été acceptée comme limitation pour avancer.
+- Le Design System a été approuvé et ses fondations sont implémentées dans `main`.
+- Les Lots 2 à 5 sont implémentés sur `main` : navigation, dashboard, expérience de cours/lecture, organisation, projets, Copilote et Paramètres.
+- Le Lot 0 reste partiel avec acceptation explicite de la couverture visuelle manquante.
+- Les vérifications CI du commit `f6732d6f7f2d4732f8a9b4bee00428922efee854` sont vertes : frontend (21 fichiers / 87 tests, typecheck et build) ; backend (133 tests et migrations réversibles).
+- Une optimisation supplémentaire du chargement par route est en cours au commit `506e9a6d34607b8c7f28a4d6175ca40567382cac` ; sa CI doit confirmer le gain et l'absence de régression.
 
-Le Lot 1 porte sur les fondations et composants partagés. Il ne doit être déclaré terminé qu'après réussite des contrôles techniques et inspection visuelle du rendu sur une prévisualisation de la branche. Le Lot 2 ne commence qu'après cette validation.
+Le dernier verrou du Lot 6 est l'acceptation visuelle réelle. Aucune capture après modification ni mesure navigateur n'est revendiquée à ce stade.
 

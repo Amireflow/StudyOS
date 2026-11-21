@@ -20,8 +20,9 @@ Dossier de conception et de validation progressive :
 - [Plan d'implémentation et de recette](./docs/ux-refonte/06-PLAN-IMPLEMENTATION-RECETTE.md)
 - [Lot 0 — État de référence et inventaire technique](./docs/ux-refonte/07-LOT-0-ETAT-REFERENCE.md)
 - [Lot 1 — Implémentation et vérification des fondations](./docs/ux-refonte/08-LOT-1-IMPLEMENTATION.md)
+- [Lots 2 à 6 — Implémentation, CI et recette restante](./docs/ux-refonte/09-LOTS-2-A-6-IMPLEMENTATION.md)
 
-La refonte est conduite sur la branche dédiée `ux/audit-initial-2026-11-21`. Les wireframes et le Design System ont été approuvés ; l'implémentation applicative avance par lots avec tests, preuves et validation séparée avant fusion.
+La refonte a été intégrée dans `main` via la [Pull Request #3](https://github.com/Amireflow/StudyOS/pull/3). Les Lots 1 à 5 sont implémentés et vérifiés par la CI ; la recette visuelle réelle du Lot 6 reste à terminer.
 
 ## Structure du dépôt
 
