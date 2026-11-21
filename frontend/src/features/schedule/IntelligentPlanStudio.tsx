@@ -301,7 +301,12 @@ export function IntelligentPlanStudio({ onClose, onApplied }: IntelligentPlanStu
       )}
 
       {/* 1. Gestion explicite des indisponibilités & disponibilités confirmées */}
-      <div className="space-y-3 rounded-xl border border-zinc-200 bg-zinc-50/70 p-4 dark:border-zinc-800 dark:bg-zinc-950/40">
+      <details className="rounded-xl border border-zinc-200 bg-zinc-50/70 p-4 dark:border-zinc-800 dark:bg-zinc-950/40">
+        <summary className="flex min-h-10 cursor-pointer list-none items-center justify-between gap-3 text-sm font-semibold text-zinc-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-700 dark:text-zinc-200 dark:focus-visible:outline-teal-400">
+          <span>Contraintes et disponibilités</span>
+          <span className="text-xs font-medium text-zinc-500 dark:text-zinc-400">{rules.length} règle(s)</span>
+        </summary>
+        <div className="space-y-3 pt-3">
         <div className="flex items-center justify-between gap-2">
           <h3 className="text-xs font-semibold uppercase tracking-wide text-zinc-700 dark:text-zinc-300">
             Disponibilités &amp; indisponibilités
@@ -398,62 +403,94 @@ export function IntelligentPlanStudio({ onClose, onApplied }: IntelligentPlanStu
             ))}
           </div>
         )}
-      </div>
+        </div>
+      </details>
+
 
       {/* 2. Génération & ajustement du programme */}
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
-        <select
-          aria-label="Horizon de planification"
-          value={horizonDays}
-          onChange={(e) => setHorizonDays(Number(e.target.value))}
-          className="rounded-xl border border-zinc-200 bg-white px-3 py-2 text-xs font-medium text-zinc-900 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
-        >
-          <option value={7}>Horizon : 7 jours</option>
-          <option value={14}>Horizon : 14 jours</option>
-        </select>
-        <input
-          aria-label="Focus prioritaire optionnel"
-          type="text"
-          value={focusSubject}
-          onChange={(e) => setFocusSubject(e.target.value)}
-          placeholder="Focus optionnel (ex. React, Java)"
-          className="rounded-xl border border-zinc-200 bg-white px-3 py-2 text-xs text-zinc-900 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
-        />
-        <input
-          aria-label="Budget hebdomadaire max (h)"
-          type="number"
-          min="1"
-          max="40"
-          step="0.5"
-          value={weeklyHoursOverride}
-          onChange={(e) => setWeeklyHoursOverride(e.target.value)}
-          placeholder="Max h/sem (ex. 8)"
-          className="rounded-xl border border-zinc-200 bg-white px-3 py-2 text-xs text-zinc-900 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
-        />
-        <Button type="button" size="sm" onClick={() => void handleGenerate()} disabled={isBusy}>
-          <Icon icon={Calendar03Icon} size={15} />
-          Générer le programme
-        </Button>
-      </div>
+      <div className="space-y-3">
+        <div className="flex flex-col gap-3 rounded-xl bg-teal-50/70 p-4 sm:flex-row sm:items-center sm:justify-between dark:bg-teal-950/25">
+          <div className="space-y-1">
+            <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+              Votre programme personnalisé
+            </p>
+            <p className="max-w-xl text-xs leading-5 text-zinc-600 dark:text-zinc-300">
+              StudyOS utilise vos cours fixes, vos disponibilités, vos objectifs et votre progression.
+              Vous pourrez vérifier la proposition avant de l'appliquer au calendrier.
+            </p>
+          </div>
+          <Button
+            type="button"
+            size="md"
+            className="shrink-0"
+            onClick={() => void handleGenerate()}
+            disabled={isBusy}
+          >
+            <Icon icon={Calendar03Icon} size={16} />
+            Construire mon programme
+          </Button>
+        </div>
 
-      <div className="flex flex-wrap items-center gap-2">
-        <input
-          aria-label="Instruction d'ajustement"
-          type="text"
-          value={adjustInstruction}
-          onChange={(e) => setAdjustInstruction(e.target.value)}
-          placeholder="Ajuster en langage naturel (ex. Allège cette semaine, séances de 45 min)"
-          className="min-w-0 flex-1 rounded-xl border border-zinc-200 bg-white px-3 py-2 text-xs text-zinc-900 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
-        />
-        <Button
-          type="button"
-          size="sm"
-          variant="secondary"
-          onClick={() => void handleAdjust()}
-          disabled={isBusy || !adjustInstruction.trim()}
-        >
-          Recalculer / Ajuster
-        </Button>
+        <details className="rounded-xl border border-zinc-200 bg-white px-3.5 py-2.5 dark:border-zinc-800 dark:bg-zinc-950/30">
+          <summary className="min-h-9 cursor-pointer text-xs font-semibold text-zinc-600 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-700 dark:text-zinc-300 dark:focus-visible:outline-teal-400">
+            Ajuster les paramètres (facultatif)
+          </summary>
+          <div className="grid grid-cols-1 gap-3 pb-2 pt-3 sm:grid-cols-3">
+            <select
+              aria-label="Horizon de planification"
+              value={horizonDays}
+              onChange={(e) => setHorizonDays(Number(e.target.value))}
+              className="rounded-xl border border-zinc-200 bg-white px-3 py-2 text-xs font-medium text-zinc-900 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
+            >
+              <option value={7}>Horizon : 7 jours</option>
+              <option value={14}>Horizon : 14 jours</option>
+            </select>
+            <input
+              aria-label="Focus prioritaire optionnel"
+              type="text"
+              value={focusSubject}
+              onChange={(e) => setFocusSubject(e.target.value)}
+              placeholder="Focus optionnel (ex. React, Java)"
+              className="rounded-xl border border-zinc-200 bg-white px-3 py-2 text-xs text-zinc-900 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
+            />
+            <input
+              aria-label="Budget hebdomadaire max (h)"
+              type="number"
+              min="1"
+              max="40"
+              step="0.5"
+              value={weeklyHoursOverride}
+              onChange={(e) => setWeeklyHoursOverride(e.target.value)}
+              placeholder="Max h/sem (ex. 8)"
+              className="rounded-xl border border-zinc-200 bg-white px-3 py-2 text-xs text-zinc-900 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
+            />
+          </div>
+        </details>
+
+        <details className="rounded-xl border border-zinc-200 bg-white px-3.5 py-2.5 dark:border-zinc-800 dark:bg-zinc-950/30">
+          <summary className="min-h-9 cursor-pointer text-xs font-semibold text-zinc-600 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-700 dark:text-zinc-300 dark:focus-visible:outline-teal-400">
+            Modifier une proposition existante
+          </summary>
+          <div className="flex flex-wrap items-center gap-2 pb-2 pt-3">
+            <input
+              aria-label="Instruction d'ajustement"
+              type="text"
+              value={adjustInstruction}
+              onChange={(e) => setAdjustInstruction(e.target.value)}
+              placeholder="Ex. Allège cette semaine, séances de 45 min"
+              className="min-w-0 flex-1 rounded-xl border border-zinc-200 bg-white px-3 py-2 text-xs text-zinc-900 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
+            />
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              onClick={() => void handleAdjust()}
+              disabled={isBusy || !adjustInstruction.trim()}
+            >
+              Recalculer / Ajuster
+            </Button>
+          </div>
+        </details>
       </div>
 
       {/* 3. Aperçu du programme généré */}
