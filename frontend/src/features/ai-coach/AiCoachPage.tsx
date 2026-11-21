@@ -15,7 +15,6 @@ import {
   SlidersHorizontalIcon,
   SparklesIcon,
   Target02Icon,
-  Timer02Icon,
 } from '@hugeicons/core-free-icons';
 import { Link } from 'react-router-dom';
 import { Badge } from '../../components/ui/Badge';
