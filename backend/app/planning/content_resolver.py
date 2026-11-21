@@ -15,8 +15,9 @@ from app.services.courses_service import CourseService
 class SessionContentResolver:
     """Résout le contenu pédagogique exact de chaque créneau en respectant les prérequis."""
 
-    def __init__(self) -> None:
-        self._preview_cache: dict[str, dict[str, object]] = {}
+    def __init__(self, *, course_service: CourseService | None = None) -> None:
+        self._course_service = course_service
+        self._preview_cache: dict[str, dict[str, Any]] = {}
 
     def resolve_for_priority(
         self,
@@ -93,8 +94,8 @@ class SessionContentResolver:
                     next_step_summary=task.description or f"Exécuter la tâche « {task.title} ».",
                 )
 
-        # 5. Aucun cours existant : synthèse structurée via le générateur interne StudyOS
-        return self._resolve_preview_course_step(priority)
+        # 5. Aucun cours existant : utiliser le service de cours configuré pour cet utilisateur.
+        return self._resolve_preview_course_step(priority, user_id=snapshot.user_id)
 
     def _find_matching_course(
         self,
@@ -235,7 +236,7 @@ class SessionContentResolver:
                 next_step_summary=f"Valider le mini-projet du niveau {active_level.level_number} : {active_level.project_title or active_level.title}.",
             )
 
-        return self._resolve_preview_course_step(priority)
+        return self._resolve_preview_course_step(priority, user_id=snapshot.user_id)
 
     def _find_matching_path(
         self,
@@ -283,12 +284,17 @@ class SessionContentResolver:
                 next_step_summary=f"Parcours « {path_title} » · Module {next_mod.position} ({next_mod.title})"
                 + (f" → {next_les.title}" if next_les else ""),
             )
-        return PedagogicalStepPayload(
-            content_source="learning_path",
-            exercises_focus=[path_title],
-            deliverables=[f"Compléter le parcours {path_title}"],
-            recommended_session_type="deep_work",
-            next_step_summary=f"Continuer le parcours « {path_title} ».",
+        # Un parcours sans module n'a pas de prochaine étape exploitable.
+        return self._resolve_preview_course_step(
+            LearningPriorityItem(
+                source_type="learning_path",
+                title=path_title,
+                subject=path_title,
+                domain="Apprentissage",
+                score=0,
+                recommended_minutes=60,
+            ),
+            user_id=snapshot.user_id,
         )
 
     def _resolve_preview_course_step(
