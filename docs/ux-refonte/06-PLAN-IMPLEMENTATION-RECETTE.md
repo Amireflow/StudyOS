@@ -186,8 +186,8 @@ Ne pas présenter une amélioration comme acquise sans mesures comparables. Les 
 - Le Design System a été approuvé et ses fondations sont implémentées dans `main`.
 - Les Lots 2 à 5 sont implémentés sur `main` : navigation, dashboard, expérience de cours/lecture, organisation, projets, Copilote et Paramètres.
 - Le Lot 0 reste partiel avec acceptation explicite de la couverture visuelle manquante.
-- Les vérifications CI du commit `f6732d6f7f2d4732f8a9b4bee00428922efee854` sont vertes : frontend (21 fichiers / 87 tests, typecheck et build) ; backend (133 tests et migrations réversibles).
-- Une optimisation supplémentaire du chargement par route est en cours au commit `506e9a6d34607b8c7f28a4d6175ca40567382cac` ; sa CI doit confirmer le gain et l'absence de régression.
+- Les vérifications CI du commit applicatif `f78e20d9f5c44d8ab3f521908b1968f4e44fd942` sont vertes : frontend (21 fichiers / 87 tests, typecheck et build) ; backend (133 tests, migrations réversibles). Run : [44893071433](https://github.com/Amireflow/StudyOS/actions/runs/44893071433).
+- Le chargement par route est optimisé via `React.lazy`/`Suspense` ; CI verte sur le commit applicatif `f78e20d9f5c44d8ab3f521908b1968f4e44fd942`. Le bundle JavaScript d'entrée est passé de 1 000,40 kB (261,33 kB gzip) à 353,06 kB (102,34 kB gzip), sans avertissement de chunk supérieur à 700 kB.
 
 Le dernier verrou du Lot 6 est l'acceptation visuelle réelle. Aucune capture après modification ni mesure navigateur n'est revendiquée à ce stade.
 

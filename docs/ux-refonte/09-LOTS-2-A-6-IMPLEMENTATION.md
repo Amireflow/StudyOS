@@ -3,9 +3,11 @@
 > Date : 21 novembre 2026  
 > Branche cible : `main`  
 > PR initiale : [#3 — Refonte UX/UI StudyOS](https://github.com/Amireflow/StudyOS/pull/3), fusionnée  
-> Commit applicatif soumis à la CI finale des Lots 2 à 5 : `f6732d6f7f2d4732f8a9b4bee00428922efee854`  
-> Commit de travail pour l'optimisation des bundles : `506e9a6d34607b8c7f28a4d6175ca40567382cac`  
-> Statut : Lots 2 à 5 implémentés ; contrôles automatiques verts sur le commit f6732d6 ; optimisation de chargement par route en cours de validation ; recette navigateur manuelle restante.
+> Commit applicatif soumis à la CI finale des Lots 2 à 5 et du code-splitting : `f78e20d9f5c44d8ab3f521908b1968f4e44fd942`  
+> Commit de mise en place du chargement par route : `506e9a6d34607b8c7f28a4d6175ca40567382cac`  
+> Commit applicatif final testé : `f78e20d9f5c44d8ab3f521908b1968f4e44fd942`  
+> Run CI : [44893071433](https://github.com/Amireflow/StudyOS/actions/runs/44893071433)  
+> Statut : Lots 2 à 5 implémentés ; CI frontend/backend verte ; optimisation du bundle validée ; recette navigateur manuelle restante.
 
 ## 1. Résumé d'exécution
 
@@ -97,7 +99,7 @@ Les propositions IA restent sans mutation immédiate ; toute action conserve son
 
 ### Résultats CI du commit f6732d6f
 
-Run GitHub Actions : [44892642724](https://github.com/Amireflow/StudyOS/actions/runs/44892642724)
+Run GitHub Actions : [44893071433](https://github.com/Amireflow/StudyOS/actions/runs/44893071433)
 
 | Contrôle | Résultat |
 |---|---|
@@ -110,9 +112,16 @@ Run GitHub Actions : [44892642724](https://github.com/Amireflow/StudyOS/actions/
 
 Ces tests couvrent notamment les routes et la navigation, le focus trap du tiroir mobile, la lecture progressive, les états de sélection du Copilote, les filtres du planning/projets/séances, les liens d'ancrage des paramètres et les parcours métier d'acceptation.
 
-### Optimisation du chargement
+### Optimisation du chargement — résultat mesuré
 
-Le build précédent signalait un chunk JavaScript principal d'environ 1 Mo. Le routeur a été modifié au commit `506e9a6d34607b8c7f28a4d6175ca40567382cac` pour charger les pages métier à la demande via `React.lazy` et `Suspense`. Le résultat CI de ce commit est à confirmer ; ne pas considérer l'optimisation comme mesurée avant son build.
+Le routeur charge les pages métier à la demande via `React.lazy` et `Suspense`, tout en gardant Connexion, Dashboard et 404 dans le chargement initial. Les contrôles finaux sur le commit `f78e20d9f5c44d8ab3f521908b1968f4e44fd942` confirment :
+
+| Bundle JavaScript | Avant | Après |
+|---|---:|---:|
+| Entrée principale | 1 000,40 kB | 353,06 kB |
+| Entrée gzip | 261,33 kB | 102,34 kB |
+
+Le chargement initial JavaScript baisse donc d'environ 64,7 % en taille brute. Les pages métier sont séparées en chunks entre 26 et 68 kB chacun pour les routes principales. Le build ne signale plus de chunk dépassant le seuil de 700 kB.
 
 ## 7. Limites restantes — recette visuelle manuelle
 
@@ -128,8 +137,8 @@ La prévisualisation ou le site déployé n'a pas pu être ouvert par l'outil na
 
 ## 8. Conclusion
 
-**Implémentation des lots 2 à 5 et CI du commit f6732d6 : validées.**  
-**Lot 6 : validation automatique réussie ; inspection navigateur manuelle encore ouverte.**  
-**Optimisation du code-splitting : en attente du résultat CI sur le commit 506e9a6.**
+**Implémentation des lots 2 à 5 et CI du commit f78e20d : validées.**  
+**Optimisation du code-splitting : validée, bundle d'entrée réduit à 353,06 kB.**  
+**Lot 6 : validation automatique réussie ; inspection navigateur manuelle encore ouverte.**
 
 Aucun changement n'a été fusionné en dehors de `main` après la PR #3 ; le code final reste à valider visuellement avant de déclarer la refonte totalement terminée.
