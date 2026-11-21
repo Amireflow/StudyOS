@@ -1575,7 +1575,7 @@ def _handle_ai_first_intents(
 
     # 7. Toute demande de plusieurs séances passe par le moteur de planification dédié.
     multi_session_m = re.search(
-        r"(?:programme|planifie|organise|prévois|ajoute)\s+(?:[2-9]|1[0-9]|2[0-9]|30|deux|trois|quatre|cinq|six|sept|huit|neuf|dix|plusieurs|des)\s+(?:séances|sessions|créneaux)\b",
+        r"(?:programme|planifie|organise|prévois|ajoute|prépare)\s+(?:de\s+)?(?:[2-9]|1[0-9]|2[0-9]|30|deux|trois|quatre|cinq|six|sept|huit|neuf|dix|plusieurs|des)\s+(?:séances|sessions|créneaux)\b",
         lowered,
     )
     if multi_session_m or re.search(
@@ -1645,6 +1645,10 @@ def _handle_ai_first_intents(
             "crée-moi un programme",
             "cree-moi un programme",
             "programme mes séances",
+            "programme de séances",
+            "programme de plusieurs séances",
+            "organise plusieurs séances",
+            "prépare plusieurs séances",
             "planifie mes séances",
             "organise mes séances",
             "prépare mes révisions",
