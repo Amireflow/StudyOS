@@ -72,13 +72,13 @@ describe('AiCoachPage', () => {
   });
 
   it('préremplit la demande transmise par un autre espace sans l’envoyer automatiquement', async () => {
-    installMockStudyApi();
+    const api = installMockStudyApi();
     const prompt = 'Construis un parcours React adapté à mes compétences actuelles.';
     renderAiCoachPage('/ai-coach?prompt=' + encodeURIComponent(prompt));
 
     const input = await screen.findByLabelText(/Votre message au Copilote/);
     await waitFor(() => expect(input).toHaveValue(prompt));
-    expect(screen.queryByText(prompt)).not.toBeInTheDocument();
+    expect(api.state.messages).toHaveLength(0);
   });
 
   it('annonce les trois vues mobiles du Copilote comme états pressés exclusifs', async () => {

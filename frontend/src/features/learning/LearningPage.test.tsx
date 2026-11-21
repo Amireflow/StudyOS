@@ -43,7 +43,8 @@ describe('LearningPage', () => {
     const user = userEvent.setup();
     renderLearningPage();
 
-    await user.click(await screen.findByRole('button', { name: 'Nouveau parcours' }));
+    await user.click(await screen.findByText('Plus'));
+    await user.click(await screen.findByRole('button', { name: 'Créer manuellement' }));
     expect(
       screen.queryByRole('button', { name: /Charger un parcours exemple/i }),
     ).not.toBeInTheDocument();

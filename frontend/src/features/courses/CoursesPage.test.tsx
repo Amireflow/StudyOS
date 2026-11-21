@@ -61,11 +61,11 @@ describe('CoursesPage & verrou pédagogique multi-niveaux', () => {
     const subjectInput = screen.getByLabelText(/Sujet ou domaine/);
     await user.type(subjectInput, 'Python');
 
-    await user.click(screen.getByRole('button', { name: 'Prévisualiser le plan' }));
+    await user.click(screen.getByRole('button', { name: 'Analyser et construire le programme' }));
     expect(await screen.findByText(/Programme des niveaux/)).toBeInTheDocument();
     expect(screen.getByText(/Aperçu du Niveau 1 \(4 chapitres \+ projet\)/)).toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: 'Créer le cours complet' }));
+    await user.click(screen.getByRole('button', { name: 'Valider et créer le cours' }));
 
     expect(await screen.findByRole('tab', { name: 'Chapitres (4)' })).toBeInTheDocument();
     expect(screen.getByText('Niveau 1/3')).toBeInTheDocument();
@@ -212,8 +212,8 @@ describe('CoursesPage & verrou pédagogique multi-niveaux', () => {
 
     await user.click(await screen.findByRole('button', { name: 'Nouveau cours' }));
     await user.type(screen.getByLabelText(/Sujet ou domaine/), 'Python');
-    await user.click(screen.getByRole('button', { name: 'Prévisualiser le plan' }));
-    await user.click(await screen.findByRole('button', { name: 'Créer le cours complet' }));
+    await user.click(screen.getByRole('button', { name: 'Analyser et construire le programme' }));
+    await user.click(await screen.findByRole('button', { name: 'Valider et créer le cours' }));
 
     expect(await screen.findByRole('region', { name: 'Tuteur du chapitre' })).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: /Explique plus simplement/ }));

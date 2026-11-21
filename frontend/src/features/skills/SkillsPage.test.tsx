@@ -26,7 +26,8 @@ describe('SkillsPage — Verrou pédagogique et processus d’évaluation', () =
     const user = userEvent.setup();
     renderSkillsPage();
 
-    await user.click(await screen.findByRole('button', { name: 'Nouvelle compétence' }));
+    await user.click(await screen.findByText('Plus'));
+    await user.click(await screen.findByRole('button', { name: 'Ajouter manuellement' }));
     expect(screen.queryByLabelText(/Niveau actuel/i)).not.toBeInTheDocument();
 
     await user.type(screen.getByLabelText(/Nom de la compétence/), 'Python & FastAPI');
@@ -184,13 +185,15 @@ describe('SkillsPage — Verrou pédagogique et processus d’évaluation', () =
     const user = userEvent.setup();
     renderSkillsPage();
 
-    await user.click(await screen.findByRole('button', { name: 'Nouvelle compétence' }));
+    await user.click(await screen.findByText('Plus'));
+    await user.click(await screen.findByRole('button', { name: 'Ajouter manuellement' }));
     await user.type(screen.getByLabelText(/Nom de la compétence/), 'FastAPI');
     await user.type(screen.getByLabelText(/Domaine/), 'Backend');
     await user.click(screen.getByRole('button', { name: 'Créer la compétence' }));
     expect(await screen.findByRole('article', { name: 'FastAPI' })).toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: 'Nouvelle compétence' }));
+    await user.click(screen.getByText('Plus'));
+    await user.click(screen.getByRole('button', { name: 'Ajouter manuellement' }));
     await user.type(screen.getByLabelText(/Nom de la compétence/), 'Tailwind CSS');
     await user.type(screen.getByLabelText(/Domaine/), 'Frontend');
     await user.click(screen.getByRole('button', { name: 'Créer la compétence' }));

@@ -80,13 +80,14 @@ describe('Scénarios d’acceptation E2E (CdC §11.3 — Lot 8)', () => {
     const sidebar = screen.getByRole('navigation', { name: 'Navigation principale' });
 
     expect(
-      await screen.findByRole('button', { name: 'Nouveau parcours' }),
+      await screen.findByRole('link', { name: 'Créer avec le Copilote' }),
     ).toBeInTheDocument();
+    await user.click(screen.getByText('Plus'));
     expect(
       screen.queryByRole('button', { name: /Charger un parcours exemple/i }),
     ).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: 'Nouveau parcours' }));
+    await user.click(screen.getByRole('button', { name: 'Créer manuellement' }));
     await user.type(screen.getByLabelText(/Titre du parcours/), 'Socle Python & FastAPI');
     await user.type(screen.getByLabelText(/Objectif mesurable/), 'Concevoir une API REST');
     await user.click(screen.getByRole('button', { name: 'Créer le parcours' }));
@@ -107,7 +108,8 @@ describe('Scénarios d’acceptation E2E (CdC §11.3 — Lot 8)', () => {
 
     const learningNav = screen.getByRole('navigation', { name: 'Navigation Apprendre' });
     await user.click(within(learningNav).getByRole('link', { name: 'Compétences' }));
-    await user.click(await screen.findByRole('button', { name: 'Nouvelle compétence' }));
+    await user.click(screen.getByText('Plus'));
+    await user.click(await screen.findByRole('button', { name: 'Ajouter manuellement' }));
     await user.type(screen.getByLabelText(/Nom de la compétence/), 'FastAPI & Pytest');
     await user.type(screen.getByLabelText(/Domaine/), 'Backend');
     await user.click(screen.getByRole('button', { name: 'Créer la compétence' }));
