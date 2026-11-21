@@ -247,6 +247,7 @@ export function PlanningPage() {
             variant="primary"
             size="sm"
             className="shrink-0"
+            aria-label="Ouvrir le constructeur de programme"
             onClick={() => {
               setIsIntelligentPlanOpen((prev) => !prev);
               setIsImportingTimetable(false);

@@ -129,7 +129,8 @@ describe('Intégration API FastAPI & Authentification (Lot 5)', () => {
     await user.click(within(desktopNav).getByRole('link', { name: 'Planning' }));
     await user.click(within(screen.getByRole('navigation', { name: 'Navigation Planning' })).getByRole('link', { name: 'Tâches' }));
 
-    await user.click(await screen.findByRole('button', { name: 'Nouvelle tâche' }));
+    await user.click(screen.getByRole('button', { name: 'Options des tâches' }));
+    await user.click(screen.getByRole('button', { name: 'Créer manuellement' }));
     await user.type(screen.getByLabelText(/Titre/), 'Connecter PostgreSQL');
     await user.click(screen.getByRole('button', { name: 'Ajouter la tâche' }));
 
@@ -420,7 +421,8 @@ describe('Intégration API FastAPI & Authentification (Lot 5)', () => {
     const navAlice = screen.getByRole('navigation', { name: 'Navigation principale' });
     await user.click(within(navAlice).getByRole('link', { name: 'Planning' }));
     await user.click(within(screen.getByRole('navigation', { name: 'Navigation Planning' })).getByRole('link', { name: 'Tâches' }));
-    await user.click(screen.getByRole('button', { name: 'Nouvelle tâche' }));
+    await user.click(screen.getByRole('button', { name: 'Options des tâches' }));
+    await user.click(screen.getByRole('button', { name: 'Créer manuellement' }));
     await user.type(screen.getByLabelText(/Titre/), 'Tâche confidentielle Alice');
     await user.click(screen.getByRole('button', { name: 'Ajouter la tâche' }));
     expect(

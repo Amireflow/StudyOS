@@ -7,7 +7,7 @@ import { installMockStudyApi, TEST_API_SESSION, TEST_USER_ID } from '../../test/
 import { TasksPage } from './TasksPage';
 
 async function openManualTaskForm(user: ReturnType<typeof userEvent.setup>) {
-  await user.click(screen.getByText('Plus'));
+  await user.click(screen.getByRole('button', { name: 'Options des tâches' }));
   await user.click(screen.getByRole('button', { name: 'Créer manuellement' }));
 }
 

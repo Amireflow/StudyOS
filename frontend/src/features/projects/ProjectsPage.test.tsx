@@ -7,7 +7,7 @@ import { installMockStudyApi, TEST_API_SESSION, TEST_USER_ID } from '../../test/
 import { ProjectsPage } from './ProjectsPage';
 
 async function openManualProjectForm(user: ReturnType<typeof userEvent.setup>) {
-  await user.click(screen.getByText('Plus'));
+  await user.click(screen.getByRole('button', { name: 'Options des projets' }));
   await user.click(screen.getByRole('button', { name: 'Nouveau projet manuel' }));
 }
 
@@ -156,14 +156,16 @@ describe('ProjectsPage', () => {
 
     expect(await screen.findByText(/1 cours ou examen fixe/i)).toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: 'Nouvel objectif' }));
+    await user.click(screen.getByRole('button', { name: 'Options des projets' }));
+    await user.click(screen.getByRole('button', { name: 'Nouvel objectif manuel' }));
     await user.type(screen.getByLabelText(/Titre de l’objectif/), 'React');
     await user.selectOptions(screen.getByLabelText(/Catégorie d’objectif/), 'framework');
     await user.click(screen.getByRole('button', { name: 'Créer l’objectif' }));
 
     expect(await screen.findByRole('article', { name: 'Objectif React' })).toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: 'Nouvel objectif' }));
+    await user.click(screen.getByRole('button', { name: 'Options des projets' }));
+    await user.click(screen.getByRole('button', { name: 'Nouvel objectif manuel' }));
     await user.type(screen.getByLabelText(/Titre de l’objectif/), 'Python');
     await user.selectOptions(screen.getByLabelText(/Catégorie d’objectif/), 'language');
     await user.click(screen.getByRole('button', { name: 'Créer l’objectif' }));

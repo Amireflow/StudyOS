@@ -48,7 +48,8 @@ describe('Scénarios d’acceptation E2E (CdC §11.3 — Lot 8)', () => {
     const planningNav = screen.getByRole('navigation', { name: 'Navigation Planning' });
     await user.click(within(planningNav).getByRole('link', { name: 'Tâches' }));
 
-    await user.click(await screen.findByRole('button', { name: 'Nouvelle tâche' }));
+    await user.click(screen.getByRole('button', { name: 'Options des tâches' }));
+    await user.click(screen.getByRole('button', { name: 'Créer manuellement' }));
     await user.type(screen.getByLabelText(/Titre/), 'Livrer Amireflow Study OS v1.0');
     await user.selectOptions(screen.getByLabelText('Priorité'), 'critical');
     await user.click(screen.getByRole('button', { name: 'Ajouter la tâche' }));
@@ -82,7 +83,7 @@ describe('Scénarios d’acceptation E2E (CdC §11.3 — Lot 8)', () => {
     expect(
       await screen.findByRole('link', { name: 'Créer avec le Copilote' }),
     ).toBeInTheDocument();
-    await user.click(screen.getByText('Plus'));
+    await user.click(screen.getByRole('button', { name: 'Options d'apprentissage' }));
     expect(
       screen.queryByRole('button', { name: /Charger un parcours exemple/i }),
     ).not.toBeInTheDocument();
@@ -108,7 +109,7 @@ describe('Scénarios d’acceptation E2E (CdC §11.3 — Lot 8)', () => {
 
     const learningNav = screen.getByRole('navigation', { name: 'Navigation Apprendre' });
     await user.click(within(learningNav).getByRole('link', { name: 'Compétences' }));
-    await user.click(screen.getByText('Plus'));
+    await user.click(screen.getByRole('button', { name: 'Options des compétences' }));
     await user.click(await screen.findByRole('button', { name: 'Ajouter manuellement' }));
     await user.type(screen.getByLabelText(/Nom de la compétence/), 'FastAPI & Pytest');
     await user.type(screen.getByLabelText(/Domaine/), 'Backend');

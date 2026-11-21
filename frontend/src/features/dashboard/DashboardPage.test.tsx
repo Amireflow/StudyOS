@@ -33,7 +33,7 @@ describe('DashboardPage', () => {
       screen.queryByRole('button', { name: /Charger des données d’exemple/i }),
     ).not.toBeInTheDocument();
 
-    await user.click(screen.getByText('Plus'));
+    await user.click(screen.getByRole('button', { name: 'Options de priorité' }));
     await user.click(screen.getByRole('button', { name: 'Définir manuellement' }));
     await user.type(
       screen.getByLabelText(/Intitulé de la priorité principale/),
@@ -201,14 +201,14 @@ describe('DashboardPage', () => {
     const user = userEvent.setup();
     renderDashboardPage();
 
-    await user.click(screen.getByText('Plus'));
+    await user.click(screen.getByRole('button', { name: 'Options des tâches du jour' }));
     await user.click(screen.getByRole('button', { name: 'Capture manuelle rapide' }));
     await user.type(screen.getByLabelText('Nouvelle tâche rapide'), 'Préparer le TP SQL');
     await user.click(screen.getByRole('button', { name: 'Ajouter' }));
 
     expect(await screen.findByText('Préparer le TP SQL')).toBeInTheDocument();
 
-    await user.click(screen.getByText('Plus'));
+    await user.click(screen.getByRole('button', { name: 'Options de priorité' }));
     await user.click(screen.getByRole('button', { name: 'Définir manuellement' }));
     await user.type(
       screen.getByLabelText(/Intitulé de la priorité principale/),
