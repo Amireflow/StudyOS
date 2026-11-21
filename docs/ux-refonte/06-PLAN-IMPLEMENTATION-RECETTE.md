@@ -1,6 +1,6 @@
 # 06 — Plan d'implémentation et de recette UX/UI
 
-> Statut : plan proposé, soumis à validation après le Design System.
+> Statut : plan approuvé pour exécution progressive ; chaque lot conserve sa validation indépendante.
 > Règle : avancer par lots verticaux vérifiables. Aucun lot ne remplace les règles métier ou les données existantes.
 
 ## 1. Objectif
@@ -160,6 +160,9 @@ Mesurer avant/après sur les parcours identiques :
 
 Ne pas présenter une amélioration comme acquise sans mesures comparables. Les métriques doivent être collectées sans introduire de suivi intrusif ou de données personnelles non nécessaires.
 
-## 7. Prochaine décision requise
+## 7. État d'avancement et prochaine validation
 
-Après lecture et validation du Design System, la prochaine étape est le Lot 0 : établir les captures de référence et l'inventaire des composants, puis soumettre les résultats avant de toucher aux styles globaux.
+Le Design System a été validé par l'utilisateur. Le Lot 0 a produit l'inventaire source et quatre références mobiles ; la couverture visuelle restante a été acceptée comme limitation pour avancer.
+
+Le Lot 1 porte sur les fondations et composants partagés. Il ne doit être déclaré terminé qu'après réussite des contrôles techniques et inspection visuelle du rendu sur une prévisualisation de la branche. Le Lot 2 ne commence qu'après cette validation.
+

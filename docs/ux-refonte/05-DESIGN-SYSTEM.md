@@ -1,6 +1,6 @@
 # 05 — Design System premium
 
-> Statut : spécification proposée — à valider avant toute modification visuelle du produit.
+> Statut : Design System validé par l'utilisateur le 21 novembre 2026 ; implémentation progressive démarrée au Lot 1.
 > Périmètre : frontend React + TypeScript + Tailwind existant. Ce document définit les règles de conception ; il ne constitue pas une preuve de rendu réel.
 
 ## 1. Principes directeurs

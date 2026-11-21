@@ -3,7 +3,7 @@
 > Date d'inspection : 21 novembre 2026
 > Branche inspectée : `ux/audit-initial-2026-11-21`
 > Référence de comparaison : `main` au commit `c77e293228afe20986a1674e208e85d57a95c500`
-> Statut : inventaire source réalisé ; captures visuelles navigateur non réalisées dans cet environnement.
+> Statut : inventaire source terminé et quatre vues mobiles documentées ; référence visuelle complète et contrôles navigateur restant partiels, limitation acceptée pour avancer au Lot 1.
 > Garantie : aucun fichier applicatif frontend/backend n'a été modifié pendant ce lot.
 
 ## 1. Objectif du lot
@@ -269,3 +269,15 @@ Elles ne permettent pas de mesurer précisément les contrastes WCAG, les zones 
 - [ ] Exécution locale typecheck, tests et build.
 
 **Statut inchangé : Lot 0 partiellement terminé.** La référence visuelle mobile est maintenant documentée pour quatre vues. La couverture visuelle complète et les vérifications runtime restent à réaliser. Aucun fichier applicatif n'a été modifié.
+
+
+## 10. Décision d'avancement — référence visuelle partielle acceptée
+
+À la suite des quatre captures mobiles (tableau de bord, planning, accueil du Copilote et tiroir de navigation), l'utilisateur a indiqué que l'absence des captures restantes n'était pas bloquante.
+
+Décision consignée :
+- poursuivre la refonte au Lot 1 sur la base de l'inventaire source et des quatre captures mobiles ;
+- conserver les contrôles non réalisés comme non réalisés ;
+- ne pas présenter la couverture desktop, les écrans Cours/Lecteur/Paramètres ou les mesures navigateur comme vérifiés.
+
+**Conclusion :** le Lot 0 reste partiel au sens strict de la recette complète, mais sa limitation visuelle restante est acceptée pour permettre la progression. Cette acceptation ne vaut pas validation du rendu après implémentation.

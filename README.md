@@ -19,8 +19,9 @@ Dossier de conception et de validation progressive :
 - [Design System premium](./docs/ux-refonte/05-DESIGN-SYSTEM.md)
 - [Plan d'implémentation et de recette](./docs/ux-refonte/06-PLAN-IMPLEMENTATION-RECETTE.md)
 - [Lot 0 — État de référence et inventaire technique](./docs/ux-refonte/07-LOT-0-ETAT-REFERENCE.md)
+- [Lot 1 — Implémentation et vérification des fondations](./docs/ux-refonte/08-LOT-1-IMPLEMENTATION.md)
 
-La refonte est conduite sur la branche dédiée `ux/audit-initial-2026-11-21`. Les documents sont des spécifications de conception ; aucune refonte visuelle applicative n'est considérée comme validée tant que les wireframes et le design system ne sont pas approuvés.
+La refonte est conduite sur la branche dédiée `ux/audit-initial-2026-11-21`. Les wireframes et le Design System ont été approuvés ; l'implémentation applicative avance par lots avec tests, preuves et validation séparée avant fusion.
 
 ## Structure du dépôt
 
