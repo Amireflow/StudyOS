@@ -14,7 +14,7 @@ import {
   Target02Icon,
 } from '@hugeicons/core-free-icons';
 import { PageHeader } from '../../components/layout/PageHeader';
-import { Button } from '../../components/ui/Button';
+import { Button, buttonClasses } from '../../components/ui/Button';
 import { InlineConfirm, Input, Select } from '../../components/ui/FormFields';
 import { Icon } from '../../components/ui/Icon';
 import {
@@ -37,6 +37,7 @@ import {
   type PersonalGoalCreateInput,
 } from '../../lib/objectivesApi';
 import { useAuth } from '../../state/AuthContext';
+import { Link } from 'react-router-dom';
 import { useLearningStore } from '../../state/LearningStoreContext';
 import { useStudyStore } from '../../state/StudyStoreContext';
 import type {
@@ -488,33 +489,49 @@ export function ProjectsPage() {
         title="Objectifs & Projets"
         description={headerSubtitle}
         actions={
-          <div className="flex flex-wrap items-center gap-2">
-            <Button type="button" variant="secondary" size="sm" onClick={openGoalCreate}>
-              <Icon icon={BookOpen01Icon} size={15} />
-              Nouvel objectif
-            </Button>
-            <Button
-              type="button"
-              variant="secondary"
-              size="sm"
-              onClick={() => setIsIntakeOpen((prev) => !prev)}
+          <div className="flex items-center gap-2">
+            <Link
+              to={"/ai-coach?prompt=" + encodeURIComponent("À partir de mes priorités et objectifs actuels, aide-moi à définir le résultat concret que je dois atteindre, puis propose un projet ou un objectif avec prochaine action, livrables et échéance réaliste. Analyse le coût d'opportunité par rapport à ma priorité active. N'enregistre rien avant ma confirmation.")}
+              className={buttonClasses('primary', 'sm')}
             >
               <Icon icon={SparklesIcon} size={15} />
-              Décrire à l’IA
-            </Button>
-            <Button
-              type="button"
-              variant="secondary"
-              size="sm"
-              onClick={() => setIsUnifiedPlanOpen((prev) => !prev)}
-            >
-              <Icon icon={Calendar03Icon} size={15} />
-              Programme unifié
-            </Button>
-            <Button type="button" variant="primary" size="sm" onClick={openCreate}>
-              <Icon icon={Add01Icon} size={15} />
-              Nouveau projet
-            </Button>
+              Définir avec le Copilote
+            </Link>
+            <details className="relative">
+              <summary className="inline-flex min-h-11 cursor-pointer list-none items-center rounded-lg bg-zinc-100 px-3 text-xs font-semibold text-zinc-600 hover:bg-zinc-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-700 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700 dark:focus-visible:outline-teal-400">
+                Plus
+              </summary>
+              <div className="absolute right-0 z-30 mt-2 flex w-56 flex-col gap-1 rounded-xl border border-zinc-200 bg-white p-2 shadow-lg dark:border-zinc-700 dark:bg-zinc-900">
+                <Button type="button" variant="ghost" size="sm" className="min-h-11 w-full justify-start" onClick={openGoalCreate}>
+                  <Icon icon={BookOpen01Icon} size={14} />
+                  Nouvel objectif manuel
+                </Button>
+                <Button type="button" variant="ghost" size="sm" className="min-h-11 w-full justify-start" onClick={openCreate}>
+                  <Icon icon={Add01Icon} size={14} />
+                  Nouveau projet manuel
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="min-h-11 w-full justify-start"
+                  onClick={() => setIsIntakeOpen((prev) => !prev)}
+                >
+                  <Icon icon={SparklesIcon} size={14} />
+                  Décrire à l’IA
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="min-h-11 w-full justify-start"
+                  onClick={() => setIsUnifiedPlanOpen((prev) => !prev)}
+                >
+                  <Icon icon={Calendar03Icon} size={14} />
+                  Programme unifié
+                </Button>
+              </div>
+            </details>
           </div>
         }
       />
@@ -944,9 +961,12 @@ export function ProjectsPage() {
             }
             title="Aucun projet enregistré"
             action={
-              <Button type="button" variant="primary" size="sm" onClick={openCreate}>
-                Créer mon premier projet
-              </Button>
+              <Link
+                to={"/ai-coach?prompt=" + encodeURIComponent("Aide-moi à transformer mon objectif actuel en un projet réaliste avec un résultat mesurable, des livrables, une prochaine action et une échéance adaptée. Vérifie que ce projet ne détourne pas mon attention de ma priorité principale. Attends ma confirmation avant de le créer.")}
+                className={buttonClasses('primary', 'md')}
+              >
+                Définir mon premier projet avec le Copilote
+              </Link>
             }
           />
         </div>
