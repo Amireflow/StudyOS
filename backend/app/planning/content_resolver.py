@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+from uuid import UUID
 from app.planning.collector import PlanningContextSnapshot
 from app.repositories.courses_sql import CourseRecord
 from app.schemas.common import CourseLanguage
@@ -14,7 +16,7 @@ class SessionContentResolver:
 
     def __init__(self, *, course_service: CourseService | None = None) -> None:
         self._course_service = course_service
-        self._preview_cache: dict[str, dict[str, object]] = {}
+        self._preview_cache: dict[str, dict[str, Any]] = {}
 
     def resolve_for_priority(
         self,
@@ -293,7 +295,7 @@ class SessionContentResolver:
         self,
         priority: LearningPriorityItem,
         *,
-        user_id=None,
+        user_id: UUID | None = None,
     ) -> PedagogicalStepPayload:
         subject = priority.subject.strip() or priority.title.strip()
         cache_key = subject.lower()
