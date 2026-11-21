@@ -33,7 +33,8 @@ describe('DashboardPage', () => {
       screen.queryByRole('button', { name: /Charger des données d’exemple/i }),
     ).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: 'Définir une priorité' }));
+    await user.click(screen.getByText('Plus'));
+    await user.click(screen.getByRole('button', { name: 'Définir manuellement' }));
     await user.type(
       screen.getByLabelText(/Intitulé de la priorité principale/),
       'Boucler le Lot 2 frontend',
@@ -206,7 +207,8 @@ describe('DashboardPage', () => {
 
     expect(await screen.findByText('Préparer le TP SQL')).toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: 'Définir une priorité' }));
+    await user.click(screen.getByText('Plus'));
+    await user.click(screen.getByRole('button', { name: 'Définir manuellement' }));
     await user.type(
       screen.getByLabelText(/Intitulé de la priorité principale/),
       'Boucler la refonte UI',

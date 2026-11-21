@@ -6,6 +6,11 @@ import { AppProviders } from '../../app/providers';
 import { installMockStudyApi, TEST_API_SESSION, TEST_USER_ID } from '../../test/mockStudyApi';
 import { TasksPage } from './TasksPage';
 
+async function openManualTaskForm(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(screen.getByText('Plus'));
+  await user.click(screen.getByRole('button', { name: 'Créer manuellement' }));
+}
+
 function renderTasksPage() {
   return render(
     <AppProviders initialSession={TEST_API_SESSION}>
@@ -27,13 +32,13 @@ describe('TasksPage', () => {
     renderTasksPage();
 
     expect(
-      await screen.findByRole('button', { name: 'Nouvelle tâche' }),
+      await screen.findByRole('link', { name: 'Demander au Copilote' }),
     ).toBeInTheDocument();
     expect(
       screen.queryByRole('button', { name: /Charger des données d’exemple/i }),
     ).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: 'Nouvelle tâche' }));
+    await openManualTaskForm(user);
     await user.click(screen.getByRole('button', { name: 'Ajouter la tâche' }));
 
     expect(screen.getByRole('alert')).toHaveTextContent(
@@ -72,12 +77,12 @@ describe('TasksPage', () => {
     const user = userEvent.setup();
     renderTasksPage();
 
-    await user.click(await screen.findByRole('button', { name: 'Nouvelle tâche' }));
+    await openManualTaskForm(user);
     await user.type(screen.getByLabelText(/Titre/), 'Tâche à annuler');
     await user.click(screen.getByRole('button', { name: 'Ajouter la tâche' }));
     expect(await screen.findByRole('article', { name: 'Tâche à annuler' })).toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: 'Nouvelle tâche' }));
+    await openManualTaskForm(user);
     await user.type(screen.getByLabelText(/Titre/), 'Idée future');
     await user.selectOptions(screen.getByLabelText('Priorité'), 'low');
     await user.click(screen.getByRole('button', { name: 'Ajouter la tâche' }));

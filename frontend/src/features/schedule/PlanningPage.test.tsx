@@ -29,7 +29,8 @@ describe('PlanningPage', () => {
     const user = userEvent.setup();
     renderPlanningPage();
 
-    await user.click(await screen.findByRole('button', { name: 'Nouveau créneau' }));
+    await user.click(screen.getByText('Plus'));
+    await user.click(await screen.findByRole('button', { name: 'Ajouter un événement ponctuel' }));
     expect(
       screen.queryByRole('button', { name: /Charger des données d’exemple/i }),
     ).not.toBeInTheDocument();
@@ -74,7 +75,8 @@ describe('PlanningPage', () => {
     await user.click(dayButtons[0]);
     expect(dayButtons[0]).toHaveAttribute('aria-pressed', 'true');
 
-    await user.click(await screen.findByRole('button', { name: 'Nouveau créneau' }));
+    await user.click(screen.getByText('Plus'));
+    await user.click(await screen.findByRole('button', { name: 'Ajouter un événement ponctuel' }));
     await user.type(screen.getByLabelText(/Titre/), 'Atelier filtre');
     await user.selectOptions(screen.getByLabelText(/Type/), 'project');
     fireEvent.change(screen.getByLabelText(/Début/), { target: { value: '09:00' } });
@@ -97,7 +99,8 @@ describe('PlanningPage', () => {
     const user = userEvent.setup();
     renderPlanningPage();
 
-    await user.click(await screen.findByRole('button', { name: 'Nouveau créneau' }));
+    await user.click(screen.getByText('Plus'));
+    await user.click(await screen.findByRole('button', { name: 'Ajouter un événement ponctuel' }));
     await user.type(screen.getByLabelText(/Titre/), 'Cours de Python');
     fireEvent.change(screen.getByLabelText(/Début/), { target: { value: '09:00' } });
     fireEvent.change(screen.getByLabelText(/Fin/), { target: { value: '11:00' } });
@@ -106,7 +109,8 @@ describe('PlanningPage', () => {
       await screen.findByRole('heading', { level: 3, name: 'Cours de Python' }),
     ).toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: 'Nouveau créneau' }));
+    await user.click(screen.getByText('Plus'));
+    await user.click(screen.getByRole('button', { name: 'Ajouter un événement ponctuel' }));
     await user.type(screen.getByLabelText(/Titre/), 'TD Bases de données');
     fireEvent.change(screen.getByLabelText(/Début/), { target: { value: '10:00' } });
     fireEvent.change(screen.getByLabelText(/Fin/), { target: { value: '12:00' } });
@@ -141,7 +145,8 @@ describe('PlanningPage', () => {
     const user = userEvent.setup();
     renderPlanningPage();
 
-    await user.click(await screen.findByRole('button', { name: 'Nouveau créneau' }));
+    await user.click(screen.getByText('Plus'));
+    await user.click(await screen.findByRole('button', { name: 'Ajouter un événement ponctuel' }));
     await user.type(screen.getByLabelText(/Titre/), 'Atelier UI');
     await user.selectOptions(screen.getByLabelText(/Type/), 'project');
     fireEvent.change(screen.getByLabelText(/Début/), { target: { value: '09:00' } });
@@ -150,7 +155,8 @@ describe('PlanningPage', () => {
     await user.click(screen.getByRole('button', { name: 'Ajouter le créneau' }));
     expect(await screen.findByRole('heading', { level: 3, name: 'Atelier UI' })).toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: 'Nouveau créneau' }));
+    await user.click(screen.getByText('Plus'));
+    await user.click(screen.getByRole('button', { name: 'Ajouter un événement ponctuel' }));
     await user.type(screen.getByLabelText(/Titre/), 'Cours SQL');
     fireEvent.change(screen.getByLabelText(/Début/), { target: { value: '14:00' } });
     await user.click(screen.getByRole('button', { name: '1 h' }));
@@ -245,7 +251,7 @@ describe('PlanningPage', () => {
     const user = userEvent.setup();
     renderPlanningPage();
 
-    await user.click(await screen.findByRole('button', { name: 'Programme intelligent' }));
+    await user.click(await screen.findByRole('button', { name: 'Construire mon programme' }));
     expect(
       screen.getByRole('region', { name: 'Moteur intelligent de planification' }),
     ).toBeInTheDocument();

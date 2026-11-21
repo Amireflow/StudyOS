@@ -6,6 +6,11 @@ import { AppProviders } from '../../app/providers';
 import { installMockStudyApi, TEST_API_SESSION, TEST_USER_ID } from '../../test/mockStudyApi';
 import { ProjectsPage } from './ProjectsPage';
 
+async function openManualProjectForm(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(screen.getByText('Plus'));
+  await user.click(screen.getByRole('button', { name: 'Nouveau projet manuel' }));
+}
+
 function renderProjectsPage() {
   return render(
     <AppProviders initialSession={TEST_API_SESSION}>
@@ -43,7 +48,7 @@ describe('ProjectsPage', () => {
     const user = userEvent.setup();
     renderProjectsPage();
 
-    await user.click(await screen.findByRole('button', { name: 'Nouveau projet' }));
+    await openManualProjectForm(user);
     await user.type(screen.getByLabelText(/Nom du projet/), 'Amireflow OS');
     await user.type(screen.getByLabelText(/Objectif mesurable/), 'Livrer le Lot 6');
     await user.click(screen.getByRole('button', { name: 'Créer le projet' }));
@@ -79,7 +84,7 @@ describe('ProjectsPage', () => {
     const user = userEvent.setup();
     renderProjectsPage();
 
-    await user.click(await screen.findByRole('button', { name: 'Nouveau projet' }));
+    await openManualProjectForm(user);
     await user.type(screen.getByLabelText(/Nom du projet/), 'Refonte API');
     await user.type(screen.getByLabelText(/Objectif mesurable/), '100% des endpoints couverts');
     await user.type(
