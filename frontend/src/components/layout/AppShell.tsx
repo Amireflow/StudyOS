@@ -5,7 +5,7 @@ import {
   Logout01Icon,
   Menu01Icon,
 } from '@hugeicons/core-free-icons';
-import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { cn } from '../../lib/cn';
 import { usePwaInstall } from '../../lib/pwa';
 import { useAuth } from '../../state/AuthContext';
@@ -397,48 +397,42 @@ export function AppShell() {
         className="pb-safe fixed inset-x-0 bottom-0 z-30 bg-[#f5f5f3]/95 px-2 pt-1.5 backdrop-blur-md lg:hidden dark:bg-zinc-950/95"
       >
         <ul className="mx-auto grid max-w-md grid-cols-5 gap-1">
-          {mobileBarItems.map((item) => (
-            <li key={item.id} className="min-w-0">
-              <NavLink
-                to={item.path}
-                end={item.path === '/'}
-                aria-current={
-                  (item.id === 'courses' && ['/courses', '/learning', '/skills'].some((path) => location.pathname === path || location.pathname.startsWith(path + '/'))) ||
-                  (item.id === 'planning' && ['/planning', '/tasks', '/sessions'].includes(location.pathname))
-                    ? 'page'
-                    : undefined
-                }
-                className={({ isActive }) => {
-                  const sectionActive =
-                    (item.id === 'courses' && ['/courses', '/learning', '/skills'].some((path) => location.pathname === path || location.pathname.startsWith(path + '/'))) ||
-                    (item.id === 'planning' && ['/planning', '/tasks', '/sessions'].includes(location.pathname));
-                  const active = isActive || sectionActive;
-                  return cn(
+          {mobileBarItems.map((item) => {
+            const sectionActive =
+              (item.id === 'courses' &&
+                ['/courses', '/learning', '/skills'].some(
+                  (path) => location.pathname === path || location.pathname.startsWith(path + '/'),
+                )) ||
+              (item.id === 'planning' && ['/planning', '/tasks', '/sessions'].includes(location.pathname));
+            const active = location.pathname === item.path || sectionActive;
+
+            return (
+              <li key={item.id} className="min-w-0">
+                <Link
+                  to={item.path}
+                  aria-current={active ? 'page' : undefined}
+                  className={cn(
                     'flex min-h-12 min-w-0 flex-col items-center justify-center gap-0.5 overflow-hidden rounded-lg px-1 py-1 text-[11px] transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-700 dark:focus-visible:outline-teal-400',
                     active
                       ? 'font-semibold text-zinc-950 dark:text-zinc-50'
                       : 'font-medium text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200',
-                  );
-                }}
-              >
-                {({ isActive }) => (
-                  <>
-                    <span
-                      className={cn(
-                        'flex h-7 w-10 items-center justify-center rounded-full transition-colors',
-                        isActive
-                          ? 'bg-zinc-900 text-teal-300 dark:bg-zinc-100 dark:text-teal-700'
-                          : 'text-zinc-500 dark:text-zinc-400',
-                      )}
-                    >
-                      <Icon icon={item.icon} size={16} />
-                    </span>
-                    <span className="max-w-full truncate">{item.shortLabel}</span>
-                  </>
-                )}
-              </NavLink>
-            </li>
-          ))}
+                  )}
+                >
+                  <span
+                    className={cn(
+                      'flex h-7 w-10 items-center justify-center rounded-full transition-colors',
+                      active
+                        ? 'bg-zinc-900 text-teal-300 dark:bg-zinc-100 dark:text-teal-700'
+                        : 'text-zinc-500 dark:text-zinc-400',
+                    )}
+                  >
+                    <Icon icon={item.icon} size={16} />
+                  </span>
+                  <span className="max-w-full truncate">{item.shortLabel}</span>
+                </Link>
+              </li>
+            );
+          })}
         </ul>
       </nav>
     </div>
