@@ -16,6 +16,8 @@ Dossier de conception et de validation progressive :
 - [Architecture de l'information et navigation](./docs/ux-refonte/02-INFORMATION-ARCHITECTURE.md)
 - [Parcours utilisateurs](./docs/ux-refonte/03-USER-FLOWS.md)
 - [Wireframes fonctionnels détaillés](./docs/ux-refonte/04-WIREFRAMES-DETAILLES.md)
+- [Design System premium](./docs/ux-refonte/05-DESIGN-SYSTEM.md)
+- [Plan d'implémentation et de recette](./docs/ux-refonte/06-PLAN-IMPLEMENTATION-RECETTE.md)
 
 La refonte est conduite sur la branche dédiée `ux/audit-initial-2026-11-21`. Les documents sont des spécifications de conception ; aucune refonte visuelle applicative n'est considérée comme validée tant que les wireframes et le design system ne sont pas approuvés.
 
