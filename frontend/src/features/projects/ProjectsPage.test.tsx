@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -98,6 +98,14 @@ describe('ProjectsPage', () => {
 
     expect(api.state.tasks).toHaveLength(1);
     expect(api.state.tasks[0].title).toBe('Écrire les tests Pytest des projets');
+
+    const statusFilters = screen.getByRole('group', { name: 'Filtrer les projets par statut' });
+    const plannedFilter = within(statusFilters).getByRole('button', { name: 'Planifiés' });
+    expect(plannedFilter).toHaveAttribute('aria-pressed', 'true');
+    const activeFilter = within(statusFilters).getByRole('button', { name: 'Actifs' });
+    await user.click(activeFilter);
+    expect(activeFilter).toHaveAttribute('aria-pressed', 'true');
+    expect(plannedFilter).toHaveAttribute('aria-pressed', 'false');
 
     await user.click(screen.getByRole('button', { name: 'Tableau' }));
     expect(screen.getByRole('heading', { name: 'Planifiés' })).toBeInTheDocument();

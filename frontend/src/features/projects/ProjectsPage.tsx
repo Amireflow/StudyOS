@@ -903,11 +903,16 @@ export function ProjectsPage() {
           </div>
 
           <div className="flex items-center justify-between gap-2">
-            <div className="no-scrollbar flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto pb-0.5 sm:flex-wrap sm:overflow-visible sm:pb-0">
+            <div
+              role="group"
+              aria-label="Filtrer les projets par statut"
+              className="no-scrollbar flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto pb-0.5 sm:flex-wrap sm:overflow-visible sm:pb-0"
+            >
               {STATUS_FILTER_PILLS.map((pill) => (
                 <button
                   key={pill.value}
                   type="button"
+                  aria-pressed={statusFilter === pill.value}
                   onClick={() => setStatusFilter(pill.value)}
                   className={cn(
                     'shrink-0',

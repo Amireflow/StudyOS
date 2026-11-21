@@ -429,9 +429,10 @@ export function SessionsPage() {
         </div>
 
         {sessions.length > 0 && availableCategories.length > 0 && (
-          <div className="flex flex-wrap items-center gap-1.5">
+          <div role="group" aria-label="Filtrer l’historique par catégorie" className="flex flex-wrap items-center gap-1.5">
             <button
               type="button"
+              aria-pressed={categoryFilter === 'all'}
               onClick={() => setCategoryFilter('all')}
               className={cn(
                 'inline-flex min-h-11 items-center rounded-full px-3 text-xs font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-700 dark:focus-visible:outline-teal-400',
@@ -448,6 +449,7 @@ export function SessionsPage() {
                 <button
                   key={category}
                   type="button"
+                  aria-pressed={isActive}
                   onClick={() =>
                     setCategoryFilter((prev) => (prev === category ? 'all' : category))
                   }

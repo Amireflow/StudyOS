@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -123,11 +123,17 @@ describe('SessionsPage', () => {
     await user.click(screen.getByRole('button', { name: 'Enregistrer la séance' }));
     expect(await screen.findByText('Lecture algorithmes')).toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: 'Projet' }));
+    const categoryFilters = screen.getByRole('group', { name: 'Filtrer l’historique par catégorie' });
+    const projectFilter = within(categoryFilters).getByRole('button', { name: 'Projet' });
+    expect(projectFilter).toHaveAttribute('aria-pressed', 'false');
+    await user.click(projectFilter);
+    expect(projectFilter).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByText('Architecture API')).toBeInTheDocument();
     expect(screen.queryByText('Lecture algorithmes')).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: 'Toutes' }));
+    const allCategoriesFilter = within(categoryFilters).getByRole('button', { name: 'Toutes' });
+    await user.click(allCategoriesFilter);
+    expect(allCategoriesFilter).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByText('Lecture algorithmes')).toBeInTheDocument();
 
     await user.click(screen.getAllByRole('button', { name: 'Démarrer une séance' })[0]);
