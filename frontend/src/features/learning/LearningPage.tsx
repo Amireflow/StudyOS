@@ -270,11 +270,25 @@ export function LearningPage() {
           )}
         </div>
 
-        <div className="no-scrollbar flex items-center gap-1.5 overflow-x-auto pb-0.5 sm:flex-wrap sm:overflow-visible sm:pb-0">
-          <Button type="button" variant="primary" size="sm" className="shrink-0" onClick={openCreatePath}>
-            <Icon icon={Add01Icon} size={15} />
-            Nouveau parcours
-          </Button>
+        <div className="flex shrink-0 items-center gap-2">
+          <Link
+            to={"/ai-coach?prompt=" + encodeURIComponent("Analyse mes apprentissages et objectifs existants, puis propose un parcours pédagogique complet adapté à mon niveau. Structure les modules, leçons, exercices, projets et critères de validation. Ne crée rien avant ma confirmation.")}
+            className={buttonClasses('primary', 'sm')}
+          >
+            <Icon icon={BookOpen01Icon} size={15} />
+            Créer avec le Copilote
+          </Link>
+          <details className="relative">
+            <summary className="inline-flex min-h-11 cursor-pointer list-none items-center rounded-lg bg-zinc-100 px-3 text-xs font-semibold text-zinc-600 hover:bg-zinc-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-700 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700 dark:focus-visible:outline-teal-400">
+              Plus
+            </summary>
+            <div className="absolute right-0 z-30 mt-2 w-56 rounded-xl border border-zinc-200 bg-white p-2 shadow-lg dark:border-zinc-700 dark:bg-zinc-900">
+              <Button type="button" variant="ghost" size="sm" className="min-h-11 w-full justify-start" onClick={openCreatePath}>
+                <Icon icon={Add01Icon} size={14} />
+                Créer manuellement
+              </Button>
+            </div>
+          </details>
         </div>
       </header>
 
@@ -452,9 +466,12 @@ export function LearningPage() {
             }
             title="Aucun parcours d’apprentissage"
             action={
-              <Button type="button" variant="primary" size="sm" onClick={openCreatePath}>
-                Créer mon premier parcours
-              </Button>
+              <Link
+                to={"/ai-coach?prompt=" + encodeURIComponent("Aide-moi à définir le parcours d'apprentissage le plus pertinent à partir de mes objectifs et de mes compétences actuelles. Propose le plan complet et attends ma validation avant de créer les éléments.")}
+                className={buttonClasses('primary', 'md')}
+              >
+                Créer mon premier parcours avec le Copilote
+              </Link>
             }
           />
         </div>
