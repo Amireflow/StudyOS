@@ -343,7 +343,7 @@ export function PlanningPage() {
               variant="ghost"
               size="sm"
               aria-label="Semaine précédente"
-              className="px-2 sm:px-3"
+              className="min-w-11 justify-center px-2 sm:px-3"
               onClick={() => navigateWeek(addDays(weekStart, -7))}
             >
               <Icon icon={ArrowLeft01Icon} size={15} />
@@ -363,7 +363,7 @@ export function PlanningPage() {
               variant="ghost"
               size="sm"
               aria-label="Semaine suivante"
-              className="px-2 sm:px-3"
+              className="min-w-11 justify-center px-2 sm:px-3"
               onClick={() => navigateWeek(addDays(weekStart, 7))}
             >
               <span className="hidden sm:inline">Suivante</span>
@@ -464,7 +464,11 @@ export function PlanningPage() {
         </div>
 
         {/* Ligne 3 : Bandeau interactif des 7 jours */}
-        <div className="grid grid-cols-7 gap-1 sm:gap-1.5">
+        <div
+          role="group"
+          aria-label="Choisir un jour de la semaine"
+          className="no-scrollbar flex min-w-0 gap-1.5 overflow-x-auto pb-1 sm:grid sm:grid-cols-7 sm:overflow-visible sm:pb-0"
+        >
           {weekDays.map((day) => {
             const dayKey = toLocalDateKey(day);
             const isToday = dayKey === todayKey;
@@ -488,7 +492,7 @@ export function PlanningPage() {
                   setSelectedDayKey((prev) => (prev === dayKey ? null : dayKey));
                 }}
                 className={cn(
-                  'flex min-h-16 min-w-0 flex-col items-center justify-center rounded-xl px-0.5 py-2 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-700 dark:focus-visible:outline-teal-400',
+                  'flex min-h-16 min-w-[44px] flex-1 flex-col items-center justify-center rounded-xl px-0.5 py-2 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-700 dark:focus-visible:outline-teal-400 sm:min-w-0',
                   isSelected
                     ? 'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900'
                     : isToday
